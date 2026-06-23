@@ -1,16 +1,17 @@
 /**
  * onLoad — incollare su:
- *   - form_subvettori_contratti_for_subvectors_magic_link
+ *   - form_subvettori_contratti (form operatore)
  *
- * Per magic_link_review usare form_subvettori_contratti_magic_link_review_onLoad
- * (stessa logica, file dedicato).
+ * Per le form magic link usare:
+ *   - form_subvettori_contratti_for_subvectors_onLoad
+ *   - form_subvettori_contratti_magic_link_review_onLoad
  *
  * 1) Modale errore EasyGN (redirect con dati mancanti)
  * 2) Visibilità blocco autisti per tipoContrattoId (tipo 2/3 nascosto)
- *    num_iscrizione_albo resta sempre visibile; obbligatorio solo tipo 1 in onValidate.
  * 3) Precaricamento anagrafica subvettore (campi virtuali → tabella subvettori)
- * 4) Precaricamento dati legale rappresentante da subvettori_contratti (senza data nascita → onLoadRecord)
- * 5) Campi *_firmatario nascosti (non più usati: firma/mail solo su rappresentante)
+ * 4) Precaricamento dati legale rappresentante da subvettori_contratti
+ *    (email/telefono rappresentante: fallback da subvettori se vuoti sul contratto)
+ * 5) Campi *_firmatario nascosti
  */
 
  if (session_status() !== PHP_SESSION_ACTIVE) {
@@ -78,6 +79,8 @@ if (!function_exists('magic_link_form_apply_tipo_contratto_visibility')) {
 }
 
 $subvettoreId = 0;
+$emailRappSub = '';
+$telRappSub   = '';
 if (isset({subvettore_id}) && (int){subvettore_id} > 0) {
     $subvettoreId = (int){subvettore_id};
 }
@@ -116,7 +119,9 @@ if ($subvettoreId > 0) {
             num_iscrizione_reg_imprese,
             locazione_iscrizione_reg_imprese,
             rea,
-            cellphone
+            cellphone,
+            email_rappresentante,
+            telefono_rappresentante
         FROM subvettori
         WHERE id = " . (int)$subvettoreId . "
         LIMIT 1
@@ -134,6 +139,8 @@ if ($subvettoreId > 0) {
         {locazione_iscrizione_reg_imprese} = (string){rsSub[0][8]};
         {rea}                              = (string){rsSub[0][9]};
         {phone}                            = (string){rsSub[0][10]};
+        $emailRappSub                      = isset({rsSub[0][11]}) ? trim((string){rsSub[0][11]}) : '';
+        $telRappSub                        = isset({rsSub[0][12]}) ? trim((string){rsSub[0][12]}) : '';
     }
 }
 
@@ -163,6 +170,13 @@ if ($scId > 0) {
         {prov_luogo_nascita_rappresentante} = (string){rsScLegal[0][6]};
         {data_nascita_rappresentante}       = {rsScLegal[0][7]};
     }
+}
+
+if ($emailRappSub !== '' && trim((string){email_rappresentante}) === '') {
+    {email_rappresentante} = $emailRappSub;
+}
+if ($telRappSub !== '' && trim((string){telefono_rappresentante}) === '') {
+    {telefono_rappresentante} = $telRappSub;
 }
 
 if (!function_exists('pigliacelli_hide_campi_firmatario_form')) {
