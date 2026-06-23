@@ -1,0 +1,176 @@
+/**
+ * onLoad — incollare su:
+ *   - form_subvettori_contratti_for_subvectors_magic_link
+ *
+ * Per magic_link_review usare form_subvettori_contratti_magic_link_review_onLoad
+ * (stessa logica, file dedicato).
+ *
+ * 1) Modale errore EasyGN (redirect con dati mancanti)
+ * 2) Visibilità blocco autisti per tipoContrattoId (tipo 2/3 nascosto)
+ *    num_iscrizione_albo resta sempre visibile; obbligatorio solo tipo 1 in onValidate.
+ * 3) Precaricamento anagrafica subvettore (campi virtuali → tabella subvettori)
+ * 4) Precaricamento dati legale rappresentante da subvettori_contratti (senza data nascita → onLoadRecord)
+ * 5) Campi *_firmatario nascosti (non più usati: firma/mail solo su rappresentante)
+ */
+
+ if (session_status() !== PHP_SESSION_ACTIVE) {
+    @session_start();
+}
+
+if (!empty($_SESSION['easygn_error_modal'])) {
+    $msg = $_SESSION['easygn_error_modal'];
+    unset($_SESSION['easygn_error_modal']);
+
+    sc_ajax_message(
+        $msg,
+        "Dati mancanti per la firma",
+        "error",
+        "Y",
+        0,
+        "OK",
+        "Y",
+        "350",
+        "auto"
+    );
+}
+
+if (!function_exists('magic_link_form_tipo_contratto_id')) {
+    function magic_link_form_tipo_contratto_id($scId)
+    {
+        if ((int)$scId > 0) {
+            sc_lookup(rsTipoContrattoForm, "
+                SELECT c.tipo_contratto_id
+                FROM subvettori_contratti sc
+                INNER JOIN contratti c ON c.id = sc.contratto_id
+                WHERE sc.id = " . (int)$scId . "
+                LIMIT 1
+            ", "pigliacelli");
+
+            if (!empty({rsTipoContrattoForm[0][0]})) {
+                return (int){rsTipoContrattoForm[0][0]};
+            }
+        }
+
+        if (isset({contratto_id}) && (int){contratto_id} > 0) {
+            sc_lookup(rsTipoContrattoByContratto, "
+                SELECT tipo_contratto_id
+                FROM contratti
+                WHERE id = " . (int){contratto_id} . "
+                LIMIT 1
+            ", "pigliacelli");
+
+            if (!empty({rsTipoContrattoByContratto[0][0]})) {
+                return (int){rsTipoContrattoByContratto[0][0]};
+            }
+        }
+
+        return 0;
+    }
+}
+
+if (!function_exists('magic_link_form_apply_tipo_contratto_visibility')) {
+    function magic_link_form_apply_tipo_contratto_visibility($tipoContrattoId)
+    {
+        // num_iscrizione_albo: sempre visibile; obbligatorio solo tipo 1 in onValidate.
+        $displayAutisti = in_array((int)$tipoContrattoId, array(2, 3), true) ? 'off' : 'on';
+        sc_block_display(subvettori_autisti, $displayAutisti);
+    }
+}
+
+$subvettoreId = 0;
+if (isset({subvettore_id}) && (int){subvettore_id} > 0) {
+    $subvettoreId = (int){subvettore_id};
+}
+
+$scId = 0;
+if (isset({id}) && (int){id} > 0) {
+    $scId = (int){id};
+} elseif (isset([subvettore_contratto_id]) && (int)[subvettore_contratto_id] > 0) {
+    $scId = (int)[subvettore_contratto_id];
+}
+
+magic_link_form_apply_tipo_contratto_visibility(magic_link_form_tipo_contratto_id($scId));
+
+if ($subvettoreId <= 0 && $scId > 0) {
+    sc_lookup(rsSubId, "
+        SELECT subvettore_id
+        FROM subvettori_contratti
+        WHERE id = " . (int)$scId . "
+        LIMIT 1
+    ", "pigliacelli");
+    if (!empty({rsSubId[0][0]})) {
+        $subvettoreId = (int){rsSubId[0][0]};
+    }
+}
+
+if ($subvettoreId > 0) {
+    sc_lookup(rsSub, "
+        SELECT
+            ragione_sociale,
+            sede_citta,
+            sede_prov,
+            indirizzo,
+            civico,
+            cod_fiscale,
+            piva,
+            num_iscrizione_reg_imprese,
+            locazione_iscrizione_reg_imprese,
+            rea,
+            cellphone
+        FROM subvettori
+        WHERE id = " . (int)$subvettoreId . "
+        LIMIT 1
+    ", "pigliacelli");
+
+    if (!empty({rsSub})) {
+        {ragione_sociale}                  = (string){rsSub[0][0]};
+        {sede_citta}                       = (string){rsSub[0][1]};
+        {sede_prov}                        = (string){rsSub[0][2]};
+        {indirizzo}                        = (string){rsSub[0][3]};
+        {civico}                           = (string){rsSub[0][4]};
+        {cod_fiscale}                      = (string){rsSub[0][5]};
+        {piva}                             = (string){rsSub[0][6]};
+        {num_iscrizione_reg_imprese}       = (string){rsSub[0][7]};
+        {locazione_iscrizione_reg_imprese} = (string){rsSub[0][8]};
+        {rea}                              = (string){rsSub[0][9]};
+        {phone}                            = (string){rsSub[0][10]};
+    }
+}
+
+if ($scId > 0) {
+    sc_lookup(rsScLegal, "
+        SELECT
+            num_iscrizione_albo,
+            nome_rappresentante,
+            cognome_rappresentante,
+            email_rappresentante,
+            telefono_rappresentante,
+            luogo_nascita_rappresentante,
+            prov_luogo_nascita_rappresentante,
+            data_nascita_rappresentante
+        FROM subvettori_contratti
+        WHERE id = " . (int)$scId . "
+        LIMIT 1
+    ", "pigliacelli");
+
+    if (!empty({rsScLegal})) {
+        {num_iscrizione_albo}               = (string){rsScLegal[0][0]};
+        {nome_rappresentante}               = (string){rsScLegal[0][1]};
+        {cognome_rappresentante}            = (string){rsScLegal[0][2]};
+        {email_rappresentante}              = (string){rsScLegal[0][3]};
+        {telefono_rappresentante}           = (string){rsScLegal[0][4]};
+        {luogo_nascita_rappresentante}      = (string){rsScLegal[0][5]};
+        {prov_luogo_nascita_rappresentante} = (string){rsScLegal[0][6]};
+        {data_nascita_rappresentante}       = {rsScLegal[0][7]};
+    }
+}
+
+if (!function_exists('pigliacelli_hide_campi_firmatario_form')) {
+    function pigliacelli_hide_campi_firmatario_form()
+    {
+        foreach (array('nome_firmatario', 'cognome_firmatario', 'email_firmatario', 'telefono_firmatario') as $campo) {
+            sc_field_display($campo, 'off');
+        }
+    }
+}
+pigliacelli_hide_campi_firmatario_form();

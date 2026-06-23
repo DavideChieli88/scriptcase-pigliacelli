@@ -1,0 +1,1299 @@
+$subvector = [subvector];
+$contrattoId = [contratto];
+
+$pdf = $this->Pdf; 
+// Impostazioni pagina "base": A4 + margini + page break (bordi di default)
+$DEFAULT_MARGIN_L = 15;
+$DEFAULT_MARGIN_T = 20;
+$DEFAULT_MARGIN_R = 15;
+$DEFAULT_MARGIN_B = 10;
+
+// Nota: in TCPDF `SetPageFormat()` può essere `protected`.
+// Evitiamo qualsiasi setter di formato: il formato pagina viene impostato solo via `AddPage(..., 'A4')`.
+
+$applyDefaultPageSetup = function () use (
+    $pdf,
+    $DEFAULT_MARGIN_L,
+    $DEFAULT_MARGIN_T,
+    $DEFAULT_MARGIN_R,
+    $DEFAULT_MARGIN_B
+) {
+    $pdf->SetMargins($DEFAULT_MARGIN_L, $DEFAULT_MARGIN_T, $DEFAULT_MARGIN_R);
+    $pdf->SetAutoPageBreak(true, $DEFAULT_MARGIN_B);
+};
+
+$applyDefaultPageSetup();
+
+// Spaziature globali (TCPDF-like): padding celle + rapporto altezza riga.
+// Se i metodi non esistono (libreria diversa), viene ignorato senza errori.
+if (method_exists($pdf, 'setCellPaddings')) {
+    $pdf->setCellPaddings(1.2, 1.0, 1.2, 1.0);
+}
+if (method_exists($pdf, 'setCellHeightRatio')) {
+    $pdf->setCellHeightRatio(1.18);
+}
+
+$formatDbDate = function ($value) {
+    $value = trim((string)$value);
+    if ($value === '' || $value === '0000-00-00') return '';
+
+    // Gestisce sia DATE (YYYY-MM-DD) sia DATETIME (YYYY-MM-DD HH:MM:SS)
+    $base = substr($value, 0, 10);
+    $dt = \DateTime::createFromFormat('Y-m-d', $base);
+    if ($dt instanceof \DateTime) return $dt->format('d/m/Y');
+
+    $ts = strtotime($value);
+    if ($ts !== false) return date('d/m/Y', $ts);
+
+    return $value;
+};
+
+
+$subvectorData = $this->getSubvectorData($subvector);
+
+$nome_vettore   = isset($subvectorData[0][0])  ? (string)$subvectorData[0][0]  : '';
+$sede_citta     = isset($subvectorData[0][1])  ? (string)$subvectorData[0][1]  : '';
+$sede_provincia = isset($subvectorData[0][2])  ? (string)$subvectorData[0][2]  : '';
+$indirizzo      = isset($subvectorData[0][3])  ? (string)$subvectorData[0][3]  : '';
+$civico         = isset($subvectorData[0][4])  ? (string)$subvectorData[0][4]  : '';
+$cod_fiscale    = isset($subvectorData[0][5])  ? (string)$subvectorData[0][5]  : '';
+$piva           = isset($subvectorData[0][6])  ? (string)$subvectorData[0][6]  : '';
+$num_reg_imp    = isset($subvectorData[0][7])  ? (string)$subvectorData[0][7]  : '';
+$loc_reg_imp    = isset($subvectorData[0][8])  ? (string)$subvectorData[0][8]  : '';
+$rea            = isset($subvectorData[0][9])  ? (string)$subvectorData[0][9]  : '';
+$telefono       = isset($subvectorData[0][10]) ? (string)$subvectorData[0][10] : '';
+
+$subvectorLegalData = $this->getSubvectorLegalData($subvector, $contrattoId);
+
+$num_iscrizione_albo   				= isset($subvectorLegalData[0][0])  ? (string)$subvectorLegalData[0][0]  : '';
+$nome_rappresentante     			= isset($subvectorLegalData[0][1])  ? (string)$subvectorLegalData[0][1]  : '';
+$cognome_rappresentante 				= isset($subvectorLegalData[0][2])  ? (string)$subvectorLegalData[0][2]  : '';
+$luogo_nascita_rappresentante 		= isset($subvectorLegalData[0][3])  ? (string)$subvectorLegalData[0][3]  : '';
+$prov_luogo_nascita_rappresentante  = isset($subvectorLegalData[0][4])  ? (string)$subvectorLegalData[0][4]  : '';
+$data_nascita_rappresentante        = isset($subvectorLegalData[0][5])  ? (string)$subvectorLegalData[0][5]  : '';
+$data_nascita_rappresentante        = $formatDbDate($data_nascita_rappresentante);
+ 
+
+
+$nome = $nome_vettore;
+
+$sanitizePdfFilenamePart = function ($value) {
+    $value = (string)$value;
+    $value = str_replace(array('\\', '/', ':', '*', '?', '"', '<', '>', '|', "\0"), '_', $value);
+    $value = preg_replace('/\s+/u', '_', $value);
+    $value = preg_replace('/_+/u', '_', $value);
+    return trim($value, '._ ');
+};
+$pdfBaseName = 'contratto_' . (string)$contrattoId . '_' . $sanitizePdfFilenamePart($nome_vettore) . '_' . date('Y-m-d');
+$title = $pdfBaseName;
+$pdfFileName = $pdfBaseName . '.pdf';
+
+$pdf->SetTitle($title);
+
+$easygnSignVisuals = array('vettore' => array(), 'committente' => array());
+$easygnSignPush = function ($role, $page, $x, $y, $w, $h) use (&$easygnSignVisuals) {
+    if (!isset($easygnSignVisuals[$role])) {
+        $easygnSignVisuals[$role] = array();
+    }
+    $easygnSignVisuals[$role][] = array(
+        'page' => (int)$page,
+        'x'    => (float)$x,
+        'y'    => (float)$y,
+        'w'    => (float)$w,
+        'h'    => (float)$h,
+    );
+};
+$contrattiAttachEasygnSignMeta = function ($pdf, array $visuals) {
+    $payload = 'EGN_SIGN:' . base64_encode(json_encode(
+        array('version' => 1, 'visuals' => $visuals),
+        JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+    ));
+    if (method_exists($pdf, 'SetSubject')) {
+        $pdf->SetSubject($payload);
+    }
+};
+
+// Abilita placeholder {nb} per numero totale pagine (TCPDF-style)
+if (method_exists($pdf, 'AliasNbPages')) {
+    $pdf->AliasNbPages();
+}
+
+$ch = 7; // Altezza interlinea standard
+
+// Utility spaziature verticali coerenti tra "blocchi"
+$vspace = function ($mm) use ($pdf) {
+    $mm = (float)$mm;
+    if ($mm <= 0) return;
+    $pdf->Ln($mm);
+};
+$vspaceSm = function () use ($vspace) { $vspace(1.6); };
+$vspaceMd = function () use ($vspace) { $vspace(2.6); };
+$vspaceLg = function () use ($vspace) { $vspace(4.2); };
+
+// --- FRONTESPIZIO / TITOLO ---
+// Rettangolo "Spazio per la data certa" sopra il titolo (adattato alla pagina)
+$margL = 15; $margR = 15;
+if (method_exists($pdf, 'getMargins')) {
+    $m = $pdf->getMargins();
+    if (is_array($m)) {
+        if (isset($m['l'])) $margL = (float)$m['l'];
+        if (isset($m['r'])) $margR = (float)$m['r'];
+    }
+}
+$pageW = 210;
+if (method_exists($pdf, 'getPageWidth')) $pageW = (float)$pdf->getPageWidth();
+$rectX = $margL;
+$rectW = $pageW - $margL - $margR;
+if ($rectW < 120) $rectW = 180;
+$rectY = $pdf->GetY();
+$rectH = 14.0; // altezza box come da template
+
+$pdf->SetLineWidth(0.3);
+$pdf->Rect($rectX, $rectY, $rectW, $rectH);
+
+// Layout interno: sinistra / centro / destra
+$innerPad = 1.2;
+$wLeft = $rectW * 0.47;
+$wMid  = $rectW * 0.24;
+// Spazio tra "Data" e "Firma" per evitare elementi troppo ravvicinati
+$gapMidRight = 4.0;
+$wRight = $rectW - $wLeft - $wMid - $gapMidRight;
+if ($wRight < 45) { // safety: non comprimere troppo la colonna destra
+    $gapMidRight = 2.5;
+    $wRight = $rectW - $wLeft - $wMid - $gapMidRight;
+}
+
+$data_certa_tmp = date('d/m/Y');
+$firma_committente_tmp = '___________________________';
+
+// Font piccoli
+$pdf->SetFont('Arial', '', 8.0);
+
+// Sinistra (2 righe)
+$pdf->SetXY($rectX + $innerPad, $rectY + 1.2);
+$txtLeft = "Spazio per la data certa.\nApposizione data certa a mezzo Pec.";
+$pdf->MultiCell($wLeft - $innerPad, 3.0, $txtLeft, 0, 'L', false);
+
+// Centro: etichetta Data + box giallo date
+$pdf->SetXY($rectX + $innerPad + $wLeft, $rectY + 1.2);
+$pdf->Cell($wMid - $innerPad, 3.0, 'Data', 0, 0, 'C');
+$pdf->SetXY($rectX + $innerPad + $wLeft, $rectY + 4.2);
+$pdf->SetFillColor(255, 255, 255);
+$pdf->Cell($wMid - $innerPad, 3.6, (string)$data_certa_tmp, 0, 0, 'C', false);
+$pdf->SetFillColor(255, 255, 255);
+
+// Destra: Firma + underscore
+$pdf->SetXY($rectX + $innerPad + $wLeft + $wMid + $gapMidRight, $rectY + 1.2);
+$pdf->Cell($wRight - $innerPad, 3.0, 'Firma:', 0, 0, 'L');
+$pdf->SetXY($rectX + $innerPad + $wLeft + $wMid + $gapMidRight, $rectY + 4.2);
+$pdf->Cell($wRight - $innerPad, 3.6, (string)$firma_committente_tmp, 0, 0, 'L');
+
+// Footer box: "Documento unico..."
+// In TCPDF la sostituzione del totale pagine avviene tramite alias (es. {nb}).
+// Alcuni wrapper (es. Scriptcase) gestiscono meglio l’alias via `getAliasNbPages()`.
+$nbPagesAlias = '{nb}';
+if (method_exists($pdf, 'getAliasNbPages')) {
+    $nbPagesAlias = (string)$pdf->getAliasNbPages();
+}
+$pdf->SetFont('Arial', '', 6.8);
+// Posizionamento leggermente più alto per evitare overlap col bordo inferiore del box.
+$pdf->SetXY($rectX + 1.0, $rectY + $rectH - 4.0);
+$pdf->Cell($rectW - 2.0, 3.0, 'Documento unico formato da n. ' . $nbPagesAlias . ' pagine', 0, 0, 'R');
+
+// Riquadro firma committente in frontespizio (pag. 1)
+$easygnSignPush('committente', 1, 160, 12.5, 32.51, 5.01);
+
+// Titolo contratto subito sotto il box
+$vspaceMd();
+$pdf->SetFont('Arial', 'B', 12);
+$pdf->Cell(0, 10, 'CONTRATTO DI TRASPORTO DI MERCI SU STRADA N. ' . $contrattoId . '/' . date('Y') , 0, 1, 'C');
+$vspaceLg();
+
+// --- CORPO DEL CONTRATTO (TESTO) ---
+$pdf->SetFont('Arial', '', 10);
+
+// - blocco "Firma: ______________________"
+// - firme finali (underscores dopo COMMITTENTE/VETTORE)
+
+
+// Interlinea Word-like: 10pt * 1.15 => 11.5pt => ~4.06mm
+$ch = 11.5 * 0.3527777778;
+
+
+$data_certa = date('d/m/Y'); // sostituisce "__/__/202_" (dinamico: data odierna)
+$firma_committente = '___________________________';
+$firma_vettore = '___________________________';
+$contractHtmlPath = 'c:/Users/dvdch/Downloads/Pigliacelli docs/CONTRATTO/contratto di trasporto.htm';
+$htmlContratto = '';
+$renderTraCentered = false;
+
+if (is_readable($contractHtmlPath)) {
+    $rawHtml = @file_get_contents($contractHtmlPath);
+    if ($rawHtml !== false && $rawHtml !== '') {
+        // I file Word/HTML possono avere encoding non UTF-8.
+        if (function_exists('mb_convert_encoding')) {
+            $rawHtml = mb_convert_encoding($rawHtml, 'UTF-8', 'UTF-8, ISO-8859-1, Windows-1252');
+        }
+
+        // Estrae solo il body, cosi' evitiamo stili/meta che disturbano TCPDF.
+        if (preg_match('/<body[^>]*>(.*)<\/body>/is', $rawHtml, $m)) {
+            $htmlContratto = $m[1];
+        } else {
+            $htmlContratto = $rawHtml;
+        }
+
+        // Pulizia minima markup Word/MSO.
+        $htmlContratto = preg_replace('/<!--\[if.*?<!\[endif\]-->/is', '', $htmlContratto);
+        $htmlContratto = preg_replace('/<o:p>\s*<\/o:p>/i', '', $htmlContratto);
+        $htmlContratto = preg_replace('/<o:p>.*?<\/o:p>/is', '', $htmlContratto);
+
+        // "Tra" iniziale al centro: rimuove il primo "Tra" dal corpo HTML
+        // e lo renderizza separatamente centrato.
+        $htmlBefore = $htmlContratto;
+        $htmlContratto = preg_replace('/>\s*Tra\s*</u', '><', $htmlContratto, 1);
+        if ($htmlContratto !== null && $htmlContratto !== $htmlBefore) {
+            $renderTraCentered = true;
+        }
+
+        // Una spaziatura dopo "...ISO 9001/2015 e".
+        $htmlContratto = str_replace(
+            'ISO 9001/2015 e',
+            'ISO 9001/2015 e<br>',
+            $htmlContratto
+        );
+
+        // Una spaziatura tra un articolo e l'altro.
+        $htmlContratto = preg_replace('/(Art\.\s*\d+\))/u', '<br>$1', $htmlContratto);
+    }
+}
+
+// Data certa anche nel template HTML (se presente come placeholder "__/__/202_")
+if ($htmlContratto !== '') {
+    $htmlContratto = preg_replace('/__\/__\/202_/u', (string)$data_certa, $htmlContratto);
+}
+
+$testo_contratto = <<<'EOT'
+                                                                                            Tra
+Il Committente 
+Autotrasporti Pigliacelli S.p.A. con sede a Veroli (FR) in via Sant’Anna n. 80, Partita Iva, Codice Fiscale e n. di iscrizione al Registro delle Imprese di Frosinone 00169560604, R.E.A. 59333, in persona del Consigliere Delegato sig. Marcello Pigliacelli, nato ad Alatri (FR) il 03/01/1963 (di seguito Committente), che opera secondo il sistema di qualità conforme ai requisiti della normativa internazionale ISO 9001/2015 e
+Il Vettore 
+__________ con sede a _______ (__), Via ______ n. ___, Codice Fiscale, P. Iva e numero di iscrizione al Registro Imprese di ________ __________, R.E.A. ______, iscritta all’Albo Nazionale degli Autotrasportatori di cose per conto terzi al n. ___________, iscritta al REN (Registro Elettronico Nazionale delle imprese che sono autorizzate all’esercizio della professione di trasportatore di merci o persone su strada), in persona del suo Legale rappresentante sig. ________, nato a _____ (__) il __/__/____ (di seguito Vettore) 
+si conviene e stipula quando segue:
+
+Art. 1) IDENTIFICAZIONI DELLE PARTI E OGGETTO DEL CONTRATTO:
+Il Proprietario Merci: vedi (Allegato A)
+Il Caricatore Delle Merci: vedi (Allegato A)
+Oggetto del presente Contratto sono i servizi di trasporto che il Vettore eseguirà su ordine del Committente in conformità a quanto pattuito nel presente Contratto. Il presente atto costituisce l’unico contratto esistente tra le parti: pertanto eventuali accordi o intese pregresse sono da considerarsi superati.
+In particolare, l'oggetto del contratto consiste nell'esecuzione, da parte del Vettore, dei servizi di trasporto di merci come da Allegato A (Tipologia Merce, Tariffe e Tempi di Carico e Scarico), che saranno ordinati dal Committente, nell’esecuzione dei contratti da questi conclusi con i suoi mittenti, con i tempi e le modalità di seguito indicate e a fronte del corrispettivo previsto nel successivo articolo 10 del presente Contratto.
+Oggetto del presente Contratto sono i servizi di trasporto in quanto tali, anche nel caso in cui siano eseguiti con più autoveicoli del Vettore ed abbiano continuità nel tempo. Le obbligazioni contratte dal Vettore non costituiscono un contratto di appalto di servizi, non essendo il Vettore impegnato ad una specifica organizzazione di uomini e di mezzi, né costituiscono un impegno “a fermo” per l’esecuzione del complesso dei servizi stessi. In particolare, il Vettore si impegna ad eseguire ogni singolo servizio, consistente nel trasporto delle merci dal luogo di carico a quello di scarico e riconsegna.
+                         
+
+
+Il presente contratto è stipulato ai sensi dell’art. 2 del Decreto Dirigenziale del Ministero delle Infrastrutture e dei Trasporti in data 1° febbraio 2006, pubblicato sulla G. U. n. 31 del 7 febbraio 2006, in forza del quale le parti mantengono “la facoltà di scegliere altre formulazioni contrattuali” diverse da quelle di cui al predetto decreto “purché contengano gli elementi essenziali di cui all’art. 6, comma 3” del D. Lgs. n. 286 del 2005.
+Il Contratto disciplina tutti i trasporti che il Committente di volta in volta commissionerà al Vettore (nel seguito del presente atto indicati anche semplicemente come le “Consegne”), che dovranno essere eseguiti dal Vettore utilizzando automezzi che abbiano portata utile e caratteristiche tecniche idonee e compatibili con la tipologia ed il quantitativo di merce da trasportare. 
+Le Parti si danno vicendevolmente atto che il Committente non assume alcun obbligo di esclusiva nei confronti del Vettore, cosicché sarà totalmente libero di affidare l’esecuzione di trasporti e, in particolare, di trasporti analoghi a quelli di cui al presente contratto, anche ad altri autotrasportatori, così come non assume alcun impegno in termini di volumi di traffico. Le Parti si danno altresì vicendevolmente atto che nessun impegno in termini di esclusiva viene assunto dal Vettore. Gli allegati formano parte integrante e sostanziale del Contratto, come pure l'Ordine di Carico, il Documento di Trasporto e/o i documenti equipollenti emessi in relazione a ciascuna Consegna, in cui sono indicati in dettaglio eventuali elementi integrativi del contratto.
+Preliminarmente alla stipulazione del presente contratto la Autotrasporti Pigliacelli S.p.a. ha eseguito sul portale dell'Albo dell'autotrasporto la verifica sulla regolarità del vettore ai sensi dell'art. 1, comma 248 della legge 23 dicembre 2014 n. 190, e, all'esito delle risultanze delle elaborazioni tecniche effettuate sulla base dei dati trasmessi in via telematica dalle Amministrazioni ed Enti competenti, la posizione del vettore è risultata regolare con riferimento all'iscrizione all'Albo nazionale degli autotrasportatori, all'iscrizione al Registro Elettronico Nazionale, alla Camera di Commercio ed alla regolarità contributiva.
+
+Art. 2) ELEMENTI ESSENZIALI DEL CONTRATTO
+Le Parti si danno vicendevolmente atto che le Consegne:
+- avranno ad oggetto merci della tipologia indicata nell’Allegato A e/o specificata mediante annotazione nell'Ordine di Carico e/o nel Documento di Trasporto e/o nei documenti equipollenti emessi in relazione a ciascuna Consegna;
+- avranno ad oggetto il quantitativo di tali merci specificato mediante annotazione nell'Ordine di Carico e/o nel Documento di Trasporto e/o nei documenti equipollenti emessi in relazione a ciascuna Consegna, fermo restando che il Vettore dovrà mettere a disposizione per il trasporto un veicolo idoneo ad eseguirlo, anche con riferimento al rispetto delle indicazioni contenute nella relativa carta di circolazione;
+- avranno i luoghi di presa in consegna della merce da parte del Vettore e di riconsegna della stessa al destinatario specificati di volta in volta mediante annotazione nell'Ordine di Carico e/o nel Documento di Trasporto e/o nei documenti equipollenti emessi in relazione a ciascuna Consegna; 
+- saranno remunerati con i corrispettivi e secondo le modalità indicate nel successivo articolo 10; 
+- verranno eseguiti utilizzando i mezzi individuati nell’ Allegato B (Elenco mezzi), fermo restando che: 
+a. il Vettore avrà facoltà di utilizzare mezzi diversi da quelli ivi indicati dandone comunicazione al Committente in forma scritta (anche a mezzo fax o a mezzo e-mail) prima della presa in consegna della merce, indicando tutti gli estremi identificativi del veicolo utilizzato, compresa la portata utile;
+       
+
+b. il Vettore assume specifico impegno di aggiornare la lista dei mezzi di cui all’Allegato B, secondo le modalità indicate nel successivo articolo 19;
+- avranno quale caricatore il Committente, ovvero il diverso soggetto indicato mediante annotazione nell'Ordine di Carico e/o nel Documento di Trasporto e/o nei documenti equipollenti emessi in relazione a ciascuna Consegna;
+- avranno i tempi massimi per il carico e lo scarico della merce indicati nell’Allegato A.   
+Tenuto conto del fatto che il presente contratto regola una pluralità di trasporti in relazione ai quali non possono essere previamente individuati tutti gli elementi essenziali di cui all’art. 6, comma III, del D.Lgs. 286/05, gli elementi essenziali mancanti e specifici di ogni singolo trasporto verranno indicati mediante annotazione nell'Ordine di Carico e/o nel Documento di Trasporto e/o nei documenti equipollenti - che le Parti considerano parti integranti e sostanziali del presente contratto in forma scritta ai sensi del D.Lgs. 286/05 – emessi in occasione di ogni trasporto o gruppo di trasporti commissionati dal Committente al Vettore. Le Parti si danno vicendevolmente atto che le indicazioni eventualmente contenute nell’Ordine di Carico e/o nel Documento di Trasporto e/o nei documenti equipollenti in relazione a ciascuna Consegna prevalgono su quanto pattuito nel Contratto, ove incompatibili, in quanto le Parti concordemente attribuiscono ad essi efficacia derogativa.
+Art. 3) OBBLIGHI DEL VETTORE
+Il Vettore assume specifico impegno ed obbligo di:
+- di attenersi scrupolosamente alle politiche, alle procedure, alle istruzioni operative, alle norme comportamentali e di sicurezza, contenute nel Manuale del Vettore;
+- eseguire le Consegne con la migliore diligenza possibile, utilizzando veicoli, strumenti, attrezzature e risorse umane idonee all’esecuzione delle Consegne stesse ed in misura adeguata per la corretta e puntuale esecuzione;
+- eseguire le Consegne attenendosi scrupolosamente alle indicazioni impartite ed a quanto previsto dal Contratto e dai suoi allegati;
+- prendere in consegna la merce all’interno del Deposito nelle zone predisposte per il carico sugli automezzi;
+- segnalare al personale addetto al Deposito e al Committente eventuali vizi della merce e/o degli imballi da trasportare e farne annotazione sui relativi documenti di trasporto, fermo restando che in caso di mancata formulazione di specifiche riserve la merce e gli imballi si considereranno essere stati presi in carico dal Vettore in perfetto stato;
+- controllare, a carico ultimato, la correttezza e la sicurezza dello stesso;
+- ritirare i documenti di trasporto che dovranno essere sottoscritti dal Vettore e far sottoscrivere gli stessi agli addetti del destinatario per ricevuta;
+- provvedere a mettere i prodotti trasportati a disposizione del destinatario, nel luogo, nel termine e con le modalità previste dalla presente scrittura o comunque indicate dal Committente nell'Ordine di Carico e/o nel Documento di Trasporto e/o nei documenti equipollenti emessi in relazione a ciascuna Consegna;     
+- segnalare al Committente, al termine di ciascuna Consegna, le circostanze che abbiano ostacolato la regolarità del servizio;
+- inoltrare al Committente e a tutte le Parti interessate copia dei documenti di trasporto e doganali, inclusa la ricevuta di intercambio di attrezzature; 
+- produrre al Committente, a sua semplice richiesta, la documentazione certificativa dell’iscrizione all’Albo degli autotrasportatori di cose per conto di terzi (o altro titolo abilitativo), il certificato di iscrizione alla CCIAA, il certificato REN, la documentazione certificativa dell’iscrizione all’Albo Gestori Ambientali, le autorizzazioni e la documentazione tecnica relativa alle attrezzature in dotazione agli automezzi (quali in via esemplificativa e non esaustiva, cronotachigrafi ecc.), nonché le carte di circolazione degli automezzi stessi ed ogni altro documento relativo alla regolarità amministrativa dell’attività vettoriale svolta e/o all’idoneità degli automezzi e/o all’idoneità del personale di cui il Vettore si avvale;
+- fornire al Committente, al momento della conclusione del contratto, nonché durante la vigenza dello stesso con cadenza trimestrale e/o su specifica richiesta del Committente, la documentazione attestante la regolarità del versamento dei contributi assicurativi e previdenziali, rilasciata dagli enti previdenziali in data non anteriore a tre mesi.
+Il Vettore nella pianificazione del viaggio dovrà tener conto della presenza durante il percorso di aree in cui poter sostare l’automezzo garantendo la sicurezza del proprio personale e del mezzo individuando parcheggio sicuri e aree di sosta autorizzate.
+Il Vettore raccoglie i dati sulle emissioni di gas ad effetto serra provenienti dai propri mezzi.
+I veicoli utilizzati per le Consegne dovranno in ogni caso:
+- essere in regola con le vigenti disposizioni in tema di circolazione stradale, di autotrasporto ed in generale di trasporto di cose, di trasporto di rifiuti pericolosi e non pericolosi, di merci e rifiuti in regime ADR, di merci alimentari e zootecniche;
+- avere portata utile idonea al quantitativo di merce da trasportare, nel rispetto delle disposizioni del Codice della Strada e della normativa vigente; 
+- essere oggetto di regolare manutenzione, ordinaria e straordinaria, meccanica e di carrozzeria;
+- essere attrezzati con ogni strumento e/o dotazione necessari per affrontare i trasporti in sicurezza nel rispetto delle norme a tutela della circolazione stradale;
+- in caso di trasporto con silo veicoli, essere revisionati secondo quanto disposto dalla normativa vigente e controllati con cadenza programmata sul corpo del silo veicolo, sui tubi flessibili, sugli elementi di sicurezza, sulle culatte e passi d’uomo e su ogni altro elemento della cisterna;
+- essere lavati esclusivamente in stazioni di lavaggio indicate dal Committente;
+- avere a bordo del veicolo la documentazione idonea a dimostrare il titolo in base al quale l’autista presta servizio presso il Vettore stesso e, se il conducente è cittadino extracomunitario, l'attestato del conducente di cui al regolamento (CE) n. 484/2002 del Parlamento europeo e del Consiglio del 1° marzo 2002 e s.m.i..
+- implementare il programma BBS per la guida e per il carico/scarico, secondo le linee guida Cefic BBS su detti temi.
+Il Vettore si impegna inoltre a garantire che, nei trasporti di merci confezionate (in sacchi, cartoni, balle ecc.) effettuati con automezzi “cassonati” e/o furgonati, i piani di carico, le sponde e le pareti siano perfettamente puliti ed in ottimo stato d’uso, ed in particolare che non presentino fessure e/o sporgenze come chiodi, schegge ecc. che possano in qualsiasi modo danneggiare le merci trasportate.
+Nell’esecuzione delle Consegne, il Vettore sarà tenuto (ed assume specifica obbligazione in tal senso) a rispettare e far rispettare rigorosamente dai suoi dipendenti, preposti, collaboratori e/o ausiliari:
+- tutte le disposizioni legislative, regolamentari e di altro genere, ivi compresi gli ordini impartiti dalle Autorità a ciò preposte, poste a tutela della sicurezza della circolazione stradale, con particolare riferimento 
+a. quelle in materia di autotrasporto di merci per conto di terzi;
+b. quelle in materia di sagoma limite (art. 61); massa limite (art. 62); limiti di velocità (art. 142); sistemazione del carico sui veicoli (art. 164); trasporto di cose su veicoli a motore e sui rimorchi (art. 167); durata della guida degli autoveicoli (art. 174) di cui al D. Lgs. 30 aprile 1992, n. 285 e successive modificazioni e integrazioni; 
+c. tutte le disposizioni legislative, regolamentari e di altro genere, ivi compresi gli ordini impartiti dalle Autorità a ciò preposte, in materia di sicurezza sociale e, in particolare, quelle:
+i) relative all’osservanza dei contratti collettivi ed individuali di lavoro;
+ii) relative alla previdenza ed assistenza;
+iii) relative alla sicurezza sul lavoro.
+d) tutte le disposizioni vigenti in materia di tempi di guida e riposo, nonché in materia di rispetto dei tempi di archiviazione dei dischi cronotachigrafici.
+Il Vettore dichiara inoltre di essere a conoscenza e si obbliga a rispettare le disposizioni vigenti in materia di trasporto rifiuti di cui al D.Lgs. 152/06 e s.m.i. Il trasporto di detti prodotti dovrà, altresì, avvenire nel pieno rispetto delle indicazioni contenute nella carta di circolazione dei veicoli adibiti al trasporto degli stessi. Con la sottoscrizione del presente accordo il Vettore dichiara la regolarità della propria iscrizione all’Albo nazionale degli autotrasportatori (o di altro titolo abilitativo), nonché dell’esercizio dell’attività di autotrasporto e degli eventuali servizi accessori. Il Vettore, pertanto, risponde integralmente della violazione di tali disposizioni e si impegna a tenere il Committente manlevato ed indenne da qualsiasi pregiudizio che il Committente stesso dovesse subire in conseguenza di ogni pretesa, richiesta o azione, da chiunque, a qualsiasi titolo ed in qualsiasi sede, avanzata in relazione e in conseguenza della violazione delle disposizioni legislative e regolamentari poste a tutela della sicurezza della circolazione stradale e della sicurezza sociale. Resteranno, quindi, a carico del Vettore tutti i relativi danni, costi, oneri e spese, nonché le sanzioni civili, penali e amministrative, e quant’altro, previste dalla normativa vigente in materia.
+
+Art. 4) SUB-VETTORI
+Il Vettore non può a sua volta affidare ad altro vettore, neanche parzialmente, lo svolgimento della prestazione di trasporto. 
+Il Vettore si impegna a manlevare e a tenere indenne il Committente da eventuali sanzioni comminate al Committente per la violazione dell’obbligo suindicato.
+Il mancato rispetto dei sopradetti impegni costituisce inadempimento contrattuale e consentirà al Committente di considerare risolto di diritto il presente contratto ai sensi dell’art. 1456 c.c. con comunicazione trasmessa al Vettore a mezzo fax ovvero e-mail o con qualunque altra modalità idonea allo scopo.
+
+Art. 5) DOCUMENTI EMESSI IN RELAZIONE AD OGNI CONSEGNA.
+Il Committente, nei casi previsti dalle disposizioni vigenti, emetterà e consegnerà al Vettore per ogni servizio, salvo per i trasporti di merci a collettame, l'Ordine di Carico e/o il Documento di Trasporto e/o i documenti equipollenti, con indicazione degli elementi previsti dal D.Lgs. 286/05 e dalle successive norme di attuazione. 
+Il Vettore consegnerà al Committente (contestualmente e/o antecedentemente alla presa in consegna della merce) copia dell'Ordine di Carico e/o del Documento di Trasporto e/o dei documenti equipollenti da esso (e/o da suo personale a tal fine delegato, in forza di espresso e formale mandato in tal senso) sottoscritti. 
+Il Vettore si impegna espressamente a conservare copia dei documenti indicati dal comma 1 dell’articolo 7-bis del D.l. 286/05, sul mezzo con cui è eseguita la Consegna, come previsto dalle disposizioni normative vigenti.
+Contestualmente alla presa in consegna della merce l’autista consegnerà al Committente copia dell’Ordine di Trasporto sottoscritta dal Vettore ovvero sottoscriverà l’Ordine laddove agisca in nome e per conto del Vettore, in forza di espresso e formale mandato in tal senso. 
+
+Art. 6) ESECUZIONE DELLE CONSEGNE
+Le Parti si danno vicendevolmente atto che il rispetto delle vigenti disposizioni legislative e regolamentari poste a tutela della sicurezza della circolazione stradale e della sicurezza sui luoghi di lavoro costituisce un valore primario, che deve necessariamente prevalere su ogni loro pattuizione. In questa prospettiva, il Committente si impegna ad impartire al Vettore istruzioni compatibili con il rispetto di tale normativa, sia per quanto attiene ai quantitativi di merce caricati su ogni singolo mezzo sia per quanto attiene alla tempistica di consegna, mentre il Vettore si impegna a segnalare immediatamente al Committente il caso in cui gli venissero impartite istruzioni anche solo potenzialmente incompatibili con il rispetto di tale normativa ed a non rispettare eventuali istruzioni che dovessero essere impartite dal personale della Committente e/o da terzi incompatibili con tale normativa.
+Fermo restando quanto sopra previsto, le Parti si danno altresì vicendevolmente atto che la particolare natura dell’attività prestata dal Vettore impone il rispetto dei tempi di consegna concordati e specificati.
+Le istruzioni impartite dal Committente al Vettore relative alla tempistica di consegna dovranno essere contenute nell’Ordine di Carico e/o nel Documento di Trasporto (e/o nei documenti equipollenti emessi in relazione a ciascuna Consegna) consegnati al Vettore prima dell’inizio del viaggio, ovvero in altro documento scritto, cosicché eventuali indicazioni orali impartite dal personale addetto al carico e/o da dipendenti del Committente e/o da terzi dovranno considerarsi prive di effetti, come se non fossero mai state impartite. Il Vettore si impegna a garantire il rispetto delle suddette istruzioni, fatta salva in ogni caso la necessità di evitare la violazione delle norme poste a tutela della sicurezza della circolazione stradale.        
+Il Vettore, nel caso in cui fosse in ritardo rispetto ai tempi previsti per la presa in carico e/o per la consegna, dovrà darne immediata comunicazione al Committente telefonicamente, indicando anche le ragioni del ritardo, in modo tale da consentirle di predisporre, ove possibile, quanto necessario per minimizzare gli effetti negativi del ritardo, ferma restando ogni responsabilità del Vettore in tale caso. Il Vettore in caso di guasti meccanici agli automezzi dovrà in particolare mettere a disposizione del Committente un veicolo sostitutivo, comunque idoneo all’esecuzione del trasporto interessato, indicandone per iscritto gli estremi identificativi, fermo restando che il Committente si riserva facoltà di valutare a suo insindacabile giudizio se affidare la prosecuzione del servizio ad altro vettore. 
+Il Vettore, in caso di emergenze che si manifestano durante l’esecuzione del servizio di trasporto affidatogli, potrà contattare i seguenti numeri: 
+•	Logistica Silos							Tel. +39 0775 812306
+•	Logistica Cassonati, Vasche e Walking Floor	Tel. +39 0775 812301
+•	Logistica Centinati						Tel. +39 0775 812314
+•	24/24								Tel. +39 0775 308105
+
+Art. 7) OBBLIGHI DEL COMMITTENTE
+Il Committente si impegna:
+- a pagare i corrispettivi di cui all’articolo 10 a fronte dei servizi eseguiti dal Vettore;
+
+Art. 8) RESPONSABILITÀ DEL VETTORE
+8.1 Il Vettore si assume ogni e qualsiasi responsabilità connessa all’esecuzione delle Consegne affidategli, rispondendo integralmente per rotture e/o manomissioni delle merci trasportate ai sensi dell’art. 1693 c.c., dal momento del carico delle stesse sino alla consegna agli addetti del destinatario.
+In caso di perdita e/o avaria della merce trasportata, il Vettore sarà ritenuto responsabile secondo quanto previsto dall’art. 1696 cod. civ..
+Il Vettore non potrà in ogni caso opporre alcuna limitazione della responsabilità nel caso in cui la perdita o l'avaria della merce siano stati determinati da dolo o colpa grave del Vettore stesso o dei suoi dipendenti e preposti, ovvero di ogni altro soggetto di cui egli si sia avvalso per l'esecuzione del trasporto. In particolare, ma non in via esaustiva, le Parti danno atto che saranno sempre considerate ipotesi di colpa grave le seguenti fattispecie: impiego di sub-vettori non autorizzati ai sensi dell’art. 4 del presente contratto; lasciare incustoditi gli automezzi, le merci affidate e/o i documenti di trasporto e di accompagnamento merci; il mancato rispetto delle norme e disposizioni del Codice della Strada.
+Il Vettore si impegna a stipulare e mantenere in vigore per l’intera durata del presente Contratto, a sua cura e spese, con primaria compagnia di assicurazioni una o più polizze, di massimale/i adeguato/i, a copertura degli eventuali danni sopra indicati con estensione alla garanzia C (furto o mancata riconsegna merci), nonché a 
+copertura della responsabilità civile verso terzi, ed  a provvedere al regolare versamento dei relativi premi, fornendo, a semplice richiesta del Committente, copia del contratto e/o della Polizza quietanzata. Il Vettore si impegna a comunicare al Committente eventuali cause di nullità e/o limitazione delle coperture stesse.
+Il Committente avrà in ogni caso facoltà di compensare integralmente gli importi ad esso spettati a titolo di risarcimento dei danni subiti per perdita e/o avaria delle cose trasportate con quelli dovuti al Vettore a titolo di corrispettivi per le Consegne.
+Nel caso di inadempimento dell’obbligo di stipulare la polizza assicurativa, il Vettore sarà soggetto a rivalsa da parte della compagnia assicurativa del Committente e/o sarà tenuto all’integrale risarcimento dei danni nei confronti di quest’ultima in relazione al valore della merce, al danneggiamento dei beni di proprietà della stessa e/o per eventuali franchigie assicurative.
+8.2 Il Vettore manleva espressamente il Committente da ogni e qualsiasi danno diretto ed indiretto possa derivare a terzi, persone e/o cose, al personale, ai beni mobili ed immobili del Committente, del Caricatore, del Destinatario e/o di terzi, per effetto, anche solo indiretto e mediato, dell’esecuzione dei trasporti oggetto del presente contratto, per fatto del personale del Vettore o di ulteriori soggetti di cui si sia avvalso, direttamente o indirettamente, nell’esecuzione delle prestazioni contrattuali. Il Vettore provvederà a stipulare una idonea polizza di assicurazione a copertura della responsabilità civile verso terzi con primaria compagnia assicurativa a copertura di tutti i rischi suddetti con adeguati massimali, inviandone copia al Committente. Il Vettore non può esercitare, nei confronti del Proprietario delle merci e/o Cliente, azione diretta per conseguire il pagamento di quanto dovuto. 
+8.3 Il Vettore si impegna a rispettare e a far rispettare al proprio personale, nella esecuzione dei servizi di trasporto affidatigli dal Committente, le norme in materie ambientale tra cui, a titolo esemplificativo ma non esaustivo, il D.Lgs. 152/2006 s.m.i., la normativa ADR, il Codice della Strada e ogni altra normativa vigente afferente alle attività svolte, non espressamente indicata nel presente contratto. Il Vettore è da ritenersi esclusivo responsabile dei danni procurati a sé e/o a terzi che conseguono direttamente e/o indirettamente dalle violazioni delle norme suindicate. Il Vettore si impegna a manlevare il Committente da qualsiasi responsabilità, civile, penale, economica, che possa derivare da tali violazioni.
+
+Art. 9) RITARDO
+Le Consegne avverranno nel rispetto dei termini indicati nel contratto e/o nell'Ordine di Carico e/o nei documenti equipollenti emessi in relazione a ciascuna Consegna. Il Vettore si impegna a garantire il rispetto dei suddetti termini, fatta salva in ogni caso la necessità di evitare la violazione delle norme poste a tutela della sicurezza della circolazione stradale.
+Il Vettore, nel caso in cui fosse in ritardo rispetto ai tempi previsti per la presa in carico e/o per la consegna, dovrà darne immediata comunicazione al Committente telefonicamente, indicando anche le ragioni del ritardo, in modo tale da consentirgli di predisporre, ove possibile, quanto necessario per minimizzare gli effetti negativi del ritardo.
+
+Art. 10) CORRISPETTIVO DEL TRASPORTO E FATTURAZIONE
+10.1 Le tariffe di trasporto di cui all’ Allegato A sono il corrispettivo per il servizio effettuato dal luogo di carico fino al luogo di scarico, nonché di ogni altra prestazione dovuta dal Vettore ai sensi del presente contratto.
+       
+
+I corrispettivi pattuiti comprendono qualsiasi onere necessario per l’esecuzione del trasporto (pedaggi, carnet, T.I.R., diritti di transito, equipaggiamento del veicolo, dotazioni particolari per la protezione del personale viaggiante, ecc.), compresi i tempi di attesa al carico ed allo scarico, e tengono conto dei principi di adeguatezza in materia di sicurezza stradale e sociale.
+Tutti i corrispettivi sono da considerarsi al netto di IVA e potranno essere soggetti a revisione solamente in caso di variazione delle modalità operative dei servizi di trasporto, previo accordo scritto fra le Parti.
+Il vettore dichiara che i corrispettivi sono stati concordati in piena autonomia, e non costituiscono abuso di dipendenza economica.
+10.2 Le Parti convengono che i corrispettivi dei servizi di trasporto rimarranno in ogni caso, per tutta la durata del presente Contratto, quelli dell’Allegato A, e sono stati determinati e concordati tra le parti tenendo conto dei principi di adeguatezza in materia di sicurezza stradale e sociale, nonché dei costi di esercizio dell'impresa del vettore, ed i costi per i servizi di programmazione dei viaggi, e sono ritenuti congrui con riferimento ai costi di esercizio che il vettore sostiene per l’esecuzione dei servizi oggetto del presente contratto, anche secondo quanto previsto dal decreto direttoriale del Ministero delle Infrastrutture e della Mobilità Sostenibile con riguardo alle tabelle relative ai valori di riferimento dei costi di esercizio delle imprese di autotrasporto ai sensi della Legge n.190/2014. Il corrispettivo come sopra determinato è da considerarsi a tutti gli effetti comprensivo ed omnicomprensivo di qualsiasi onere accessorio per l’esecuzione del trasporto, inclusi anche gli oneri relativi all’eventuale gestione degli imballaggi/pallets ai sensi di quanto previsto dall’articolo 11 bis D.Lgs. 286/05. Per quanto attiene ai tempi massimi di carico e scarico della merce le Parti stabiliscono in due ore il periodo massimo di franchigia, sia per il carico sia per lo scarico, oltre il quale il vettore avrà diritto al pagamento di un’indennità calcolata secondo quanto disposto dall’articolo 6 bis D.Lgs. 286/05.
+10.3 Ai sensi dell’art. 6 del D.Lgs. 21.11.2005, n. 286, come modificato dall’art. 14 del D.L. 22 marzo 2022, n. 21, le Parti dichiarano che il valore del gasolio preso a riferimento al momento della stipulazione del contratto è €2.100,00/1.000 litri Iva inclusa. Il corrispettivo potrà essere modificato solo ed esclusivamente di comune accordo tra le parti e, in caso di necessità, potrà essere adeguato, in aumento o in diminuzione, in osservanza di quanto previsto dall’art. 6, 3° comma, del D.Lgs. 21.11.2005, n. 286, come modificato dal D.L. 21.03.2022, n. 21. Gli adeguamenti che venissero a determinarsi, se in aumento, saranno corrisposti dal Committente al Vettore previa fattura integrativa di quest’ultimo entro il mese di competenza, se in diminuzione saranno addebitati dal Committente al Vettore mediante emissione di fattura e trattenuti dal Committente mediante compensazione con le somme dovute, entro il termine di giorni 60 dall’emissione della fattura.
+10.4 Nel caso di trasporti il cui corrispettivo non può essere determinato ai sensi dell’Allegato A, i corrispettivi dovuti al Vettore saranno concordati di volta in volta al momento dell’ordine e saranno indicati nell'Ordine di Carico e/o nel Documento di Trasporto e/o nei documenti equipollenti emessi in relazione a ciascuna Consegna, ma le condizioni generali previste dal presente contratto si intendono estese anche a tali trasporti.
+10.5 In deroga alla previsione del comma 12 dell’art. 83 bis della legge 133/08, il pagamento del corrispettivo avverrà a giorni 60+28 dalla data di emissione di ogni singola fattura a mezzo B.B..
+Nel caso in cui il Committente intenda contestare la regolarità degli importi fatturati dovrà entro il termine 60 gg. dal ricevimento di ogni singola fattura specificare al Vettore le ragioni della contestazione, a pena di decadenza. 
+      
+
+10.6 Il Vettore decadrà definitivamente ed irrevocabilmente dalla possibilità di sollevare qualsiasi tipo di contestazione in ordine alle tariffe applicate e tenute in considerazione agli effetti della fatturazione ed in ordine ai presupposti di fatto della fatturazione, trascorso il termine di 180 gg. dalla data di emissione di ogni singola fattura.
+Agli effetti di cui ai commi precedenti, le Parti convengono che:
+- al fine di evitare di incorrere nelle predette decadenze, la Parte che intende sollevare una contestazione dovrà inviare all’altra, entro il termine sopra specificato, una lettera raccomandata A.R.;
+- tale missiva dovrà contenere – sempre a pena di decadenza - analitica e specifica indicazione delle contestazioni e dei rilievi sollevati nonché il conteggio delle differenze e/o degli errori riscontrati, con specificazione delle conseguenti variazioni;
+- i termini di pagamento concordati decorreranno, in caso di contestazione, dalla data di esecuzione delle variazioni.
+
+Art. 11) CONSEGNE AGGIUNTIVE
+11.1 La disciplina del presente Contratto troverà applicazione anche per le Consegne non indicate nell’Allegato A ed eventualmente concordate tra le Parti successivamente alla sottoscrizione del Contratto stesso. 
+11.2 Il corrispettivo per le Consegne suindicate sarà determinato secondo quanto disposto dall’art. 10 del presente Contratto.                                                                   
+
+Art. 12) DURATA E RECESSO
+Il Contratto decorre dalla data di sua sottoscrizione e ha durata sino al 31 dicembre dello stesso anno.
+Alla predetta scadenza il rapporto si intende tacitamente rinnovato per l’anno solare successivo (e così via anche successivamente) qualora non venga data disdetta con almeno tre mesi di preavviso a mezzo di lettera raccomandata a.r.. 
+Le Parti hanno facoltà di recedere anticipatamente dal rapporto a mezzo fax o e-mail, che dovrà essere inviata dalla Parte che intende esercitare tale diritto all’altra, entro il 30 novembre dell’anno solare al termine del quale intende ottenere la risoluzione del rapporto. La facoltà di recedere dev’essere obbligatoriamente confermata a mezzo lettera raccomandata a.r. 
+
+Art. 13) DISPOSIZIONI RELATIVE AL PERSONALE DEL VETTORE
+Il Vettore garantisce espressamente che, per lo svolgimento del servizio oggetto del presente contratto, si avvarrà esclusivamente di personale qualificato, di sicura moralità, al quale verrà assicurato un trattamento economico e normativo conforme alle vigenti disposizioni di legge e/o di contratto collettivo in materia di diritto del lavoro e della previdenza sociale (a titolo esemplificativo, le norme in materia retributiva, contributiva previdenziale, assicurativa, igienico – sanitaria ed infortunistica).
+Il Vettore si impegna ad implementare e a garantire il rispetto, da parte di tutto il proprio personale, di una Politica volta a contrastare l’utilizzo di droghe e alcol. 
+Il Vettore assume ogni responsabilità relativa al personale addetto al servizio, manlevando e tenendo indenne il Committente da qualsiasi responsabilità per infortunio e/o danno a cose e/o a persone di qualsiasi genere che dovesse derivare dall’espletamento dei Servizi e/o per qualsiasi richiesta anche di risarcimento danni da parte di terzi.
+Il Vettore garantisce il pieno rispetto delle vigenti disposizioni in materia di lavoro; in ogni caso, le relative responsabilità derivanti da inosservanza delle relative normative, sia civili che penali, rimarranno sempre a totale carico del Vettore.
+A tal proposito il Vettore dichiara di utilizzare risorse, mezzi e personale adeguatamente organizzati al fine di garantire la tutela della salute e della sicurezza dei lavoratori impiegati a svolgere l’opera richiesta.
+Il Vettore si impegna a rispettare tutti gli obblighi derivanti da leggi e norme in tema di sicurezza ed igiene sul lavoro, con particolare riferimento al T.U. sulla sicurezza del lavoro D.L. 81/2008 e successive modificazioni, fornendo al proprio personale le dotazioni ed i dispositivi antinfortunistici idonei ed appropriati al tipo di attività oggetto del presente contratto e verificando, per il tramite dei propri responsabili preposti, la sistematica e corretta applicazione delle norme impartite nonché l’utilizzo delle dotazioni fornite. Il Vettore si impegna a formare/informare ed addestrare il proprio personale conformemente a quanto previsto dal D.Lgs. 81/08 e s.m.i, a formare il proprio personale sull’utilizzo dei D.P.I.. Il Vettore si impegna a gestire, a registrare, nonché a monitorare, le non conformità, gli incidenti, gli infortuni e i quasi incidenti (c.d. near miss). Il Vettore si impegna a rispettare e a far rispettare al proprio personale la normativa nazionale ed internazionale vigente in materia di tempi di guida e riposo, nonché in materia di rispetto dei tempi di archiviazione dei dischi cronotachigrafici.
+Il Vettore si impegna altresì a manlevare il Committente da qualsiasi pretesa e/o istanza del proprio personale, assumendo la responsabilità e tutti gli oneri relativi ed esonerando espressamente il Committente da qualsiasi pretesa e/o richiesta economica che possa essere avanzata nei confronti di quest’ultimo per qualsiasi titolo, ragione o causale (anche a titolo di risarcimento del danno) comunque dipendente o relativa al personale (e così a titolo esemplificativo e non esaustivo, retribuzioni, differenze retributive, accantonamenti del TFR, versamenti contributivi e previdenziali, infortuni sul lavoro).
+Il Vettore si impegna a esigere dai propri dipendenti un contegno corretto durante il servizio ed in particolare far rispettare le prescrizioni in materia di sicurezza della circolazione stradale dettate dal vigente Codice della Strada o da altre disposizioni di legge, dando allo stesso adeguate e precise istruzioni al riguardo.
+Il Committente garantisce la gestione e la registrazione delle non conformità rilevate e si riserva di comunicare al Vettore i nominativi degli autisti che:
+- abbiano avuto diverbi litigiosi e/o discussioni con dipendenti del Committente e/o con terzi in occasione del servizio;
+- non abbiano osservato disposizioni date dal Committente al Vettore riguardanti le modalità di esecuzione delle Consegne;
+A fronte della comunicazione di cui al comma precedente, il Vettore si impegna a non utilizzare ulteriormente per l’esecuzione delle Consegne l’autista utilizzato nel servizio in cui si è verificato uno dei fatti di cui sopra e sia stato segnalato dal Committente.
+         
+
+Art. 14) DIVIETO DI CESSIONE DEL CONTRATTO
+Il presente contratto deve intendersi stipulato “intuitus personae” e non può essere ceduto, in tutto o in parte, senza il previo consenso scritto della parte ceduta.
+
+Art. 15) TRACCIABILITA’ DEI FLUSSI FINANZIARI
+Ai sensi e per gli effetti dell’art. 3, comma 8, della Legge 13 agosto 2010 n. 136, il Vettore si impegna a rispettare gli obblighi di tracciabilità dei flussi finanziari previsti dalla medesima Legge 136/2010. In ottemperanza a quanto disposto dall’art. 3, comma 9 bis della Legge 136/2010 il contratto si risolverà di diritto, ai sensi degli artt. 1456 e 1360 cod. civ., nell’ipotesi in cui per le transazioni eseguite non siano utilizzati il bonifico bancario o postale ovvero gli altri strumenti idonei a consentire la piena tracciabilità delle operazioni, ai sensi e per gli effetti della Legge n. 136/2010. Il Vettore si obbliga, a mente dell’art. 3, comma 9 della Legge n. 136/2010, ad inserire negli eventuali contratti sottoscritti con i subappaltatori o i subcontraenti coinvolti, direttamente o indirettamente, nella prestazione delle attività e/o servizi oggetto del contratto, a pena di nullità assoluta, un’apposita clausola con la quale ciascuno di essi assume gli obblighi di tracciabilità dei flussi finanziari di cui alla medesima Legge n. 136/2010. Di tale inserimento il Vettore renderà apposita dichiarazione ai sensi e per gli effetti del DPR 445/2000. Resta inteso tra le parti che Autotrasporti Pigliacelli Spa si riserva il diritto di effettuare un’indagine a campione circa la veridicità delle dichiarazioni, a tal uopo, rese dal Vettore, di talché in esito delle stesse, riscontrata una dichiarazione non veritiera il contratto si intenderà risolto di diritto. Il Vettore si impegna a comunicare al Committente il conto corrente dedicato alle transazioni commerciali sottoposte alla disciplina della Legge n. 136/2010.
+
+Art. 16) RISERVATEZZA E TUTELA DATI PERSONALI
+Le Parti convengono che tutti i dati e le informazioni necessarie all’esecuzione del presente contratto possono essere trattate solo per dare esecuzione allo stesso e sono protette da un reciproco obbligo di confidenzialità e riservatezza.
+Le Parti si impegnano a conformarsi ad ogni obbligo previsto dal Regolamento (UE) 2016/679 del Parlamento Europeo e del Consiglio del 27 aprile 2016 concernente la “tutela delle persone fisiche con riguardo al trattamento dei dati personali e la libera circolazione dei di tali dati” (di seguito “GDPR”), nonché alle normative nazionali in materia ed ai provvedimenti dell’Autorità Garante per la protezione dei dati personali. Con l’accettazione del contratto, il Vettore riconosce e dà atto che i dati personali (e.g. nominativi, indirizzo email aziendale, ecc.) di propri dipendenti/collaboratori, coinvolti nelle attività di cui al presente contratto, saranno comunicati a Autotrasporti Pigliacelli Spa e da quest’ultima trattati in qualità di Titolare, in persona del Legale Rappresentante pro-tempore, per l’esecuzione del contratto stesso ai sensi e per gli effetti di cui agli artt. 13 e 14 del GDPR, garantendo i diritti dell’Interessato. Inoltre, il Vettore riconosce e dà atto che i predetti dati personali potranno essere comunicati da Autotrasporti Pigliacelli Spa a terzi solo se per accordo o per previsione di legge questi debbano intervenire nell’esecuzione del contratto.
+
+Art. 17) DISPOSIZIONI GENERALI
+Nell’ipotesi che una o più previsioni del presente contratto dovessero essere dichiarate nulle o invalide per qualsiasi ragione, le altre previsioni resteranno pienamente in vigore e le Parti si impegnano sin d’ora, nel migliore spirito di buona fede, ad adempiere alle disposizioni restate in vigore nonché a concordare e ad eseguire modalità che sostituiscano in forma valida, per il raggiungimento delle finalità del presente contratto, la o le previsioni dichiarate nulle o invalide.
+L’eventuale tolleranza di una delle Parti di comportamenti dell’altra costituenti violazioni delle disposizioni di questo contratto, non costituirà rinuncia ai diritti che derivano dalle disposizioni violate, né al diritto di esigere il corretto adempimento di tutti i termini e le condizioni contenute in questo contratto.
+
+Art. 18) CLAUSOLA DI DECADENZA SEMESTRALE
+Il vettore è tenuto a chiedere alla Autotrasporti Pigliacelli s.p.a., a pena di decadenza, le differenze di tariffe e/o di prezzi che egli ritenga dovute, derivanti dall’applicazione del presente contratto o dall’applicazione di qualsivoglia norma di legge vigente e futura, compreso tutto quanto previsto dall’articolo 83 bis del D.L. 112/08, convertito in Legge 133/08 e successive modifiche, anche in materia di adeguamento del corrispettivo agli incrementi del costo del gasolio  e delle tariffe autostradali italiane, nonchè dalle pubblicazioni mensili del Ministero delle Infrastrutture e dei Trasporti dei valori indicativi di riferimento dei costi di esercizio di cui all’art. 1 comma 250 Legge 190/2014 e/o dai valori di riferimento delle imprese di autotrasporto, anche ai sensi dell’art. 14 del D.L. 21.03.2022, n. 21, oppure in applicazione degli usi delle Camere di Commercio e/o degli Accordi Volontari che dovessero entrare in vigore o essere conclusi sulla base del D.Lgs. 286/05 e che potessero in qualche modo trovare applicazione nel rapporto intercorrente tra le parti, posto che le stesse hanno inteso disciplinare il medesimo con espressa esclusione di ogni richiamo e di ogni riferimento a tali usi ed Accordi, nel termine perentorio di sei mesi dalla data delle fatture dei trasporti eseguiti, per i quali ritiene dovute le differenze.
+Il vettore, per far valere i propri diritti nel predetto termine di decadenza semestrale, è tenuta ad inviare alla Autotrasporti Pigliacelli s.p.a. la richiesta scritta delle eventuali differenze che sarebbero dovute, dando analitica dimostrazione del calcolo. Tale richiesta deve essere inviata, sempre a pena di decadenza, alla Autotrasporti Pigliacelli s.p.a. tramite raccomandata con avviso di ricevimento, ovvero tramite PEC, nel predetto termine perentorio di sei mesi.
+La presente clausola di decadenza si intende approvata nel senso che essa costituisce parte autonoma del contratto e produce in ogni caso i suoi effetti indipendentemente dall’efficacia o nullità del contratto stesso, ovvero nel caso in cui il presente contratto sia ritenuto non concluso in forma scritta, ai sensi dell’art.6, comma 6°, D.Lgs. 21 novembre 2005, n. 286.
+
+ART.19) DIVIETO DI CONCORRENZA SLEALE, CLAUSOLA RISOLUTIVA ESPRESSA, PENALE
+19.1. E’ fatto espresso divieto al Vettore di proporre offerte di servizi e concludere con i clienti del committente, contratti di trasporto che abbiano ad oggetto i servizi che costituiscono oggetto del presente contratto di trasporto o servizi analoghi.
+19.2. Le inosservanze di tale disposizione costituiscono atti di concorrenza sleale e danno diritto al risarcimento dei danni in favore del primo vettore (committente), con la conseguenza della risoluzione immediata del presente contratto, a norma dell’art. 1456 c.c., trattandosi di clausola risolutiva espressa, e sempre con il diritto al risarcimento dei danni per risoluzione anticipata del contratto stesso.
+19.3. Salva la risoluzione espressa del contratto a norma dell’art. 1456 c.c. e salvo sempre il diritto all’eventuale maggiore danno, in caso di violazione del divieto di concorrenza di cui al comma primo del presente articolo, il vettore è tenuto al pagamento a titolo di penale della somma di € 200.000,00 (Duecentomila/00).
+        
+Art. 20) MODIFICHE AL CONTRATTO
+Il Contratto sostituisce ad ogni fine ed effetto di legge eventuali altri accordi, contratti, patti ed intese intercorsi tra le Parti prima della sua entrata in vigore, essendo loro comune intenzione che abbia carattere novativo rispetto agli accordi in precedenza intercorsi, anche se non formalizzati per iscritto e derivanti da comportamenti concludenti.
+Nessuna modifica al Contratto potrà essere considerata produttiva di effetti e vincolante per le Parti se non risultante da atto scritto, debitamente firmato da persona munita dei poteri necessari per impegnare il soggetto nel cui nome e nel cui interesse verranno sottoscritti gli eventuali patti modificativi e/o aggiuntivi.
+Il Committente avrà peraltro facoltà di modificare in ogni momento l’Allegato A, dandone al Vettore. Nel caso in cui il Vettore non intendesse accettare tali modifiche, dovrà darne comunicazione al Committente a mezzo e-mail pec entro tre giorni dalla data di ricevimento della comunicazione di cui sopra e le Parti si incontreranno entro la settimana successiva per concordare le modifiche da apportate agli allegati.
+Nel caso in cui, entro quindici giorni da tale ultimo termine, non fosse possibile addivenire ad un accordo, il rapporto si considererà consensualmente risolto senza necessità di alcuna ulteriore comunicazione o diffida.
+Nel caso in cui Il Vettore non si avvalesse della facoltà di cui sopra, le modifiche agli allegati si intenderanno da lui accettate.
+Il Vettore dovrà invece aggiornare ogni qual volta sia necessario l’Allegato B, anche semplicemente inviando al Committente una comunicazione scritta con i nuovi dati da inserire negli allegati e/o con quelli da cancellare, fermo restando che tali comunicazioni saranno considerate quale parte integrante e sostanziale del contratto. 
+
+Art. 21) CODICE AZIENDALE DI COMPORTAMENTO
+Autotrasporti Pigliacelli S.p.A. nella conduzione dei propri affari e nella gestione dei rapporti con i propri fornitori applica i principi indicati nel proprio Codice Aziendale di Comportamento, allegato al presente contratto (oppure visionabile sul sito www.pigliacelli.it). Il Vettore dichiara di aver compreso e di condividere tali principi, impegnandosi, per sé e per i suoi dipendenti e collaboratori, diretti e indiretti, al rispetto di tali principi consapevole che la loro violazione costituisce grave inadempimento contrattuale.
+
+Art. 22) MODELLO DI GESTIONE, ORGANIZZAZIONE E CONTROLLO L. 231/2001
+Il Vettore dichiara di essere a conoscenza che Autotrasporti Pigliacelli S.p.A. ha adottato un Modello di organizzazione, gestione e controllo, ai sensi dell’art. 6 del D.Lgs. 8 giugno 2001 n. 231, consultabile a mezzo internet presso l’indirizzo www.pigliacelli.it destinato a regolamentare, tra l’altro, i rapporti con i terzi secondo principi di trasparenza e legalità. Il Vettore si impegna per sé, i suoi apicali, dipendenti e collaboratori, diretti e indiretti, nell’esecuzione del rapporto contrattuale con Autotrasporti Pigliacelli S.p.A., ad astenersi da qualsivoglia comportamento atto a configurare le ipotesi di reato indicate nel D.Lgs. 231/2001 e riportate nel predetto Modello di organizzazione, gestione e controllo, consapevole che il mancato rispetto ditale impegno costituisce inadempimento contrattuale e può dar luogo alla risoluzione per inadempimento, ai sensi e per gli effetti dell’art. 1456 c.c., del contratto da parte di Autotrasporti Pigliacelli Spa. Il Vettore manterrà indenne Autotrasporti Pigliacelli S.p.A. per condotte commesse dal proprio personale apicale o sottoposto.  
+       
+Art. 23) RECESSO – RISOLUZIONE
+Il Vettore dichiara:
+1.	 Che la Società non si trova in stato di fallimento, di liquidazione, di amministrazione controllata o di concordato preventivo e che non è in corso un procedimento fallimentare o altra procedura concorsuale;
+2.	 Che la Società è in regola con l’adempimento degli obblighi assicurativi, contributivi e retributivi verso il proprio personale dipendente;
+3.	 Che la Società è in regola con l’adempimento degli obblighi in materia di sicurezza sul lavoro ed in materia ambientale.
+Il Vettore dichiara che né se stesso, né i soci, né il legale rappresentante, né tutti gli amministratori o dirigenti o procuratori dell’Impresa sono interessati da una o più delle seguenti situazioni:
+-	sottoposizione a procedimento per l’applicazione di misure di prevenzione, personali o patrimoniali, ai sensi della normativa antimafia (art. 6 ss. D.Lgs. 159/2011; art. 67 D.Lgs. 159/2011);
+-	applicazione di misure cautelari coercitive nell’ambito di un procedimento penale o pronuncia di sentenza di condanna, ancorchè non definitiva, compresa quella prevista dall’art. 444 c.p.p., per i reati che incidono sull’affidabilità professionale, e tra questi per i delitti contro la Pubblica Amministrazione, per partecipazioni a reati associativi o per concorso negli stessi, per i delitti di usura, estorsione, ricettazione, riciclaggio, impiego di beni provenienti da delitti e per altre figure di reato che assumono rilievo nell’ambito della criminalità organizzata;
+-	applicazione di misure cautelari nell’ambito di un procedimento penale o pronuncia di sentenza di condanna, ancorché non definitiva, compresa quella emessa su richiesta delle parti, nei confronti dell’Impresa, ai sensi del D.Lgs. 231/2001, per reati che incidono sull’affidabilità professionale e tra questi i delitti contro la Pubblica Amministrazione, per partecipazione a reati associativi o per concorso negli stessi, per i delitti di usura, estorsione, ricettazione, riciclaggio, impiego di beni provenienti da delitti e per altre figure di reato che assumono rilievo nell’ambito della criminalità organizzata;
+-	informativa intedittiva antimafia della Prefettura.
+Qualora si verificasse una delle situazioni sopra indicate durante il periodo di esecuzione del contratto, il Vettore sarà obbligato ad informare, entro e non oltre sette giorni dal verificarsi di tali situazioni, il Committente che si riserva la facoltà di recedere dal contratto con comunicazione trasmessa a mezzo fax ovvero e-mail o con qualunque altra modalità idonea allo scopo.
+Il mancato rispetto dell’obbligo di informare, così come la dichiarazione di dati falsi o incompleti, costituirà inadempimento contrattuale e consentirà a Autotrasporti Pigliacelli S.p.A. di considerare risolto di diritto il presente contratto ai sensi dell’art. 1456 c.c. con comunicazione trasmessa al Vettore a mezzo fax ovvero e-mail o con qualunque altra modalità idonea allo scopo.
+Il Vettore dichiara, altresì, di essere in possesso di tutte le autorizzazioni di natura amministrativa, fiscale e ambientale previste dalle vigenti disposizioni normative per lo svolgimento della propria attività. Qualora durante 
+          
+
+il periodo di esecuzione del contratto, le autorizzazioni suindicate venissero meno o subissero modifiche, il Vettore sarà obbligato ad informare il Committente, che si riserva la facoltà di recedere dal contratto con comunicazione trasmessa a mezzo fax ovvero e-mail o con qualunque altra modalità idonea allo scopo.
+Il Contratto si considera risolto di diritto ai sensi dell’art. 1456 c.c., altresì, in caso di inadempimento da parte del Vettore degli obblighi di cui all’art. 4 del presente contratto, nonché nel caso in cui venisse meno la regolarità del Vettore sotto il profilo dell'adempimento degli obblighi retributivi, o previdenziali o assicurativi, o comunque il venir meno della regolarità del vettore, risultante dall'apposito portale di cui all'art. 83 bis del D.L. 25.06.2008 n. 112, conv. In l. 06.08.2008 n. 133, e s.m.i., nonché in caso di grave inadempimento da parte del Vettore di altre obbligazioni contrattuali. La risoluzione del Contratto sarà comunicata dal Committente al Vettore a mezzo fax ovvero e-mail o con qualunque altra modalità idonea allo scopo.
+Art. 24) COMPENSAZIONE
+Nel caso in cui il Vettore usufruisca di assistenza meccanica dell’officina Aer Services Srl (facente parte del Gruppo Pigliacelli), per il proprio parco veicolare e non provveda nei termini contrattuali al pagamento dei relativi compensi o fatture, si conviene e si pattuisce che il Committente, su richiesta per iscritto della Aer Service S.r.l.   inviata per conoscenza anche al Vettore, è autorizzato a trattenere l’importo relativo alle fatture Aer Services Srl  ed a compensare fino a concorrenza il proprio debito nei confronti del Vettore derivante dai servizi di trasporto da quest’ultimo forniti con il debito maturato dal Vettore nei confronti dell’officina Aer Services Srl, a cui verserà l’importo trattenuto e compensato.
+Art. 25) DICHIARAZIONI DEL VETTORE
+Il Vettore ha consegnato al Committente, precedentemente alla sottoscrizione del presente Contratto, e si impegna a produrre al Committente ad ogni semplice richiesta:
+a)	Autocertificazione requisiti di Qualità, Ambiente e Sicurezza nei luoghi di lavoro (All. C);
+b)	Dichiarazione sostitutiva concernente l’idoneità degli automezzi, la formazione dei dipendenti e il rispetto delle norme in materia di sicurezza (All. D);
+c)	  Richiesta dati anagrafici (All. E);
+d)	Questionario di qualificazione (All. F)
+e)	 Dichiarazione sostitutiva antimafia (All. G)
+f)	   Dichiarazione sostitutiva di accettazione del Manuale del Vettore (All. H);
+g)	Autocertificazione concernente il possesso e la validità di polizza assicurativa merci (ALL. I).
+Il Vettore garantisce la veridicità di quanto dichiarato e si impegna a comunicare tempestivamente ogni eventuale variazione. Nel caso risultasse che quanto dichiarato non corrisponda a verità o il Vettore non dichiari tempestivamente difformità o variazioni, il presente contratto potrà essere risolto per inadempimento ai sensi e per gli effetti dell’art. 1456 c.c.
+           
+
+
+La mancata presentazione della documentazione suindicata costituirà inadempimento contrattuale e consentirà al Committente di considerare risolto di diritto il presente contratto ai sensi dell’art. 1456 c.c. con comunicazione trasmessa al Vettore a mezzo fax ovvero e-mail o con qualunque altra modalità idonea allo scopo.
+ART. 26) PRECEDENTI CONTRATTI E RINUNCIA
+Il presente contratto annulla e sostituisce integralmente ogni precedente accordo eventualmente intervenuto tra le parti; pertanto, diviene l’unico regolamento negoziale disciplinante il rapporto contrattuale tra le parti stesse. Le parti dichiarano con la sottoscrizione del presente contratto di non aver nulla a che pretendere l’una verso l’altra a qualsivoglia titolo, ragione e causa, anche risarcitoria – fatto salvo, ovviamente, il pagamento dei corrispettivi dovuti per i trasporti effettuati, e risultanti dalle fatture emesse e non ancora pagate, ovvero il risarcimento per danni alle merci non ancora definiti o conosciuti - che abbia origine o comunque sia connesso ai precedenti rapporti contrattuali ed alla esecuzione di pregresse prestazioni di autotrasporto, e segnatamente dichiarano di non aver nulla a pretendere a titolo di eventuali differenze di tariffa, di prezzo, di costi minimi e/o di valori di riferimento delle imprese di autotrasporto, anche ai sensi dell’art. 1, comma 250, della legge 23 dicembre 2014, n. 190 e dell’art. 14 del D.L. 21.03.2022, n. 21, nonché a titolo di adeguamenti del costo del gasolio preso a riferimento al momento della conclusione del contratto. Le parti si danno reciprocamente atto che tale rinuncia generale e novativa costituisce clausola essenziale del presente contratto.
+Art. 27) FORO COMPETENTE ESCLUSIVO
+Qualsiasi controversia relativa alla validità, efficacia, interpretazione e/o esecuzioni del presente contratto sarà devoluta alla competenza esclusiva del Foro di Frosinone.
+Art. 28) DATA CERTA
+Le Parti si danno reciprocamente atto di essere a perfetta conoscenza delle modifiche introdotte all’art. 6 del D.lgs. 286/05 per quanto attiene alla data certa del presente contratto formato da nr. 16 (sedici) pagine e nr. 2 (due) Allegati (A-B), e quindi, assumono vicendevolmente l’impegno di provvedere ad attribuire al Contratto tale requisito. L’adempimento di cui sopra sarà effettuato dalla Parte più diligente entro e non oltre una settimana dalla data di sottoscrizione del Contratto e la Parte che lo avrà curato dovrà trasmettere immediatamente all’altra copia della relativa documentazione.
+Letto, confermato e sottoscritto.
+
+
+Veroli, __/__/202_
+
+            COMMITTENTE 				                                                      VETTORE	
+		______________					                                        _________________
+
+
+        Ai sensi e per gli effetti degli articoli 1341 e 1342 c.c. si intendono specificamente approvate le seguenti clausole: art. 3) Obblighi del Vettore; art. 4) Sub-Vettori; Art. 8) Responsabilità del Vettore; Art. 9) Ritardo; Art. 10) Corrispettivo del trasporto e fatturazione; Art. 12) Durata e recesso; Art. 15) Tracciabilità dei flussi finanziari; Art. 16) Riservatezza e Tutela dati personali; Art. 18) Clausola di decadenza semestrale; Art. 19) Divieto di concorrenza sleale, clausola risolutiva espressa, penale; Art. 20) Modifiche al contratto; Art. 21) Codice aziendale di comportamento; Art. 22) Modello di gestione, organizzazione e controllo L. 231/2001; Art. 23) Recesso – Risoluzione; Art. 24) Compensazione; Art. 25) Dichiarazioni del Vettore; Art. 26) Precedenti contratti e rinuncia; Art. 27) Foro competente esclusivo. 
+Letto, confermato e sottoscritto.
+
+
+Veroli, __/__/202_
+            COMMITTENTE 				                                                      VETTORE		
+
+EOT;
+
+
+$signatureGapHtml = '<div style="height:14pt"></div>';
+if ($htmlContratto !== '') {
+    $htmlContratto = preg_replace(
+        '/(Letto,\s*confermato\s*e\s*sottoscritto\.)/u',
+        '$1' . $signatureGapHtml,
+        $htmlContratto,
+        2
+    );
+}
+
+// Normalizza newline
+$testo_contratto = str_replace("\r\n", "\n", $testo_contratto);
+$testo_contratto = str_replace("\r", "\n", $testo_contratto);
+$testo_contratto = trim((string)$testo_contratto);
+
+// Nel testo plain, crea spazio extra prima di "COMMITTENTE / VETTORE" (2 occorrenze).
+$testo_contratto = preg_replace(
+    '/(Letto,\s*confermato\s*e\s*sottoscritto\.)/u',
+    "$1\n\n\n",
+    $testo_contratto,
+    2
+);
+
+// "Tra" iniziale al centro anche in fallback plain text.
+$testo_contratto = preg_replace('/^\s*Tra\s*\n/u', '', $testo_contratto, 1);
+
+// --- Sostituzioni specifiche dei dati vettore (subvector) nel testo del contratto ---
+// Rimpiazza il blocco iniziale del Vettore con i dati anagrafici presi da sec_users.
+$patternVettore = '__________ con sede a _______ (__), Via ______ n. ___, Codice Fiscale, P. Iva e numero di iscrizione al Registro Imprese di ________ __________, R.E.A. ______,';
+$replaceVettore = $nome_vettore
+    . ' con sede a ' . $sede_citta
+    . ' (' . $sede_provincia . '), Via ' . $indirizzo
+    . ' n. ' . $civico
+    . ', Codice Fiscale ' . $cod_fiscale
+    . ', P. Iva ' . $piva
+    . ' e numero di iscrizione al Registro Imprese di ' . $loc_reg_imp . ' ' . $num_reg_imp
+    . ', R.E.A. ' . $rea . ',';
+$testo_contratto = str_replace($patternVettore, $replaceVettore, $testo_contratto);
+
+// Numero iscrizione Albo (mantiene testo e virgola finale)
+$patternAlbo = 'iscritta all’Albo Nazionale degli Autotrasportatori di cose per conto terzi al n. ___________,';
+$replaceAlbo = 'iscritta all’Albo Nazionale degli Autotrasportatori di cose per conto terzi al n. ' . $num_iscrizione_albo . ',';
+$testo_contratto = str_replace($patternAlbo, $replaceAlbo, $testo_contratto);
+
+// Dati rappresentante legale (mantiene parentesi provincia)
+$patternRappr = 'in persona del suo Legale rappresentante sig. ________, nato a _____ (__) il __/__/____ (di seguito Vettore)';
+$replaceRappr = 'in persona del suo Legale rappresentante sig. ' . $nome_rappresentante . ' ' . $cognome_rappresentante
+    . ', nato a ' . $luogo_nascita_rappresentante
+    . ' (' . $prov_luogo_nascita_rappresentante . ') il ' . $data_nascita_rappresentante
+    . ' (di seguito Vettore)';
+$testo_contratto = str_replace($patternRappr, $replaceRappr, $testo_contratto);
+
+// Sostituzioni nel testo DOC
+// Data certa: nel DOC compare come "__/__/202_" (anche con underscore)
+$testo_contratto = preg_replace('/__\/__\/202_/u', (string)$data_certa, $testo_contratto);
+
+// Riga "Firma: ________" (solo la prima occorrenza)
+$testo_contratto = preg_replace('/Firma:\s*_{3,}/u', 'Firma: ' . (string)$firma_committente, $testo_contratto, 1);
+
+// Firme finali: euristica dopo le etichette (se nella tua estrazione sono su nuove righe)
+$testo_contratto = preg_replace('/(COMMITTENTE[^\n\r]*\n\s*)_{6,}/u', '$1' . (string)$firma_committente, $testo_contratto, 1);
+$testo_contratto = preg_replace('/(VETTORE[^\n\r]*\n\s*)_{6,}/u', '$1' . (string)$firma_vettore, $testo_contratto, 1);
+
+// Una spaziatura dopo "...ISO 9001/2015 e" nel testo plain.
+$testo_contratto = str_replace('ISO 9001/2015 e', "ISO 9001/2015 e\n\n", $testo_contratto);
+
+// Una spaziatura tra articoli nel testo plain.
+$testo_contratto = preg_replace('/\n(Art\.\s*\d+\))/u', "\n\n$1", $testo_contratto);
+
+// Render del corpo:
+// - Preferisce l'HTML originale per mantenere spaziature/paragrafi del documento.
+// - Fallback al testo plain se il file HTML non e' disponibile.
+if ($htmlContratto !== '') {
+    if ($renderTraCentered) {
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Cell(0, $ch, 'Tra', 0, 1, 'C');
+        $vspaceSm();
+    }
+
+    // Stile più arioso e consistente (blocchi, liste, eventuali tabelle Word).
+    $htmlStyle = '<style>
+        body { font-family: Arial, sans-serif; font-size: 10pt; line-height: 1.22; }
+        p { margin: 0 0 9pt 0; text-align: left; }
+        div { margin: 0 0 7pt 0; }
+        h1, h2, h3 { margin: 10pt 0 6pt 0; }
+        ul, ol { margin: 0 0 9pt 16pt; padding: 0; }
+        li { margin: 0 0 4pt 0; }
+        table { margin: 0 0 9pt 0; }
+        td, th { padding: 2.4pt 3.2pt; }
+        .block { margin: 0 0 10pt 0; }
+        .article { margin: 10pt 0 6pt 0; font-weight: bold; }
+    </style>';
+
+    // Normalizza e "spazia" alcuni separatori frequenti senza stravolgere il layout Word.
+    // - comprime <br><br><br> -> <br><br>
+    // - evidenzia gli Articoli come "blocchi" con maggiore separazione
+    $htmlContratto = preg_replace('/(<br\s*\/?>\s*){3,}/i', '<br><br>', $htmlContratto);
+    $htmlContratto = preg_replace('/(<br\s*\/?>\s*)?(Art\.\s*\d+\))/u', '<div class="article">$2</div>', $htmlContratto);
+
+    $pdf->writeHTML($htmlStyle . '<div class="doc">' . $htmlContratto . '</div>', true, false, true, false, '');
+} else {
+    $pdf->SetFont('Arial', '', 10);
+    $pdf->Cell(0, $ch, 'Tra', 0, 1, 'C');
+    $vspaceSm();
+
+    $paragraphs = preg_split("/\n\s*\n/", $testo_contratto);
+    foreach ($paragraphs as $p) {
+        $p = trim((string)$p);
+        if ($p === '') continue;
+        // No giustificato: allineamento a sinistra
+        $pdf->MultiCell(0, $ch, $p, 0, 'L', false, 1);
+        $vspaceSm();
+    }
+}
+
+// Coordinate firme corpo contratto (pagine portrait variabili)
+$mainPagesEnd = method_exists($pdf, 'getNumPages') ? (int)$pdf->getNumPages() : 0;
+if ($mainPagesEnd >= 3) {
+    for ($p = 3; $p <= $mainPagesEnd - 2; $p++) {
+        $easygnSignPush('vettore', $p, 117.5, 287, 87.51, 8.01);
+    }
+}
+if ($mainPagesEnd >= 2) {
+    $easygnSignPush('committente', $mainPagesEnd - 1, 15, 257.5, 77.51, 7.51);
+    $easygnSignPush('vettore', $mainPagesEnd - 1, 95, 257.5, 105.01, 7.51);
+}
+if ($mainPagesEnd >= 1) {
+    $easygnSignPush('committente', $mainPagesEnd, 15, 50, 85.01, 12.51);
+    $easygnSignPush('vettore', $mainPagesEnd, 105, 50, 100.01, 12.51);
+}
+
+// --- ALLEGATO A (TARIFFE) - landscape, paginazione multi-pagina ---
+$pdf->AddPage('L', 'A4');
+$applyDefaultPageSetup();
+
+// Righe Allegato A dinamiche (tratte collegate al contratto).
+$tratteData = array();
+$rsTratte = $this->Db->Execute("
+    SELECT
+        COALESCE(NULLIF(ct.carico, ''), '') AS carico,
+        COALESCE(NULLIF(ct.scarico, ''), '') AS scarico,
+        COALESCE(NULLIF(ct.merce, ''), t.merce, '') AS merce,
+        COALESCE(NULLIF(ct.caricatore, ''), t.caricatore, '') AS caricatore,
+        COALESCE(NULLIF(ct.proprietario_merce, ''), t.proprietario_merce, '') AS proprietario_merce,
+        COALESCE(ct.tariffa, t.tariffa, '') AS tariffa,
+        COALESCE(ct.extra, t.extra, '') AS extra,
+        COALESCE(ct.totale, t.totale, '') AS totale,
+        COALESCE(ct.version, t.version, 1) AS version
+    FROM contratti_tratte ct
+    INNER JOIN tratte t ON t.id = ct.tratta_id
+    WHERE ct.contratto_id = " . (int)$contrattoId . "
+      AND t.subvettore_id = " . (int)$subvector . "
+    ORDER BY carico, scarico, t.id
+");
+if ($rsTratte !== false && !$rsTratte->EOF) {
+    while (!$rsTratte->EOF) {
+        $tratteData[] = array(
+            $rsTratte->fields[0],
+            $rsTratte->fields[1],
+            $rsTratte->fields[2],
+            $rsTratte->fields[3],
+            $rsTratte->fields[4],
+            $rsTratte->fields[5],
+            $rsTratte->fields[6],
+            $rsTratte->fields[7],
+            $rsTratte->fields[8],
+        );
+        $rsTratte->MoveNext();
+    }
+    $rsTratte->Close();
+}
+$allegatoARows = array();
+$formatMoney = function ($value) {
+    $value = trim((string)$value);
+    if ($value === '') return '';
+
+    $normalized = str_replace(',', '.', $value);
+    if (!is_numeric($normalized)) return $value;
+
+    return number_format((float)$normalized, 2, ',', '.');
+};
+
+if (is_array($tratteData) && isset($tratteData[0]) && is_array($tratteData[0])) {
+    foreach ($tratteData as $tratta) {
+        $allegatoARows[] = array(
+            'carico' => isset($tratta[0]) ? (string)$tratta[0] : '',
+            'scarico' => isset($tratta[1]) ? (string)$tratta[1] : '',
+            'merce' => isset($tratta[2]) ? (string)$tratta[2] : '',
+            'caricatore' => isset($tratta[3]) ? (string)$tratta[3] : '',
+            'prop_merce' => isset($tratta[4]) ? (string)$tratta[4] : '',
+            'tariffa' => $formatMoney(isset($tratta[5]) ? (string)$tratta[5] : ''),
+            'extra' => $formatMoney(isset($tratta[6]) ? (string)$tratta[6] : ''),
+            'totale' => $formatMoney(isset($tratta[7]) ? (string)$tratta[7] : ''),
+            'sosta_car' => '1,5',
+            'sosta_sca' => '1,5',
+        );
+    }
+}
+
+$PT_TO_MM = 0.3527777778;
+$marginL_A = 15;
+$marginR_A = 15;
+$marginTop_A = 20;
+$marginBottom_A = 10;
+$pdf->SetMargins($marginL_A, $marginTop_A, $marginR_A);
+$pdf->SetAutoPageBreak(FALSE);
+
+$pageW = 297; $pageH = 210;
+if (method_exists($pdf, 'getPageWidth')) $pageW = (float)$pdf->getPageWidth();
+if (method_exists($pdf, 'getPageHeight')) $pageH = (float)$pdf->getPageHeight();
+
+$availableW = $pageW - $marginL_A - $marginR_A;
+if ($availableW <= 0) $availableW = 280;
+
+// Template Excel Allegato A adattato a 10 colonne.
+$A_colsPt = array(150, 160, 90, 165, 150, 70, 65, 70, 55, 55);
+$A_totalPt = array_sum($A_colsPt);
+$A_scale = $availableW / ($A_totalPt * $PT_TO_MM);
+$A_w = array();
+foreach ($A_colsPt as $pt) $A_w[] = ($pt * $PT_TO_MM) * $A_scale;
+
+$A_labels = array(
+    'Carico',
+    'Scarico',
+    'Merce',
+    'Caricatore',
+    'Proprietario merce',
+    'Tariffa',
+    'Extra',
+    'Totale',
+    "Max ore sosta\ncarico",
+    "Max ore sosta\nscarico"
+);
+
+$hdrH_A = 10.4;
+$rowMinH_A = 7.0;
+$cellBorder = 0.25;
+$lineH_A = 4.4;
+$lineHHdr = 3.2;
+$multilineIdxA = array(2, 3, 4);
+$sigBlockH_A = 26;
+
+$refreshPageH_A = function () use ($pdf) {
+    if (method_exists($pdf, 'getPageHeight')) {
+        return (float)$pdf->getPageHeight();
+    }
+    return 210.0;
+};
+
+$drawAllegatoAPageHeader = function ($continuation) use (
+    $pdf, $marginL_A, $marginTop_A, $availableW, $contrattoId, $data_certa, $nome_vettore
+) {
+    $pdf->SetXY($marginL_A, $marginTop_A);
+    $pdf->SetFont('Arial', 'B', 11);
+    $titleA = $continuation ? 'ALLEGATO "A" (continua)' : 'ALLEGATO "A"';
+    $pdf->Cell($availableW, 6, $titleA, 0, 1, 'L');
+
+    if (!$continuation) {
+        $pdf->SetFillColor(255, 255, 255);
+        $pdf->SetFont('Arial', '', 8.5);
+        $pdf->Cell(
+            $availableW,
+            7,
+            'Al contratto di trasporto n. ' . (string)$contrattoId . '/' . date('Y') . ' del ' . (string)$data_certa
+            . ' tra Autotrasporti Pigliacelli S.p.A. e ' . $nome_vettore,
+            1,
+            1,
+            'C',
+            false
+        );
+        $pdf->SetFillColor(255, 255, 255);
+    } else {
+        $pdf->SetFont('Arial', '', 8);
+        $pdf->Cell(
+            $availableW,
+            5,
+            'Contratto n. ' . (string)$contrattoId . '/' . date('Y'),
+            0,
+            1,
+            'L'
+        );
+    }
+};
+
+$drawAllegatoATableHeader = function () use (
+    $pdf, $marginL_A, $A_labels, $A_w, $hdrH_A, $cellBorder, $lineHHdr
+) {
+    $pdf->SetLineWidth($cellBorder);
+    $pdf->SetFillColor(245, 245, 245);
+    $pdf->SetFont('Arial', 'B', 7.5);
+
+    $xHdr = $marginL_A;
+    $yHdr = $pdf->GetY();
+    for ($i = 0; $i < count($A_labels); $i++) {
+        $w = (float)$A_w[$i];
+        $align = ($i >= 5 && $i <= 7) ? 'R' : (($i >= 8) ? 'C' : 'L');
+        $pdf->Rect($xHdr, $yHdr, $w, $hdrH_A);
+        $pdf->SetXY($xHdr, $yHdr);
+        $pdf->MultiCell($w, $lineHHdr, (string)$A_labels[$i], 0, $align, true, 1);
+        $pdf->SetXY($xHdr + $w, $yHdr);
+        $xHdr += $w;
+    }
+
+    $pdf->SetXY($marginL_A, $yHdr + $hdrH_A);
+    $pdf->SetFillColor(255, 255, 255);
+    $pdf->SetFont('Arial', '', 8);
+};
+
+$startAllegatoAPage = function ($continuation) use (
+    $pdf, $applyDefaultPageSetup, $drawAllegatoAPageHeader, $drawAllegatoATableHeader
+) {
+    if ($continuation) {
+        $pdf->AddPage('L', 'A4');
+        $applyDefaultPageSetup();
+    }
+    $pdf->SetAutoPageBreak(FALSE);
+    $drawAllegatoAPageHeader($continuation);
+    $drawAllegatoATableHeader();
+};
+
+$startAllegatoAPage(false);
+$pageH = $refreshPageH_A();
+
+foreach ($allegatoARows as $r) {
+    $maxLines = 1;
+    foreach ($multilineIdxA as $mIdx) {
+        $w = (float)$A_w[$mIdx];
+        if ($mIdx == 2) $txt = isset($r['merce']) ? (string)$r['merce'] : '';
+        else if ($mIdx == 3) $txt = isset($r['caricatore']) ? (string)$r['caricatore'] : '';
+        else $txt = isset($r['prop_merce']) ? (string)$r['prop_merce'] : '';
+        $txt = str_replace(array("\r\n", "\r"), "\n", $txt);
+
+        $lines = 1;
+        if (method_exists($pdf, 'getNumLines')) {
+            $lines = (int)$pdf->getNumLines($txt, $w);
+            if ($lines < 1) $lines = 1;
+        }
+        if ($lines > $maxLines) $maxLines = $lines;
+    }
+
+    $rowH_A = max($rowMinH_A, $maxLines * $lineH_A);
+    $pageH = $refreshPageH_A();
+    $bodyLimitA = $pageH - $marginBottom_A;
+
+    if ($pdf->GetY() + $rowH_A > $bodyLimitA) {
+        $startAllegatoAPage(true);
+        $pageH = $refreshPageH_A();
+        $bodyLimitA = $pageH - $marginBottom_A;
+    }
+
+    $x = $marginL_A;
+    $y = $pdf->GetY();
+    $pdf->SetLineWidth($cellBorder);
+
+    for ($i = 0; $i < count($A_labels); $i++) {
+        $pdf->Rect($x, $y, (float)$A_w[$i], $rowH_A);
+
+        $txt = '';
+        if ($i == 0) $txt = (string)$r['carico'];
+        if ($i == 1) $txt = (string)$r['scarico'];
+        if ($i == 2) $txt = (string)$r['merce'];
+        if ($i == 3) $txt = (string)$r['caricatore'];
+        if ($i == 4) $txt = (string)$r['prop_merce'];
+        if ($i == 5) $txt = (string)$r['tariffa'];
+        if ($i == 6) $txt = (string)$r['extra'];
+        if ($i == 7) $txt = (string)$r['totale'];
+        if ($i == 8) $txt = (string)$r['sosta_car'];
+        if ($i == 9) $txt = (string)$r['sosta_sca'];
+
+        $align = ($i >= 5 && $i <= 7) ? 'R' : (($i >= 8) ? 'C' : 'L');
+        $pdf->SetXY($x, $y);
+        if (in_array($i, $multilineIdxA, true)) {
+            $pdf->MultiCell((float)$A_w[$i], $lineH_A, $txt, 0, $align, false);
+            $pdf->SetXY($x + (float)$A_w[$i], $y);
+        } else {
+            $pdf->Cell((float)$A_w[$i], $rowH_A, $txt, 0, 0, $align);
+            $pdf->SetXY($x + (float)$A_w[$i], $y);
+        }
+        $x += (float)$A_w[$i];
+    }
+
+    $pdf->SetY($y + $rowH_A);
+}
+
+$pageH = $refreshPageH_A();
+if ($pdf->GetY() + $sigBlockH_A > $pageH - $marginBottom_A) {
+    $pdf->AddPage('L', 'A4');
+    $applyDefaultPageSetup();
+    $pdf->SetAutoPageBreak(FALSE);
+    $drawAllegatoAPageHeader(true);
+    $pageH = $refreshPageH_A();
+}
+
+$pageH = $refreshPageH_A();
+$sigY_A = $pageH - $marginBottom_A - $sigBlockH_A;
+$sigPageA = method_exists($pdf, 'getPage') ? (int)$pdf->getPage() : 0;
+$halfW = $availableW / 2.0;
+
+$pdf->SetFont('Arial', 'B', 10);
+$pdf->SetY($sigY_A);
+$pdf->SetX($marginL_A);
+$pdf->Cell($halfW, 6, 'IL COMMITTENTE', 0, 0, 'C');
+$pdf->Cell($halfW, 6, 'IL VETTORE', 0, 1, 'C');
+
+$pdf->SetFont('Arial', '', 9);
+$pdf->Cell($halfW, 6, 'Aut.ti Pigliacelli S.p.A.', 0, 0, 'C');
+$pdf->Cell($halfW, 6, '', 0, 1, 'C');
+
+$pdf->SetFont('Arial', '', 9);
+$pdf->Cell($halfW, 8, (string)$firma_committente, 0, 0, 'C');
+$pdf->Cell($halfW, 8, (string)$firma_vettore, 0, 1, 'C');
+
+$easygnSignPush('committente', $sigPageA, $marginL_A, $sigY_A + 14, $halfW - 4, 10);
+$easygnSignPush('vettore', $sigPageA, $marginL_A + $halfW, $sigY_A + 14, $halfW - 4, 10);
+
+// --- ALLEGATO B (AUTISTI E VEICOLI) - landscape, paginazione multi-pagina ---
+$pdf->AddPage('L', 'A4');
+$applyDefaultPageSetup();
+
+// Righe Allegato B dinamiche (da DB)
+$driversData = $this->getAutisti($subvector);
+$allegatoBRows = array();
+
+if (is_array($driversData) && isset($driversData[0]) && is_array($driversData[0])) {
+    foreach ($driversData as $idx => $d) {
+        $has1 = isset($d[11]) ? (string)$d[11] : '';
+        $has4 = isset($d[12]) ? (string)$d[12] : '';
+        $has5 = isset($d[13]) ? (string)$d[13] : '';
+
+        $allegatoBRows[] = array(
+            'n' => (string)($idx + 1),
+            'autista' => isset($d[1]) ? (string)$d[1] : '',
+            'scad_patente' => $formatDbDate(isset($d[2]) ? (string)$d[2] : ''),
+            'scad_cqc' => $formatDbDate(isset($d[3]) ? (string)$d[3] : ''),
+            'targhe_mezzi' => isset($d[4]) ? (string)$d[4] : '',
+            'anno_immatricolazione' => $formatDbDate(isset($d[5]) ? (string)$d[5] : ''),
+            'telaio' => isset($d[6]) ? (string)$d[6] : '',
+            'marca_veicolo' => isset($d[7]) ? (string)$d[7] : '',
+            'tipo_veicolo' => isset($d[8]) ? (string)$d[8] : '',
+            'scad_carte_circolazione' => $formatDbDate(isset($d[9]) ? (string)$d[9] : ''),
+            'scad_ass' => $formatDbDate(isset($d[10]) ? (string)$d[10] : ''),
+            'cat_1' => ($has1 !== '' && $has1 !== '0') ? 'x' : '',
+            'cat_4' => ($has4 !== '' && $has4 !== '0') ? 'x' : '',
+            'cat_5' => ($has5 !== '' && $has5 !== '0') ? 'x' : '',
+        );
+    }
+}
+
+// Header tabella Allegato B (14 colonne)
+$B_colsPt = array(29, 68, 46, 46, 66, 65, 91, 65, 64, 79, 70, 31, 26, 25);
+$B_totalPt = array_sum($B_colsPt);
+$B_scale = $availableW / ($B_totalPt * $PT_TO_MM);
+$B_w = array();
+foreach ($B_colsPt as $pt) {
+    $B_w[] = ($pt * $PT_TO_MM) * $B_scale;
+}
+
+$h1 = 24.0 * $PT_TO_MM * $B_scale;
+$h2 = 20.25 * $PT_TO_MM * $B_scale;
+$headerH = $h1 + $h2;
+$rowMinH_B = 7.0;
+$lineH_B = 3.4;
+$multilineIdxB = array(1, 6, 7, 8);
+$labelsRow1 = array(
+    'n°','Autista','Scad. Patente','Scad. CQC','Targhe Mezzi',
+    'Anno di immatricolazione','Telaio','Marca Veicolo','Tipo veicolo',
+    "Scadenza Carte\nCircolazione",'Scadenza Assicurazioni'
+);
+
+$refreshPageH_B = function () use ($pdf) {
+    if (method_exists($pdf, 'getPageHeight')) {
+        return (float)$pdf->getPageHeight();
+    }
+    return 210.0;
+};
+
+$drawAllegatoBPageHeader = function ($continuation) use (
+    $pdf, $marginL_A, $marginTop_A, $availableW, $nome_vettore, $piva
+) {
+    $pdf->SetXY($marginL_A, $marginTop_A);
+    $pdf->SetFont('Arial', '', 8.5);
+    $pdf->Cell($availableW, 5, 'Rev 1 del 13/10/2021', 0, 1, 'R');
+    $pdf->SetFont('Arial', 'B', 12);
+    $titleB = $continuation ? 'Allegato B (continua)' : 'Allegato B';
+    $pdf->Cell($availableW, 6, $titleB, 0, 1, 'C');
+
+    if (!$continuation) {
+        $pdf->SetFillColor(255, 255, 255);
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(
+            $availableW,
+            7,
+            'Lista Autisti e Veicoli della Società ' . $nome_vettore . ' con P. Iva n° ' . $piva,
+            1,
+            1,
+            'C',
+            false
+        );
+        $pdf->SetFillColor(255, 255, 255);
+    }
+};
+
+$drawAllegatoBTableHeader = function () use (
+    $pdf, $marginL_A, $B_w, $headerH, $h1, $h2, $lineH_B, $cellBorder, $labelsRow1
+) {
+    $pdf->SetLineWidth($cellBorder);
+    $pdf->SetFont('Arial', 'B', 7.5);
+
+    $x = $marginL_A;
+    $y = $pdf->GetY();
+
+    for ($i = 0; $i <= 10; $i++) {
+        $pdf->Rect($x, $y, (float)$B_w[$i], $headerH);
+        $pdf->SetXY($x, $y);
+        $pdf->MultiCell((float)$B_w[$i], $lineH_B, (string)$labelsRow1[$i], 0, 'C', false);
+        $pdf->SetXY($x + (float)$B_w[$i], $y);
+        $x += (float)$B_w[$i];
+    }
+
+    $wCats = (float)$B_w[11] + (float)$B_w[12] + (float)$B_w[13];
+    $pdf->Rect($x, $y, $wCats, $h1);
+    $pdf->SetXY($x, $y);
+    $pdf->MultiCell($wCats, $lineH_B, 'Categorie trasporto rifiuti', 0, 'C', false);
+    $pdf->SetXY($x + $wCats, $y);
+
+    $y2 = $y + $h1;
+    $x2 = $marginL_A;
+    for ($i = 0; $i <= 10; $i++) {
+        $x2 += (float)$B_w[$i];
+    }
+
+    $pdf->Rect($x2, $y2, (float)$B_w[11], $h2);
+    $pdf->SetXY($x2, $y2);
+    $pdf->MultiCell((float)$B_w[11], $lineH_B, '1', 0, 'C', false);
+    $x2 += (float)$B_w[11];
+
+    $pdf->Rect($x2, $y2, (float)$B_w[12], $h2);
+    $pdf->SetXY($x2, $y2);
+    $pdf->MultiCell((float)$B_w[12], $lineH_B, '4', 0, 'C', false);
+    $x2 += (float)$B_w[12];
+
+    $pdf->Rect($x2, $y2, (float)$B_w[13], $h2);
+    $pdf->SetXY($x2, $y2);
+    $pdf->MultiCell((float)$B_w[13], $lineH_B, '5', 0, 'C', false);
+
+    $pdf->SetY($y + $headerH);
+    $pdf->SetFont('Arial', '', 7.5);
+};
+
+$startAllegatoBPage = function ($continuation) use (
+    $pdf, $marginL_A, $marginTop_A, $marginR_A, $applyDefaultPageSetup,
+    $drawAllegatoBPageHeader, $drawAllegatoBTableHeader
+) {
+    if ($continuation) {
+        $pdf->AddPage('L', 'A4');
+        $applyDefaultPageSetup();
+    }
+    $pdf->SetMargins($marginL_A, $marginTop_A, $marginR_A);
+    $pdf->SetAutoPageBreak(FALSE);
+    $drawAllegatoBPageHeader($continuation);
+    $drawAllegatoBTableHeader();
+};
+
+$startAllegatoBPage(false);
+$pageH = $refreshPageH_B();
+
+foreach ($allegatoBRows as $r) {
+    $maxLines = 1;
+    foreach ($multilineIdxB as $mIdx) {
+        $w = (float)$B_w[$mIdx];
+        $txt = '';
+        if ($mIdx == 1) $txt = (string)$r['autista'];
+        if ($mIdx == 6) $txt = (string)$r['telaio'];
+        if ($mIdx == 7) $txt = (string)$r['marca_veicolo'];
+        if ($mIdx == 8) $txt = (string)$r['tipo_veicolo'];
+
+        $lines = 1;
+        if (method_exists($pdf, 'getNumLines')) {
+            $lines = (int)$pdf->getNumLines($txt, $w);
+            if ($lines < 1) $lines = 1;
+        }
+        if ($lines > $maxLines) $maxLines = $lines;
+    }
+
+    $rowH_B = max($rowMinH_B, $maxLines * $lineH_B);
+    $pageH = $refreshPageH_B();
+    $bodyLimitB = $pageH - $marginBottom_A;
+
+    if ($pdf->GetY() + $rowH_B > $bodyLimitB) {
+        $startAllegatoBPage(true);
+        $pageH = $refreshPageH_B();
+        $bodyLimitB = $pageH - $marginBottom_A;
+    }
+
+    $x = $marginL_A;
+    $yRow = $pdf->GetY();
+    $colTexts = array(
+        (string)$r['n'],
+        (string)$r['autista'],
+        (string)$r['scad_patente'],
+        (string)$r['scad_cqc'],
+        (string)$r['targhe_mezzi'],
+        (string)$r['anno_immatricolazione'],
+        (string)$r['telaio'],
+        (string)$r['marca_veicolo'],
+        (string)$r['tipo_veicolo'],
+        (string)$r['scad_carte_circolazione'],
+        (string)$r['scad_ass'],
+        (string)$r['cat_1'],
+        (string)$r['cat_4'],
+        (string)$r['cat_5'],
+    );
+
+    for ($i = 0; $i < 14; $i++) {
+        $pdf->Rect($x, $yRow, (float)$B_w[$i], $rowH_B);
+        $align = 'C';
+        if ($i == 1 || $i == 6 || $i == 7 || $i == 8) $align = 'L';
+
+        $pdf->SetXY($x, $yRow);
+        if (in_array($i, $multilineIdxB, true)) {
+            $pdf->MultiCell((float)$B_w[$i], $lineH_B, (string)$colTexts[$i], 0, $align, false);
+            $pdf->SetXY($x + (float)$B_w[$i], $yRow);
+        } else {
+            $pdf->Cell((float)$B_w[$i], $rowH_B, (string)$colTexts[$i], 0, 0, $align);
+            $pdf->SetXY($x + (float)$B_w[$i], $yRow);
+        }
+        $x += (float)$B_w[$i];
+    }
+
+    $pdf->SetY($yRow + $rowH_B);
+}
+
+$sigPageB = method_exists($pdf, 'getNumPages') ? (int)$pdf->getNumPages() : 0;
+$pageH = $refreshPageH_B();
+$sigY_B = $pageH - $marginBottom_A - 12;
+$easygnSignPush('vettore', $sigPageB, 196, $sigY_B, 75.01, 12.51);
+$contrattiAttachEasygnSignMeta($pdf, $easygnSignVisuals);
+
+// --- Output: anteprima browser (default) oppure salvataggio per campo Document filename ---
+$autoSavePdf = (
+    (isset($_SESSION['pdf_auto_save']) && strtoupper(trim((string)$_SESSION['pdf_auto_save'])) === 'S') ||
+    (isset([auto_save_pdf]) && strtoupper(trim((string)[auto_save_pdf])) === 'S')
+);
+if ($autoSavePdf) {
+    $sqlQuote = function ($v) {
+        return "'" . str_replace("'", "''", (string)$v) . "'";
+    };
+
+    $rsBaseDir = $this->Db->Execute("
+        SELECT set_value
+        FROM sec_settings
+        WHERE set_name = 'contratti_base_dir'
+        LIMIT 1
+    ");
+
+    $contrattiBaseDirRaw = '';
+    if ($rsBaseDir !== false && !$rsBaseDir->EOF) {
+        $contrattiBaseDirRaw = trim((string)$rsBaseDir->fields[0]);
+        $rsBaseDir->Close();
+    }
+    if ($contrattiBaseDirRaw === '') {
+        die('Impostare sec_settings.contratti_base_dir.');
+    }
+
+    if (!function_exists('contratti_detect_workspace_root')) {
+        function contratti_detect_workspace_root($anchorFile = null)
+        {
+            if ($anchorFile === null || $anchorFile === '') {
+                $anchorFile = __FILE__;
+            }
+            if (is_dir($anchorFile)) {
+                $dir = realpath($anchorFile);
+            } else {
+                $dir = dirname($anchorFile);
+                $resolved = realpath($dir);
+                if ($resolved !== false) {
+                    $dir = $resolved;
+                }
+            }
+            if ($dir === false || $dir === '') {
+                return '';
+            }
+            $current = $dir;
+            for ($i = 0; $i < 12; $i++) {
+                if (is_file($current . DIRECTORY_SEPARATOR . 'index.php')
+                    && (is_dir($current . DIRECTORY_SEPARATOR . '_lib') || is_dir($current . DIRECTORY_SEPARATOR . 'grid_contratti'))) {
+                    return $current;
+                }
+                $parent = dirname($current);
+                if ($parent === $current) {
+                    break;
+                }
+                $current = $parent;
+            }
+            $parent = dirname($dir);
+            return ($parent !== '' && $parent !== $dir) ? $parent : $dir;
+        }
+    }
+    if (!function_exists('resolve_contratti_base_dir')) {
+        function resolve_contratti_base_dir($configuredPath, $anchorFile = null)
+        {
+            $configuredPath = trim((string)$configuredPath);
+            if ($configuredPath === '') {
+                return '';
+            }
+            $normalized = str_replace('\\', '/', $configuredPath);
+            if ($normalized[0] === '/') {
+                $resolved = realpath($configuredPath);
+                return $resolved !== false ? $resolved : rtrim($configuredPath, "/\\");
+            }
+            if (preg_match('#^[A-Za-z]:/#', $normalized) || preg_match('#^[A-Za-z]:\\\\#', $configuredPath)) {
+                $resolved = realpath($configuredPath);
+                return $resolved !== false ? $resolved : rtrim($configuredPath, "/\\");
+            }
+            $root = contratti_detect_workspace_root($anchorFile);
+            if ($root === '') {
+                return '';
+            }
+            $full = $root . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, trim($normalized, '/'));
+            $resolved = realpath($full);
+            return $resolved !== false ? $resolved : $full;
+        }
+    }
+    $contrattiBaseDir = resolve_contratti_base_dir($contrattiBaseDirRaw, __FILE__);
+    if ($contrattiBaseDir === '') {
+        die('contratti_base_dir non risolvibile: ' . $contrattiBaseDirRaw);
+    }
+
+    $relPath = $pdfFileName;
+    $fullPath = $contrattiBaseDir . DIRECTORY_SEPARATOR . $relPath;
+    $dirPdf = dirname($fullPath);
+    if (!is_dir($dirPdf) && !@mkdir($dirPdf, 0775, true) && !is_dir($dirPdf)) {
+        die('Impossibile creare la cartella: ' . $dirPdf);
+    }
+
+    // Genera in memoria, salva su disco, poi mostra inline nel browser.
+    $pdfBin = $pdf->Output($pdfFileName, 'S');
+    if (!is_string($pdfBin) || strncmp($pdfBin, '%PDF', 4) !== 0) {
+        die('Generazione PDF non valida (no header %PDF).');
+    }
+    if (@file_put_contents($fullPath, $pdfBin) === false) {
+        die('Impossibile salvare PDF su disco: ' . $fullPath);
+    }
+
+    $okUpdate = $this->Db->Execute("
+        UPDATE contratti
+        SET file = " . $sqlQuote($relPath) . "
+        WHERE id = " . (int)$contrattoId . "
+    ");
+    if ($okUpdate === false) {
+        die('Errore update contratti.file: ' . $this->Db->ErrorMsg());
+    }
+
+    $redirectAfter = isset($_SESSION['pdf_redirect_after']) ? trim((string)$_SESSION['pdf_redirect_after']) : '';
+    if ($redirectAfter === '' && isset([redirect_after])) {
+        $redirectAfter = trim((string)[redirect_after]);
+    }
+    unset($_SESSION['pdf_auto_save'], $_SESSION['pdf_redirect_after']);
+    if ($redirectAfter !== '') {
+        header('Location: ' . $redirectAfter);
+        exit;
+    }
+
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: inline; filename="' . $pdfFileName . '"');
+    header('Content-Length: ' . strlen($pdfBin));
+    echo $pdfBin;
+    exit;
+}
+
+$pdf->Output($pdfFileName, 'I');

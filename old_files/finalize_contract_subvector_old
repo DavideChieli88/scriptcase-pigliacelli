@@ -1,0 +1,255 @@
+/**
+ * Scriptcase app: finalize_contract_subvector
+ *
+ * finalize_contract_subvector — orchestratore lato subvettore.
+ *
+ * Catena: genera PDF in background → quando contratti.file è pronto → avvia la
+ * firma EasyGN in "modalità subvettore" (che reindirizza il subvettore al proprio
+ * link di firma; la mail col link resta come backup).
+ *
+ * Parametri (globali, dal redirect del form magic link):
+ *   [contrattoId], [subvettoreId], [tipoContrattoId]
+ *
+ * Flusso:
+ * 1) $_SESSION['pdf_auto_save'] = 'S'
+ * 2) Report in iframe (nuovo_contratto_vettore / variazione_contratto)
+ * 3) Poll ?ajax=status su contratti.file
+ * 4) ready → loader "Avvio firma" → redirect a easygn_start_wf_auto (mode=subvettore)
+ */
+
+// GET ha priorità sulle globali SC (il redirect dal form passa i parametri in query string).
+$contrattoId = 0;
+if (isset($_GET['contrattoId']) && (int)$_GET['contrattoId'] > 0) {
+    $contrattoId = (int)$_GET['contrattoId'];
+} elseif ((int)[contrattoId] > 0) {
+    $contrattoId = (int)[contrattoId];
+}
+
+$subvettoreId = 0;
+if (isset($_GET['subvettoreId']) && (int)$_GET['subvettoreId'] > 0) {
+    $subvettoreId = (int)$_GET['subvettoreId'];
+} elseif ((int)[subvettoreId] > 0) {
+    $subvettoreId = (int)[subvettoreId];
+}
+
+$tipoContrattoIdHint = 0;
+if (isset($_GET['tipoContrattoId']) && (int)$_GET['tipoContrattoId'] > 0) {
+    $tipoContrattoIdHint = (int)$_GET['tipoContrattoId'];
+} elseif ((int)[tipoContrattoId] > 0) {
+    $tipoContrattoIdHint = (int)[tipoContrattoId];
+}
+$tipoContrattoId = 0;
+
+if ($subvettoreId <= 0 || $contrattoId <= 0) {
+    sc_error_message('Parametri mancanti: subvettoreId/contrattoId.');
+    return;
+}
+
+// --- AJAX interno: stato contratti.file (solo contrattoId richiesto) ---
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'status') {
+    $cid = isset($_GET['contrattoId']) ? (int)$_GET['contrattoId'] : $contrattoId;
+    if ($cid <= 0) {
+        header('Content-Type: application/json; charset=UTF-8');
+        echo json_encode(['ok' => false, 'error' => 'contrattoId non valido'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    sc_lookup(rsC, "
+        SELECT file
+        FROM contratti
+        WHERE id = " . (int)$cid . "
+        LIMIT 1
+    ");
+
+    $fileVal = '';
+    if (isset({rsC[0][0]})) {
+        $fileVal = trim((string){rsC[0][0]});
+    }
+
+    header('Content-Type: application/json; charset=UTF-8');
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Pragma: no-cache');
+    echo json_encode([
+        'ok' => true,
+        'contrattoId' => $cid,
+        'ready' => ($fileVal !== ''),
+        'file' => $fileVal,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+}
+
+// Tipo contratto: sempre da DB (fonte autorevole per scegliere il report PDF).
+sc_lookup(rsTipoFin, "
+    SELECT tipo_contratto_id
+    FROM contratti
+    WHERE id = " . (int)$contrattoId . "
+    LIMIT 1
+");
+if (!empty({rsTipoFin})) {
+    $tipoContrattoId = (int){rsTipoFin[0][0]};
+}
+if ($tipoContrattoIdHint > 0 && $tipoContrattoIdHint !== $tipoContrattoId) {
+    sc_log_add(
+        'FINALIZE',
+        "tipoContrattoId hint=$tipoContrattoIdHint ignorato, uso DB tipo=$tipoContrattoId per contratto=$contrattoId"
+    );
+}
+
+if ($tipoContrattoId <= 0) {
+    sc_error_message('tipoContrattoId mancante o non valido.');
+    return;
+}
+
+if (!isset($_SESSION) || !is_array($_SESSION)) {
+    $_SESSION = array();
+}
+$_SESSION['pdf_auto_save'] = 'S';
+$_SESSION['pdf_redirect_after'] = '';
+
+$reportApp = '';
+switch ($tipoContrattoId) {
+    case 1:
+        $reportApp = 'nuovo_contratto_vettore';
+        break;
+    case 2:
+    case 3:
+        $reportApp = 'variazione_contratto';
+        break;
+    default:
+        sc_error_message('tipoContrattoId non gestito: ' . $tipoContrattoId);
+        return;
+}
+
+$reportUrl = '../' . $reportApp . '/?subvector=' . (int)$subvettoreId . '&contratto=' . (int)$contrattoId;
+$statusUrl = '?ajax=status&contrattoId=' . (int)$contrattoId
+    . '&subvettoreId=' . (int)$subvettoreId
+    . '&tipoContrattoId=' . (int)$tipoContrattoId;
+$signUrl = '../easygn_start_wf_auto/?contrattoId=' . (int)$contrattoId
+    . '&subvettoreId=' . (int)$subvettoreId
+    . '&tipo_contratto_id=' . (int)$tipoContrattoId
+    . '&tipoContrattoId=' . (int)$tipoContrattoId
+    . '&mode=subvettore'
+    . '&wf_mode=subvettore';
+
+$reportUrlEsc = htmlspecialchars($reportUrl, ENT_QUOTES, 'UTF-8');
+$statusUrlEsc = htmlspecialchars($statusUrl, ENT_QUOTES, 'UTF-8');
+$signUrlEsc   = htmlspecialchars($signUrl, ENT_QUOTES, 'UTF-8');
+
+echo <<<HTML
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Preparazione contratto...</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    background: #f3f4f6;
+    color: #111827;
+  }
+  /* iframe nascosto: serve solo a generare/salvare il PDF in background */
+  #pdfFrame {
+    position: fixed;
+    width: 1px;
+    height: 1px;
+    border: 0;
+    left: -9999px;
+    top: -9999px;
+    opacity: 0;
+  }
+  #overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f3f4f6;
+    padding: 16px;
+  }
+  .wrap {
+    max-width: 520px;
+    padding: 24px 26px;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 8px 24px rgba(0,0,0,.08);
+    text-align: center;
+  }
+    .title { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+  .sub { font-size: 14px; color: #6b7280; line-height: 1.5; }
+  .hint { font-size: 13px; color: #9ca3af; margin-top: 10px; line-height: 1.45; }
+  .spinner {
+    width: 40px; height: 40px; margin: 18px auto 0;
+    border: 3px solid #e5e7eb; border-top-color: #5b2d8e;
+    border-radius: 50%; animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .err { color: #7f1d1d; }
+</style>
+</head>
+<body>
+<div id="overlay">
+  <div class="wrap">
+    <div class="title" id="title">Preparazione del contratto in corso</div>
+    <div class="sub" id="msg">Stiamo generando il documento, attenda qualche istante.</div>
+    <div class="hint" id="hint">Le invieremo anche una email con il link per la firma digitale, nel caso questo reindirizzamento non dovesse funzionare o il link andasse perso.</div>
+    <div class="spinner" id="spin"></div>
+  </div>
+</div>
+
+<iframe id="pdfFrame" src="{$reportUrlEsc}" title="Generazione PDF"></iframe>
+
+<script>
+(function () {
+  const statusUrl = "{$statusUrlEsc}";
+  const signUrl   = "{$signUrlEsc}";
+  const t0 = Date.now();
+  const timeoutMs = 120000;
+  const intervalMs = 2000;
+  let redirected = false;
+
+  function goToSign() {
+    if (redirected) return;
+    redirected = true;
+    document.getElementById('title').textContent = 'Avvio della firma in corso';
+    document.getElementById('msg').textContent = 'La reindirizziamo alla firma digitale del contratto.';
+    document.getElementById('hint').textContent =
+      'Se il reindirizzamento non dovesse avvenire, troverà lo stesso link nell\'email che le invieremo a breve.';
+    window.location.assign(signUrl);
+  }
+
+  function onError(text) {
+    document.getElementById('title').textContent = 'Si è verificato un problema';
+    var msg = document.getElementById('msg');
+    msg.className = 'sub err';
+    msg.textContent = text;
+    var sp = document.getElementById('spin');
+    if (sp) sp.style.display = 'none';
+  }
+
+  const timer = setInterval(async function () {
+    if (Date.now() - t0 > timeoutMs) {
+      clearInterval(timer);
+      onError('Tempo scaduto durante la generazione del documento. Ricarichi la pagina o riprovi dal link ricevuto via email.');
+      return;
+    }
+
+    try {
+      const r = await fetch(statusUrl, { cache: 'no-store' });
+      const j = await r.json();
+      if (j && j.ok && j.ready) {
+        clearInterval(timer);
+        goToSign();
+      }
+    } catch (e) {}
+  }, intervalMs);
+})();
+</script>
+</body>
+</html>
+HTML;
+
+exit;

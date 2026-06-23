@@ -1,0 +1,11 @@
+/**
+ * form_subvettori_contratti / form_subvettori_contratti_for_subvectors_magic_link
+ * → onBeforeUpdate E onBeforeInsert: lasciare VUOTO (o solo questo commento).
+ *
+ * NON usare sc_exec_sql / sc_lookup qui: Scriptcase apre già una transazione PDO
+ * sul salvataggio e si ottiene:
+ *   "There is already an active transaction"
+ *
+ * La sincronizzazione anagrafica + dati legali va in onAfterUpdate / onAfterInsert:
+ * incollare il contenuto di form_subvettori_contratti_sync_after_save.
+ */

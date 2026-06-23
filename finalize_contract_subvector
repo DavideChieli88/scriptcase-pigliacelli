@@ -1,0 +1,566 @@
+  /**
+  * Scriptcase app: finalize_contract_subvector
+  *
+  * Orchestratore: genera PDF in iframe, poll status, avvia EasyGN.
+  * mode=admin / sendMailOnly=1 / stato "Da revisionare" (operatore):
+  *   fetch easygn_start_wf silent=1 → mail al subvettore, nessun redirect browser.
+  * mode=subvettore: redirect a easygn_start_wf_auto per la firma.
+  * Parametri: [contrattoId], [subvettoreId], [tipoContrattoId] (GET o globali SC).
+  *
+  * ajax=ping   diagnostica leggera
+  * ajax=status stato PDF (db + disco sotto DOCUMENT_ROOT)
+  * ajax=diag   diagnostica path (opzionale)
+  */
+
+  $contrattoId = 0;
+  if (isset($_GET['contrattoId']) && (int)$_GET['contrattoId'] > 0) {
+      $contrattoId = (int)$_GET['contrattoId'];
+  } elseif (isset([contrattoId]) && (int)[contrattoId] > 0) {
+      $contrattoId = (int)[contrattoId];
+  }
+
+  $subvettoreId = 0;
+  if (isset($_GET['subvettoreId']) && (int)$_GET['subvettoreId'] > 0) {
+      $subvettoreId = (int)$_GET['subvettoreId'];
+  } elseif (isset([subvettoreId]) && (int)[subvettoreId] > 0) {
+      $subvettoreId = (int)[subvettoreId];
+  }
+
+  $tipoContrattoIdHint = 0;
+  if (isset($_GET['tipoContrattoId']) && (int)$_GET['tipoContrattoId'] > 0) {
+      $tipoContrattoIdHint = (int)$_GET['tipoContrattoId'];
+  } elseif (isset([tipoContrattoId]) && (int)[tipoContrattoId] > 0) {
+      $tipoContrattoIdHint = (int)[tipoContrattoId];
+  }
+  $flowMode = '';
+  if (isset($_GET['mode']) && trim((string)$_GET['mode']) !== '') {
+      $flowMode = strtolower(trim((string)$_GET['mode']));
+  } elseif (isset([mode]) && trim((string)[mode]) !== '') {
+      $flowMode = strtolower(trim((string)[mode]));
+  }
+
+  $sendMailOnly = false;
+  if (isset($_GET['sendMailOnly']) && trim((string)$_GET['sendMailOnly']) === '1') {
+      $sendMailOnly = true;
+  } elseif (isset([sendMailOnly]) && trim((string)[sendMailOnly]) === '1') {
+      $sendMailOnly = true;
+  }
+
+  if (!isset($_SESSION) || !is_array($_SESSION)) {
+      $_SESSION = array();
+  }
+
+  $isAdminFlow = false;
+  $adminFlowReason = '';
+  if ($flowMode === 'admin') {
+      $isAdminFlow = true;
+      $adminFlowReason = 'mode=admin';
+  } elseif ($sendMailOnly) {
+      $isAdminFlow = true;
+      $adminFlowReason = 'sendMailOnly=1';
+  } elseif (
+      $contrattoId > 0
+      && isset($_SESSION['finalize_send_mail_only'])
+      && (int)$_SESSION['finalize_send_mail_only'] === (int)$contrattoId
+  ) {
+      $isAdminFlow = true;
+      $adminFlowReason = 'session';
+      unset($_SESSION['finalize_send_mail_only']);
+  } elseif ($contrattoId > 0) {
+      sc_lookup(rsStatoFinAdmin, "
+          SELECT COALESCE(st.nome, '')
+          FROM contratti c
+          LEFT JOIN stati_contratti st ON st.id = c.stato_contratto_id
+          WHERE c.id = " . (int)$contrattoId . "
+          LIMIT 1
+      ", "pigliacelli");
+      if (!empty({rsStatoFinAdmin[0][0]}) && trim((string){rsStatoFinAdmin[0][0]}) === 'Da revisionare') {
+          $isAdminFlow = true;
+          $adminFlowReason = 'stato_da_revisionare';
+      }
+  }
+
+  if ($contrattoId > 0) {
+      sc_log_add(
+          'FINALIZE',
+          'contratto=' . (int)$contrattoId
+          . ' subvettore=' . (int)$subvettoreId
+          . ' isAdminFlow=' . ($isAdminFlow ? '1' : '0')
+          . ' reason=' . $adminFlowReason
+          . ' signApp=' . ($isAdminFlow ? 'easygn_start_wf' : 'easygn_start_wf_auto')
+      );
+  }
+
+  $tipoContrattoId = 0;
+
+  if (!function_exists('finalize_json_out')) {
+      function finalize_json_out($data, $pretty = false)
+      {
+          if (!headers_sent()) {
+              header('Content-Type: application/json; charset=UTF-8');
+              header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+              header('Pragma: no-cache');
+          }
+          $flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
+          if ($pretty) {
+              $flags |= JSON_PRETTY_PRINT;
+          }
+          echo json_encode($data, $flags);
+          exit;
+      }
+  }
+
+  if (!function_exists('finalize_resolve_doc_pdf_dir')) {
+    function finalize_resolve_doc_pdf_dir()
+    {
+      sc_lookup(rsFinBaseDir, "
+        SELECT set_value
+        FROM sec_settings
+        WHERE set_name = 'contratti_base_dir'
+        LIMIT 1
+      ");
+      $rel = '';
+      if (!empty({rsFinBaseDir[0][0]})) {
+        $rel = trim((string){rsFinBaseDir[0][0]});
+      }
+      if ($rel === '') {
+        return '';
+      }
+      $rel = trim(str_replace('\\', '/', $rel), '/');
+      if (!empty($_SERVER['DOCUMENT_ROOT'])) {
+        $docRoot = @realpath((string)$_SERVER['DOCUMENT_ROOT']);
+        if ($docRoot !== false && $docRoot !== '') {
+          $cand = $docRoot . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel);
+          if (is_dir($cand)) {
+            $resolved = @realpath($cand);
+            return ($resolved !== false) ? $resolved : $cand;
+          }
+        }
+      }
+      return '';
+    }
+  }
+
+  if (!function_exists('finalize_pdf_on_disk')) {
+    function finalize_pdf_on_disk($fileVal, $contrattoId = 0)
+    {
+      $fileVal = trim((string)$fileVal);
+      $out = array('found' => false, 'path' => '', 'baseDir' => '');
+      if ($fileVal === '') {
+        return $out;
+      }
+      if (strncmp($fileVal, '%PDF', 4) === 0) {
+        $out['found'] = true;
+        return $out;
+      }
+      if (stripos($fileVal, '.pdf') === false) {
+        return $out;
+      }
+      $baseDir = finalize_resolve_doc_pdf_dir();
+      $out['baseDir'] = $baseDir;
+      if ($baseDir === '') {
+        return $out;
+      }
+      $basename = basename(str_replace('\\', '/', $fileVal));
+      $paths = array(
+        $baseDir . DIRECTORY_SEPARATOR . $basename,
+        $baseDir . DIRECTORY_SEPARATOR . 'contratti' . DIRECTORY_SEPARATOR . $basename,
+      );
+      $contrattoId = (int)$contrattoId;
+      if ($contrattoId > 0) {
+        $glob = @glob($baseDir . DIRECTORY_SEPARATOR . 'contratto_' . $contrattoId . '_*.pdf');
+        if (is_array($glob)) {
+          rsort($glob);
+          foreach ($glob as $g) {
+            $paths[] = (string)$g;
+          }
+        }
+      }
+      foreach ($paths as $try) {
+        if (!@is_readable($try)) {
+          continue;
+        }
+        $head = @file_get_contents($try, false, null, 0, 4);
+        if ($head === '%PDF') {
+          $out['found'] = true;
+          $out['path'] = $try;
+          return $out;
+        }
+      }
+      return $out;
+    }
+  }
+
+  // --- ajax=ping ---
+  if (isset($_GET['ajax']) && (string)$_GET['ajax'] === 'ping') {
+      finalize_json_out(array(
+          'ok' => true,
+          'mode' => 'ping',
+          'php' => PHP_VERSION,
+          'contrattoId' => $contrattoId,
+          'subvettoreId' => $subvettoreId,
+      ));
+  }
+
+  // --- ajax=diag ---
+  if (isset($_GET['ajax']) && (string)$_GET['ajax'] === 'diag') {
+      $cid = isset($_GET['contrattoId']) ? (int)$_GET['contrattoId'] : $contrattoId;
+      $baseDir = finalize_resolve_doc_pdf_dir();
+      $payload = array(
+          'ok' => true,
+          'mode' => 'diag',
+          'php' => array(
+              'version' => PHP_VERSION,
+              'DOCUMENT_ROOT' => isset($_SERVER['DOCUMENT_ROOT']) ? (string)$_SERVER['DOCUMENT_ROOT'] : '',
+              'SCRIPT_FILENAME' => isset($_SERVER['SCRIPT_FILENAME']) ? (string)$_SERVER['SCRIPT_FILENAME'] : '',
+          ),
+          'contratti_base_dir_resolved' => $baseDir,
+          'base_dir_exists' => ($baseDir !== '' && is_dir($baseDir)),
+          'base_dir_writable' => ($baseDir !== '' && is_writable($baseDir)),
+      );
+      if ($cid > 0) {
+          sc_lookup(rsDiagC, "
+              SELECT file
+              FROM contratti
+              WHERE id = " . (int)$cid . "
+              LIMIT 1
+          ");
+          $fileVal = '';
+          if (isset({rsDiagC[0][0]})) {
+              $fileVal = trim((string){rsDiagC[0][0]});
+          }
+          $disk = finalize_pdf_on_disk($fileVal, $cid);
+          $payload['contratto'] = array(
+              'id' => $cid,
+              'file_db' => $fileVal,
+              'disk_found' => !empty($disk['found']),
+              'disk_path' => (string)$disk['path'],
+          );
+      }
+      finalize_json_out($payload, true);
+  }
+
+  // --- ajax=status ---
+  if (isset($_GET['ajax']) && (string)$_GET['ajax'] === 'status') {
+      $cid = isset($_GET['contrattoId']) ? (int)$_GET['contrattoId'] : $contrattoId;
+      if ($cid <= 0) {
+          finalize_json_out(array('ok' => false, 'error' => 'contrattoId non valido'));
+      }
+
+      sc_lookup(rsC, "
+          SELECT file
+          FROM contratti
+          WHERE id = " . (int)$cid . "
+          LIMIT 1
+      ");
+
+      $fileVal = '';
+      if (isset({rsC[0][0]})) {
+          $fileVal = trim((string){rsC[0][0]});
+      }
+
+      $disk = finalize_pdf_on_disk($fileVal, $cid);
+      $dbReady = ($fileVal !== '' && (strncmp($fileVal, '%PDF', 4) === 0 || stripos($fileVal, '.pdf') !== false));
+      $diskReady = !empty($disk['found']);
+
+      finalize_json_out(array(
+          'ok' => true,
+          'contrattoId' => $cid,
+          'ready' => $diskReady,
+          'dbReady' => $dbReady,
+          'diskReady' => $diskReady,
+          'file' => $fileVal,
+          'pdfPath' => $diskReady ? (string)$disk['path'] : '',
+          'baseDir' => (string)$disk['baseDir'],
+      ));
+  }
+
+  if ($subvettoreId <= 0 || $contrattoId <= 0) {
+      sc_error_message('Parametri mancanti: subvettoreId/contrattoId.');
+      return;
+  }
+
+  sc_lookup(rsTipoFin, "
+      SELECT tipo_contratto_id
+      FROM contratti
+      WHERE id = " . (int)$contrattoId . "
+      LIMIT 1
+  ");
+  if (!empty({rsTipoFin})) {
+      $tipoContrattoId = (int){rsTipoFin[0][0]};
+  }
+  if ($tipoContrattoIdHint > 0 && $tipoContrattoIdHint !== $tipoContrattoId) {
+      sc_log_add(
+          'FINALIZE',
+          "tipoContrattoId hint=$tipoContrattoIdHint ignorato, uso DB tipo=$tipoContrattoId per contratto=$contrattoId"
+      );
+  }
+
+  if ($tipoContrattoId <= 0) {
+      sc_error_message('tipoContrattoId mancante o non valido.');
+      return;
+  }
+
+  if (!isset($_SESSION) || !is_array($_SESSION)) {
+      $_SESSION = array();
+  }
+
+  sc_exec_sql("UPDATE contratti SET file = '' WHERE id = " . (int)$contrattoId);
+  sc_log_add('FINALIZE', "contratto=$contrattoId file reset prima generazione PDF");
+
+  $_SESSION['pdf_auto_save'] = 'S';
+  $_SESSION['pdf_redirect_after'] = '';
+
+  $reportApp = '';
+  switch ($tipoContrattoId) {
+      case 1:
+          $reportApp = 'nuovo_contratto_vettore';
+          break;
+      case 2:
+      case 3:
+          $reportApp = 'variazione_contratto';
+          break;
+      default:
+          sc_error_message('tipoContrattoId non gestito: ' . $tipoContrattoId);
+          return;
+  }
+
+  $reportUrl = '../' . $reportApp . '/?subvector=' . (int)$subvettoreId
+      . '&contratto=' . (int)$contrattoId
+      . '&auto_save_pdf=S';
+  $statusUrl = '?ajax=status&contrattoId=' . (int)$contrattoId
+      . '&subvettoreId=' . (int)$subvettoreId
+      . '&tipoContrattoId=' . (int)$tipoContrattoId
+      . ($isAdminFlow ? '&mode=admin' : '');
+  if ($isAdminFlow) {
+      $signUrl = '../easygn_start_wf/?contrattoId=' . (int)$contrattoId
+          . '&subvettoreId=' . (int)$subvettoreId
+          . '&tipo_contratto_id=' . (int)$tipoContrattoId
+          . '&tipoContrattoId=' . (int)$tipoContrattoId
+          . '&mode=admin'
+          . '&silent=1';
+  } else {
+      $signUrl = '../easygn_start_wf_auto/?contrattoId=' . (int)$contrattoId
+          . '&subvettoreId=' . (int)$subvettoreId
+          . '&tipo_contratto_id=' . (int)$tipoContrattoId
+          . '&tipoContrattoId=' . (int)$tipoContrattoId
+          . '&mode=subvettore'
+          . '&wf_mode=subvettore';
+  }
+
+  $reportUrlEsc = htmlspecialchars($reportUrl, ENT_QUOTES, 'UTF-8');
+  $statusUrlEsc = htmlspecialchars($statusUrl, ENT_QUOTES, 'UTF-8');
+  $signUrlEsc   = htmlspecialchars($signUrl, ENT_QUOTES, 'UTF-8');
+  $hintText = $isAdminFlow
+      ? 'Al termine invieremo al subvettore l\'email con il link per la firma. La firma non verrà aperta in questo browser.'
+      : 'Le invieremo anche una email con il link per la firma digitale, nel caso questo reindirizzamento non dovesse funzionare o il link andasse perso.';
+  $hintTextEsc = htmlspecialchars($hintText, ENT_QUOTES, 'UTF-8');
+  $gridUrlEsc = htmlspecialchars('../grid_contratti/', ENT_QUOTES, 'UTF-8');
+  $isAdminFlowJs = $isAdminFlow ? 'true' : 'false';
+
+  echo <<<HTML
+  <!doctype html>
+  <html lang="it">
+  <head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Preparazione contratto...</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      background: #f3f4f6;
+      color: #111827;
+    }
+    #pdfFrame {
+      position: fixed;
+      width: 1px;
+      height: 1px;
+      border: 0;
+      left: -9999px;
+      top: -9999px;
+      opacity: 0;
+    }
+    #overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f3f4f6;
+      padding: 16px;
+    }
+    .wrap {
+      max-width: 520px;
+      padding: 24px 26px;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      background: #fff;
+      box-shadow: 0 8px 24px rgba(0,0,0,.08);
+      text-align: center;
+    }
+    .title { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+    .sub { font-size: 14px; color: #6b7280; line-height: 1.5; }
+    .hint { font-size: 13px; color: #9ca3af; margin-top: 10px; line-height: 1.45; }
+    .spinner {
+      width: 40px; height: 40px; margin: 18px auto 0;
+      border: 3px solid #e5e7eb; border-top-color: #5b2d8e;
+      border-radius: 50%; animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .err { color: #7f1d1d; }
+  </style>
+  </head>
+  <body>
+  <div id="overlay">
+    <div class="wrap">
+      <div class="title" id="title">Preparazione del contratto in corso</div>
+      <div class="sub" id="msg">Stiamo generando il documento, attenda qualche istante.</div>
+      <div class="hint" id="hint">{$hintTextEsc}</div>
+      <div class="spinner" id="spin"></div>
+    </div>
+  </div>
+
+  <iframe id="pdfFrame" src="{$reportUrlEsc}" title="Generazione PDF"></iframe>
+
+  <script>
+  (function () {
+    const statusUrl = "{$statusUrlEsc}";
+    const signUrl   = "{$signUrlEsc}";
+    const gridUrl   = "{$gridUrlEsc}";
+    const isAdminFlow = {$isAdminFlowJs};
+    const t0 = Date.now();
+    const timeoutMs = 30000;
+    const intervalMs = 1500;
+    let redirected = false;
+    let adminWorkflowDone = false;
+    let lastStatus = null;
+    let fetchErrors = 0;
+
+    function hideSpinner() {
+      var sp = document.getElementById('spin');
+      if (sp) sp.style.display = 'none';
+    }
+
+    function finishAdminWorkflow() {
+      if (adminWorkflowDone) return;
+      adminWorkflowDone = true;
+      hideSpinner();
+      document.getElementById('title').textContent = 'Richiesta di firma inviata';
+      document.getElementById('msg').textContent =
+        'Il subvettore riceverà l\'email con il link per firmare il contratto.';
+      document.getElementById('hint').innerHTML =
+        'Può tornare alla <a href="' + gridUrl + '" style="color:#5b2d8e;font-weight:600;">lista contratti</a>.';
+    }
+
+    function goToSign() {
+      if (redirected) return;
+      redirected = true;
+
+      if (isAdminFlow) {
+        document.getElementById('title').textContent = 'Invio richiesta di firma';
+        document.getElementById('msg').textContent =
+          'Stiamo inviando al subvettore il link per la firma digitale.';
+        document.getElementById('hint').textContent =
+          'La pagina di firma non verrà aperta in questo browser.';
+        fetch(signUrl, { cache: 'no-store', credentials: 'same-origin' })
+          .then(function (r) {
+            return r.json().then(function (j) {
+              return { httpOk: r.ok, body: j };
+            }).catch(function () {
+              return { httpOk: r.ok, body: null };
+            });
+          })
+          .then(function (res) {
+            if (!res.httpOk || (res.body && res.body.ok === false)) {
+              onError('Invio della richiesta di firma non riuscito. Verifichi i log o riprovi dalla griglia.');
+              return;
+            }
+            finishAdminWorkflow();
+          })
+          .catch(function () {
+            onError('Impossibile completare l\'invio della richiesta di firma.');
+          });
+        return;
+      }
+
+      document.getElementById('title').textContent = 'Avvio della firma in corso';
+      document.getElementById('msg').textContent = 'La reindirizziamo alla firma digitale del contratto.';
+      document.getElementById('hint').textContent =
+        'Se il reindirizzamento non dovesse avvenire, troverà lo stesso link nell\'email che le invieremo a breve.';
+      // YouSign (frame-ancestors 'none') non può caricarsi nel tab iframe di Scriptcase.
+      try {
+        if (window.top && window.top !== window) {
+          window.top.location.assign(signUrl);
+          return;
+        }
+      } catch (e) { /* accesso cross-origin al parent */ }
+      var opened = window.open(signUrl, '_blank', 'noopener,noreferrer');
+      if (!opened) {
+        window.location.assign(signUrl);
+      }
+    }
+
+    function onError(text) {
+      document.getElementById('title').textContent = 'Si è verificato un problema';
+      var msg = document.getElementById('msg');
+      msg.className = 'sub err';
+      msg.textContent = text;
+      var sp = document.getElementById('spin');
+      if (sp) sp.style.display = 'none';
+    }
+
+    const timer = setInterval(async function () {
+      if (Date.now() - t0 > timeoutMs) {
+        clearInterval(timer);
+        if (lastStatus && lastStatus.dbReady && !lastStatus.diskReady) {
+          onError(
+            'Il documento risulta registrato ma il file PDF non e\' leggibile sul server. ' +
+            'Contatti l\'assistenza indicando contratto #' + (lastStatus.contrattoId || '') + '.'
+          );
+        } else {
+          onError('Tempo scaduto durante la generazione del documento. Ricarichi la pagina o riprovi dal link ricevuto via email.');
+        }
+        return;
+      }
+
+      try {
+        const r = await fetch(statusUrl, { cache: 'no-store', credentials: 'same-origin' });
+        if (!r.ok) {
+          fetchErrors++;
+          if (fetchErrors >= 3) {
+            clearInterval(timer);
+            onError('Errore di comunicazione con il server (' + r.status + '). Ricarichi la pagina.');
+          }
+          return;
+        }
+        const j = await r.json();
+        lastStatus = j;
+        if (j && j.ok === false) {
+          fetchErrors++;
+          if (fetchErrors >= 3) {
+            clearInterval(timer);
+            onError(j.message || 'Errore durante il controllo del documento.');
+          }
+          return;
+        }
+        if (j && j.ok && j.ready) {
+          clearInterval(timer);
+          goToSign();
+        }
+      } catch (e) {
+        fetchErrors++;
+        if (fetchErrors >= 3) {
+          clearInterval(timer);
+          onError('Impossibile verificare lo stato del documento. Ricarichi la pagina.');
+        }
+      }
+    }, intervalMs);
+  })();
+  </script>
+  </body>
+  </html>
+  HTML;
+
+  exit;

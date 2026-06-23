@@ -1,0 +1,141 @@
+/**
+ * form_subvettori_contratti
+ * → onAfterUpdate
+ *
+ * Sincronizza i campi anagrafici virtuali sulla tabella subvettori dopo il
+ * salvataggio della riga subvettori_contratti, evitando la transazione onBefore.
+ */
+
+if (!function_exists('form_subvettori_contratti_sql_quote')) {
+    function form_subvettori_contratti_sql_quote($v)
+    {
+        if ($v === null) {
+            return 'NULL';
+        }
+        return "'" . str_replace("'", "''", (string)$v) . "'";
+    }
+}
+
+if (!function_exists('form_subvettori_contratti_normalize_date_db')) {
+    function form_subvettori_contratti_normalize_date_db($value)
+    {
+        $value = trim((string)$value);
+        if ($value === '' || $value === '0000-00-00' || $value === '00/00/0000') {
+            return null;
+        }
+        if (preg_match('/^(\d{4})-(\d{2})-(\d{2})/', $value, $m) === 1) {
+            $year  = (int)$m[1];
+            $month = (int)$m[2];
+            $day   = (int)$m[3];
+            if ($year >= 1900 && checkdate($month, $day, $year)) {
+                return sprintf('%04d-%02d-%02d', $year, $month, $day);
+            }
+            return null;
+        }
+        if (preg_match('/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/', $value, $m) === 1) {
+            $day   = (int)$m[1];
+            $month = (int)$m[2];
+            $year  = (int)$m[3];
+            if (checkdate($month, $day, $year)) {
+                return sprintf('%04d-%02d-%02d', $year, $month, $day);
+            }
+            return null;
+        }
+        if (preg_match('/^(\d{2})(\d{2})(\d{4})$/', $value, $m) === 1) {
+            $day   = (int)$m[1];
+            $month = (int)$m[2];
+            $year  = (int)$m[3];
+            if (checkdate($month, $day, $year)) {
+                return sprintf('%04d-%02d-%02d', $year, $month, $day);
+            }
+            return null;
+        }
+        return null;
+    }
+}
+
+$subvettoreId = 0;
+if (isset({subvettore_id}) && (int){subvettore_id} > 0) {
+    $subvettoreId = (int){subvettore_id};
+}
+
+$scId = 0;
+if (isset({id}) && (int){id} > 0) {
+    $scId = (int){id};
+} elseif (isset([subvettore_contratto_id]) && (int)[subvettore_contratto_id] > 0) {
+    $scId = (int)[subvettore_contratto_id];
+}
+
+if ($subvettoreId <= 0 && $scId > 0) {
+    sc_lookup(rsSubIdAfterSave, "
+        SELECT subvettore_id
+        FROM subvettori_contratti
+        WHERE id = " . (int)$scId . "
+        LIMIT 1
+    ");
+    if (!empty({rsSubIdAfterSave[0][0]})) {
+        $subvettoreId = (int){rsSubIdAfterSave[0][0]};
+    }
+}
+
+$ragione_sociale                  = isset({ragione_sociale})                  ? trim((string){ragione_sociale})                  : '';
+$sede_citta                       = isset({sede_citta})                       ? trim((string){sede_citta})                       : '';
+$sede_prov                        = isset({sede_prov})                        ? trim((string){sede_prov})                        : '';
+$indirizzo                        = isset({indirizzo})                        ? trim((string){indirizzo})                        : '';
+$civico                           = isset({civico})                           ? trim((string){civico})                           : '';
+$cod_fiscale                      = isset({cod_fiscale})                      ? trim((string){cod_fiscale})                      : '';
+$piva                             = isset({piva})                             ? trim((string){piva})                             : '';
+$num_iscrizione_reg_imprese       = isset({num_iscrizione_reg_imprese})       ? trim((string){num_iscrizione_reg_imprese})       : '';
+$locazione_iscrizione_reg_imprese = isset({locazione_iscrizione_reg_imprese}) ? trim((string){locazione_iscrizione_reg_imprese}) : '';
+$rea                              = isset({rea})                              ? trim((string){rea})                              : '';
+$cellphone                        = isset({phone})                            ? trim((string){phone})                            : '';
+
+if ($subvettoreId > 0) {
+    sc_exec_sql("
+        UPDATE subvettori
+        SET
+            ragione_sociale                  = " . form_subvettori_contratti_sql_quote($ragione_sociale) . ",
+            sede_citta                       = " . form_subvettori_contratti_sql_quote($sede_citta) . ",
+            sede_prov                        = " . form_subvettori_contratti_sql_quote($sede_prov) . ",
+            indirizzo                        = " . form_subvettori_contratti_sql_quote($indirizzo) . ",
+            civico                           = " . form_subvettori_contratti_sql_quote($civico) . ",
+            cod_fiscale                      = " . form_subvettori_contratti_sql_quote($cod_fiscale) . ",
+            piva                             = " . form_subvettori_contratti_sql_quote($piva) . ",
+            num_iscrizione_reg_imprese       = " . form_subvettori_contratti_sql_quote($num_iscrizione_reg_imprese) . ",
+            locazione_iscrizione_reg_imprese = " . form_subvettori_contratti_sql_quote($locazione_iscrizione_reg_imprese) . ",
+            rea                              = " . form_subvettori_contratti_sql_quote($rea) . ",
+            cellphone                        = " . form_subvettori_contratti_sql_quote($cellphone) . "
+        WHERE id = " . (int)$subvettoreId . "
+        LIMIT 1
+    ");
+    sc_log_add('SUB_SYNC', 'subvettori aggiornato id=' . (int)$subvettoreId);
+} else {
+    sc_log_add('SUB_SYNC', 'subvettore_id non risolvibile, skip UPDATE subvettori');
+}
+
+if ($scId > 0) {
+    $data_nascita_raw     = isset({data_nascita_rappresentante}) ? trim((string){data_nascita_rappresentante}) : '';
+    $data_nascita_display = $data_nascita_raw;
+    $data_nascita_db      = form_subvettori_contratti_normalize_date_db($data_nascita_raw);
+
+    if ($data_nascita_db === null && $data_nascita_raw !== '') {
+        {data_nascita_rappresentante} = sc_date_conv({data_nascita_rappresentante}, "sc_format_region", "db_format");
+        $data_nascita_db = form_subvettori_contratti_normalize_date_db({data_nascita_rappresentante});
+        if ($data_nascita_db === null) {
+            {data_nascita_rappresentante} = $data_nascita_display;
+            {data_nascita_rappresentante} = sc_date_conv({data_nascita_rappresentante}, "ddmmyyyy", "db_format");
+            $data_nascita_db = form_subvettori_contratti_normalize_date_db({data_nascita_rappresentante});
+        }
+        {data_nascita_rappresentante} = $data_nascita_display;
+    }
+
+    if (trim((string)$data_nascita_raw) !== '' && $data_nascita_db !== null) {
+        sc_exec_sql("
+            UPDATE subvettori_contratti
+            SET data_nascita_rappresentante = " . form_subvettori_contratti_sql_quote($data_nascita_db) . "
+            WHERE id = " . (int)$scId . "
+            LIMIT 1
+        ");
+        sc_log_add('SUB_SYNC', 'data_nascita_rappresentante normalizzata id=' . (int)$scId . ' val=' . $data_nascita_db);
+    }
+}

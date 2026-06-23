@@ -1,0 +1,193 @@
+// Export CSV da SGA: SELECT * FROM T2BaseVettori
+// Download diretto dal browser (applicazione ScriptCase blank, evento onExecute).
+// Modellato su insert_new_subvectors / upsert_societa_and_fornitori.
+
+function pulisci_output_buffer()
+{
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+}
+
+function invia_errore_export($messaggio, $http_code = 500)
+{
+    pulisci_output_buffer();
+    http_response_code($http_code);
+    header('Content-Type: text/plain; charset=UTF-8');
+    echo $messaggio;
+    exit;
+}
+
+function connetti_pdo_sga($settings)
+{
+    $set_names = ['sgam_user', 'sgam_pswd', 'sgam_db', 'sgam_server'];
+
+    foreach ($set_names as $set_name) {
+        if (!array_key_exists($set_name, $settings) || trim((string)$settings[$set_name]) === '') {
+            return [null, "Parametro '" . $set_name . "' non trovato o vuoto in sec_settings."];
+        }
+    }
+
+    try {
+        $dsn_sga = "sqlsrv:Server=" . $settings['sgam_server'] .
+                   ";Database=" . $settings['sgam_db'] .
+                   ";Encrypt=1" .
+                   ";TrustServerCertificate=1";
+
+        $pdo = new PDO(
+            $dsn_sga,
+            $settings['sgam_user'],
+            $settings['sgam_pswd'],
+            [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            ]
+        );
+
+        return [$pdo, null];
+    } catch (PDOException $e) {
+        return [null, "Errore connessione PDO SGA: " . $e->getMessage()];
+    }
+}
+
+function risolvi_tabella_sga($pdo, $nome_tabella)
+{
+    $nome_tabella = preg_replace('/[^A-Za-z0-9_]/', '', $nome_tabella);
+    if ($nome_tabella === '') {
+        return [null, 'Nome tabella non valido.'];
+    }
+
+    $db_corrente = (string)$pdo->query('SELECT DB_NAME()')->fetchColumn();
+
+    $sql = "
+        SELECT TABLE_CATALOG, TABLE_SCHEMA, TABLE_NAME
+        FROM INFORMATION_SCHEMA.TABLES
+        WHERE TABLE_TYPE = 'BASE TABLE'
+          AND TABLE_NAME = :nome
+        ORDER BY
+            CASE WHEN TABLE_CATALOG = DB_NAME() THEN 0 ELSE 1 END,
+            CASE WHEN TABLE_SCHEMA = 'dbo' THEN 0 ELSE 1 END,
+            TABLE_SCHEMA
+    ";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute(['nome' => $nome_tabella]);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (!empty($rows)) {
+        $r = $rows[0];
+        $qualificato = '';
+        if ($r['TABLE_CATALOG'] !== $db_corrente) {
+            $qualificato .= '[' . $r['TABLE_CATALOG'] . '].';
+        }
+        $qualificato .= '[' . $r['TABLE_SCHEMA'] . '].[' . $r['TABLE_NAME'] . ']';
+        return [$qualificato, null];
+    }
+
+    $stmt_simili = $pdo->prepare("
+        SELECT TOP 20 TABLE_CATALOG, TABLE_SCHEMA, TABLE_NAME
+        FROM INFORMATION_SCHEMA.TABLES
+        WHERE TABLE_TYPE = 'BASE TABLE'
+          AND TABLE_NAME LIKE :pattern
+        ORDER BY TABLE_NAME
+    ");
+    $stmt_simili->execute(['pattern' => '%' . $nome_tabella . '%']);
+    $simili = $stmt_simili->fetchAll(PDO::FETCH_ASSOC);
+
+    $msg = "Tabella '" . $nome_tabella . "' non trovata nel database connesso '" . $db_corrente . "'.";
+    $msg .= "\nVerifica che sgam_db in sec_settings punti al DB SGA giusto (quello dove la vedi in SSMS).";
+
+    if (!empty($simili)) {
+        $msg .= "\n\nTabelle simili trovate su questo server/database:";
+        foreach ($simili as $s) {
+            $msg .= "\n- [" . $s['TABLE_CATALOG'] . '].[' . $s['TABLE_SCHEMA'] . '].[' . $s['TABLE_NAME'] . ']';
+        }
+    }
+
+    return [null, $msg];
+}
+
+@set_time_limit(0);
+@ini_set('memory_limit', '512M');
+
+// --- pigliacelli: credenziali SGA da sec_settings ---
+sc_lookup(settingsRows, "
+    SELECT set_name, set_value
+    FROM sec_settings
+    WHERE set_name IN ('sgam_user', 'sgam_pswd', 'sgam_db', 'sgam_server')
+", "pigliacelli");
+
+$settings = [];
+if (!empty({settingsRows})) {
+    foreach ({settingsRows} as $settingRow) {
+        $settings[$settingRow[0]] = $settingRow[1];
+    }
+}
+
+list($pdo_sga, $err_conn) = connetti_pdo_sga($settings);
+if ($pdo_sga === null) {
+    invia_errore_export($err_conn);
+}
+
+$nome_tabella = 'T2BaseVettori';
+list($tabella_qualificata, $err_tabella) = risolvi_tabella_sga($pdo_sga, $nome_tabella);
+if ($tabella_qualificata === null) {
+    invia_errore_export($err_tabella);
+}
+
+$sql = "SELECT * FROM " . $tabella_qualificata;
+
+try {
+    $stmt = $pdo_sga->query($sql);
+} catch (PDOException $e) {
+    invia_errore_export(
+        "Errore select " . $nome_tabella . " (" . $tabella_qualificata . "): " . $e->getMessage()
+    );
+}
+
+$filename = 'T2BaseVettori_' . date('Ymd_His') . '.csv';
+$delimiter = ';';
+
+// Nessun output HTML prima degli header (obbligatorio per download browser)
+pulisci_output_buffer();
+
+header('Content-Type: text/csv; charset=UTF-8');
+header('Content-Disposition: attachment; filename="' . $filename . '"');
+header('Content-Transfer-Encoding: binary');
+header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
+header('Pragma: public');
+header('Expires: 0');
+
+$out = fopen('php://output', 'w');
+if ($out === false) {
+    invia_errore_export("Impossibile aprire output stream per il CSV.");
+}
+
+// BOM UTF-8 per Excel Windows
+fprintf($out, chr(0xEF) . chr(0xBB) . chr(0xBF));
+
+$righe = 0;
+$header_scritto = false;
+
+while (($row = $stmt->fetch(PDO::FETCH_ASSOC)) !== false) {
+    if (!$header_scritto) {
+        fputcsv($out, array_keys($row), $delimiter);
+        $header_scritto = true;
+    }
+
+    $csv_row = [];
+    foreach ($row as $val) {
+        $csv_row[] = ($val === null) ? '' : $val;
+    }
+    fputcsv($out, $csv_row, $delimiter);
+    $righe++;
+}
+
+if (!$header_scritto) {
+    fputcsv($out, [], $delimiter);
+}
+
+fclose($out);
+$stmt->closeCursor();
+
+exit;

@@ -1,0 +1,1532 @@
+// Scriptcase app: easygn_start_wf_auto (flusso automatico; mode=subvettore dal finalize).
+// Versione "semplice": mostra messaggio rosso e stop (niente redirect/modali).
+//
+// GET ha priorità sulle globali SC: in easygn_start_wf_auto le globali in ingresso
+// (es. tipo_contratto_id=1 di default) altrimenti sovrascrivono i parametri del redirect.
+
+$contrattoId = 0;
+if (isset($_GET['contrattoId']) && (int)$_GET['contrattoId'] > 0) {
+    $contrattoId = (int)$_GET['contrattoId'];
+} elseif ((int)[contrattoId] > 0) {
+    $contrattoId = (int)[contrattoId];
+}
+
+$subvettoreId = 0;
+if (isset($_GET['subvettoreId']) && (int)$_GET['subvettoreId'] > 0) {
+    $subvettoreId = (int)$_GET['subvettoreId'];
+} elseif ((int)[subvettoreId] > 0) {
+    $subvettoreId = (int)[subvettoreId];
+}
+
+$tipoContrattoId = 0;
+if (isset($_GET['tipo_contratto_id']) && (int)$_GET['tipo_contratto_id'] > 0) {
+    $tipoContrattoId = (int)$_GET['tipo_contratto_id'];
+} elseif (isset($_GET['tipoContrattoId']) && (int)$_GET['tipoContrattoId'] > 0) {
+    $tipoContrattoId = (int)$_GET['tipoContrattoId'];
+} elseif ((int)[tipo_contratto_id] > 0) {
+    $tipoContrattoId = (int)[tipo_contratto_id];
+} elseif ((int)[tipoContrattoId] > 0) {
+    $tipoContrattoId = (int)[tipoContrattoId];
+}
+
+if ($contrattoId <= 0) {
+    sc_error_message("Impossibile avviare la firma.\n\ncontrattoId mancante o non valido");
+    sc_error_exit();
+}
+
+if ($subvettoreId <= 0) {
+    sc_error_message("Impossibile avviare la firma.\n\nsubvettoreId mancante o non valido");
+    sc_error_exit();
+}
+
+$tipoContrattoIdFromGet = $tipoContrattoId;
+
+if ($tipoContrattoId <= 0) {
+    sc_lookup(rsTipoEg, "
+        SELECT tipo_contratto_id
+        FROM contratti
+        WHERE id = " . (int)$contrattoId . "
+        LIMIT 1
+    ");
+    if (!empty({rsTipoEg})) {
+        $tipoContrattoId = (int){rsTipoEg[0][0]};
+    }
+} else {
+    // Allinea sempre al DB: le coordinate firma devono corrispondere al PDF salvato sul contratto.
+    sc_lookup(rsTipoEgDb, "
+        SELECT tipo_contratto_id
+        FROM contratti
+        WHERE id = " . (int)$contrattoId . "
+        LIMIT 1
+    ");
+    if (!empty({rsTipoEgDb})) {
+        $tipoDb = (int){rsTipoEgDb[0][0]};
+        if ($tipoDb > 0 && $tipoDb !== $tipoContrattoId) {
+            $tipoContrattoId = $tipoDb;
+        }
+    }
+}
+
+$log = function ($msg) use ($contrattoId, $subvettoreId, $tipoContrattoId) {
+    sc_log_add('EASYGN', "[contrattoId=$contrattoId][subvettoreId=$subvettoreId][tipoContrattoId=$tipoContrattoId] " . (string)$msg);
+};
+
+$log("start blank");
+if ($tipoContrattoIdFromGet > 0 && $tipoContrattoIdFromGet !== $tipoContrattoId) {
+    $log("tipoContrattoId corretto: hint/get=$tipoContrattoIdFromGet db=$tipoContrattoId");
+}
+
+// easygn_start_wf_auto = SOLO flusso subvettore (finalize / magic link).
+// La grid usa l'app separata easygn_start_wf (blank_easygn_sign_contratto.php).
+// Default: redirect al link firma EasyGN. Solo mode=admin esplicito → grid (debug).
+$mode = '';
+foreach (array('mode', 'wf_mode', 'easygn_mode') as $modeKey) {
+    if (isset($_GET[$modeKey]) && trim((string)$_GET[$modeKey]) !== '') {
+        $mode = strtolower(trim((string)$_GET[$modeKey]));
+        break;
+    }
+}
+if ($mode === '' && isset([mode]) && trim((string)[mode]) !== '') {
+    $mode = strtolower(trim((string)[mode]));
+}
+$isSubvettoreMode = ($mode !== 'admin');
+$log('mode=' . ($mode === 'admin' ? 'admin' : 'subvettore'));
+
+if (!ob_get_level()) {
+    ob_start();
+}
+
+@ini_set('memory_limit', '512M');
+@set_time_limit(120);
+
+register_shutdown_function(function () use ($contrattoId, $subvettoreId, $tipoContrattoId) {
+    $err = error_get_last();
+    if ($err === null || !in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+        return;
+    }
+    if (function_exists('sc_log_add')) {
+        sc_log_add(
+            'EASYGN',
+            "[contrattoId=$contrattoId][subvettoreId=$subvettoreId][tipoContrattoId=$tipoContrattoId] FATAL: "
+            . $err['message'] . ' in ' . $err['file'] . ':' . $err['line']
+        );
+    }
+});
+
+$fail = function ($msg) use ($log) {
+    $log("FAIL: " . (string)$msg);
+    $title = "Impossibile avviare la firma";
+    $body  = (string)$msg;
+
+    $titleEsc = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
+    $bodyEsc  = nl2br(htmlspecialchars($body, ENT_QUOTES, 'UTF-8'));
+
+    // Torna alla lista contratti quando l’utente chiude
+    $backUrl = "../grid_contratti/";
+
+    if (!headers_sent()) {
+        header("Content-Type: text/html; charset=UTF-8");
+    }
+
+    echo "<!doctype html>
+<html lang='it'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>{$titleEsc}</title>
+<style>
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:transparent;}
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;padding:16px;}
+  .modal{width:min(560px,100%);background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden;}
+  .head{padding:16px 18px;background:#fee2e2;color:#7f1d1d;font-weight:700;}
+  .content{padding:16px 18px;color:#111827;line-height:1.45;}
+  .actions{display:flex;gap:10px;justify-content:flex-end;padding:14px 18px;background:#f9fafb;border-top:1px solid #e5e7eb;}
+  .btn{appearance:none;border:0;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer}
+  .btn-primary{background:#111827;color:#fff}
+
+</style>
+</head>
+<body>
+<div class='overlay'>
+  <div class='modal' role='dialog' aria-modal='true' aria-labelledby='ttl'>
+    <div class='head' id='ttl'>{$titleEsc}</div>
+    <div class='content'>{$bodyEsc}</div>
+    <div class='actions'>
+      <button class='btn btn-primary' onclick='location.href=\"" . htmlspecialchars($backUrl, ENT_QUOTES, 'UTF-8') . "\"'>Vai alla lista</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>";
+    exit;
+};
+
+$sc_setting = function ($name, $default = '') {
+    $val = $default;
+    $safeName = str_replace("'", "''", trim((string)$name));
+
+    sc_lookup(rsSet, "SELECT set_value FROM sec_settings WHERE set_name = '" . $safeName . "' LIMIT 1");
+    if (isset({rsSet[0][0]})) {
+        $val = (string){rsSet[0][0]};
+        return $val;
+    }
+    return $val;
+};
+
+if (!function_exists('pigliacelli_mail_logo_read_embed')) {
+    function pigliacelli_mail_logo_read_embed($anchorFile = null)
+    {
+        $rel = '_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png';
+        $dir = realpath(dirname($anchorFile ?: __FILE__));
+        for ($i = 0; $i < 12 && $dir; $i++) {
+            $try = $dir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel);
+            if (is_readable($try)) {
+                $bin = @file_get_contents($try);
+                if ($bin !== false && $bin !== '' && strlen($bin) < 500000) {
+                    return 'data:image/png;base64,' . base64_encode($bin);
+                }
+            }
+            $p = dirname($dir);
+            if ($p === $dir) {
+                break;
+            }
+            $dir = $p;
+        }
+        return '';
+    }
+}
+
+if (!function_exists('pigliacelli_mail_logo_src')) {
+    function pigliacelli_mail_logo_src($getSetting, $anchorFile = null)
+    {
+        $embed = pigliacelli_mail_logo_read_embed($anchorFile);
+        if ($embed !== '') {
+            return $embed;
+        }
+        $base = rtrim(trim((string)$getSetting('mail_base_url', '')), '/');
+        if ($base !== '' && preg_match('#^https?://#i', $base) === 1) {
+            return htmlspecialchars(
+                $base . '/_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png',
+                ENT_QUOTES,
+                'UTF-8'
+            );
+        }
+        return '';
+    }
+}
+
+if (!function_exists('pigliacelli_mail_layout')) {
+    function pigliacelli_mail_layout($title, $innerHtml, $mailLogoUrl)
+    {
+        $t = htmlspecialchars((string)$title, ENT_QUOTES, 'UTF-8');
+        $logoTd = '';
+        if ((string)$mailLogoUrl !== '') {
+            $logoTd = '<td align="right" valign="middle" style="width:148px;padding-left:16px;">'
+                . '<img src="' . (string)$mailLogoUrl . '" alt="Pigliacelli" width="140" '
+                . 'style="display:block;max-width:140px;width:140px;height:auto;border:0;" />'
+                . '</td>';
+        }
+        return '<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">'
+            . '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            . '<title>' . $t . '</title></head>'
+            . '<body style="margin:0;padding:0;background:#eef1f4;">'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef1f4;">'
+            . '<tr><td align="center" style="padding:32px 16px;">'
+            . '<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" '
+            . 'style="max-width:600px;width:100%;background:#fff;border-radius:12px;border:1px solid #dde1e6;">'
+            . '<tr><td style="padding:22px 28px 18px;border-bottom:1px solid #e8ebef;background:#fafbfc;">'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
+            . '<td valign="middle" style="font-family:Arial,Helvetica,sans-serif;font-size:19px;font-weight:bold;color:#1a3a5c;line-height:1.3;">' . $t . '</td>'
+            . $logoTd . '</tr></table></td></tr>'
+            . '<tr><td style="padding:26px 28px 22px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#2d3748;">'
+            . $innerHtml . '</td></tr>'
+            . '<tr><td style="padding:14px 28px;background:#f4f6f8;border-top:1px solid #e8ebef;'
+            . 'font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#718096;">'
+            . 'Messaggio automatico &mdash; non rispondere.</td></tr>'
+            . '</table></td></tr></table></body></html>';
+    }
+}
+
+if (!function_exists('curl_init')) {
+    $fail('Estensione PHP cURL non disponibile sul server (richiesta per EasyGN).');
+}
+
+$bearer = trim($sc_setting('easygn_bearer', ''));
+if ($bearer === '') $fail("Bearer Easygn mancante in sec_settings (easygn_bearer)");
+
+$easygnBaseUrl = rtrim(trim($sc_setting('easygn_base_url', 'https://easygn.digiwebuno.it/api')), '/');
+$log("config ok baseUrl=$easygnBaseUrl memory_limit=" . (string)ini_get('memory_limit'));
+
+// 1) Recupero PDF del contratto
+$pdfFilename = '';
+$pdfB64 = '';
+$pdfPathUsed = '';
+
+if (!function_exists('contratti_detect_workspace_root')) {
+    function contratti_detect_workspace_root($anchorFile = null)
+    {
+        if ($anchorFile === null || $anchorFile === '') {
+            $anchorFile = __FILE__;
+        }
+        if (is_dir($anchorFile)) {
+            $dir = realpath($anchorFile);
+        } else {
+            $dir = dirname($anchorFile);
+            $resolved = realpath($dir);
+            if ($resolved !== false) {
+                $dir = $resolved;
+            }
+        }
+        if ($dir === false || $dir === '') {
+            return '';
+        }
+        $current = $dir;
+        for ($i = 0; $i < 12; $i++) {
+            if (is_file($current . DIRECTORY_SEPARATOR . 'index.php')
+                && (is_dir($current . DIRECTORY_SEPARATOR . '_lib') || is_dir($current . DIRECTORY_SEPARATOR . 'grid_contratti'))) {
+                return $current;
+            }
+            $parent = dirname($current);
+            if ($parent === $current) {
+                break;
+            }
+            $current = $parent;
+        }
+        $parent = dirname($dir);
+        return ($parent !== '' && $parent !== $dir) ? $parent : $dir;
+    }
+}
+if (!function_exists('resolve_contratti_base_dir')) {
+    function resolve_contratti_base_dir($configuredPath, $anchorFile = null)
+    {
+        $configuredPath = trim((string)$configuredPath);
+        if ($configuredPath === '') {
+            return '';
+        }
+        $normalized = str_replace('\\', '/', $configuredPath);
+        if ($normalized !== '' && $normalized[0] === '/') {
+            $resolved = realpath($configuredPath);
+            return $resolved !== false ? $resolved : rtrim($configuredPath, "/\\");
+        }
+        if (preg_match('#^[A-Za-z]:/#', $normalized) || preg_match('#^[A-Za-z]:\\\\#', $configuredPath)) {
+            $resolved = realpath($configuredPath);
+            return $resolved !== false ? $resolved : rtrim($configuredPath, "/\\");
+        }
+        $root = contratti_detect_workspace_root($anchorFile);
+        if ($root === '') {
+            return '';
+        }
+        $full = $root . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, trim($normalized, '/'));
+        $resolved = realpath($full);
+        return $resolved !== false ? $resolved : $full;
+    }
+}
+
+$baseDirRaw = trim((string)$sc_setting('contratti_base_dir', ''));
+if ($baseDirRaw === '') {
+    $baseDirRaw = trim((string)$sc_setting('templates_path', ''));
+    if (preg_match('#/templates$#', str_replace('\\', '/', $baseDirRaw))) {
+        $baseDirRaw = preg_replace('#/templates$#', '', str_replace('\\', '/', $baseDirRaw));
+    }
+}
+
+$baseDir = '';
+if ($baseDirRaw !== '') {
+    $baseDir = resolve_contratti_base_dir($baseDirRaw, __FILE__);
+}
+
+if ($baseDir === '') {
+    $fail("Imposta `sec_settings.contratti_base_dir` (es. _lib/file/doc/contratti) oppure `templates_path`.");
+}
+$log("pdf baseDir=" . $baseDir);
+
+sc_lookup(rsBlob, "
+    SELECT file
+    FROM contratti
+    WHERE id = $contrattoId
+    LIMIT 1
+");
+if (isset({rsBlob[0][0]})) {
+    $blob = {rsBlob[0][0]};
+ 
+    if (is_string($blob) && $blob !== '') {
+        if (strncmp($blob, "%PDF", 4) === 0) {
+            $pdfB64 = base64_encode($blob);
+            $pdfFilename = 'contratto_' . $contrattoId . '.pdf';
+        } else {
+         
+            $maybeFilename = trim((string)$blob);
+            if ($maybeFilename !== '' && stripos($maybeFilename, '.pdf') !== false) {
+                $pdfFilename = $maybeFilename;
+                $pdfRel = ltrim(str_replace('\\', '/', $pdfFilename), '/');
+                $pdfPath = '';
+
+                // Se il valore sembra già un path assoluto provo direttamente.
+                $maybePath = str_replace('\\', '/', $pdfFilename);
+                if (strpos($maybePath, '/') === 0) {
+                    if (is_readable($maybePath)) {
+                        $pdfPath = $maybePath;
+                        $pdfPathUsed = $maybePath;
+                    }
+                }
+
+                if ($pdfPath === '') {
+                    $try = rtrim((string)$baseDir, "/\\") . '/' . $pdfRel;
+                    if (!is_readable($try)) {
+                        $log("pdf NOT readable: $try");
+                        $fail("PDF non leggibile su disco.\nPath: $try");
+                    }
+                    $pdfPath = $try;
+                    $pdfPathUsed = $try;
+                }
+                $bin = file_get_contents($pdfPath);
+                if ($bin === false || $bin === '') {
+    $fail("Lettura PDF fallita: $pdfPath");
+                }
+                if (strncmp($bin, "%PDF", 4) !== 0) {
+    $fail("File non sembra un PDF valido: $pdfPath");
+                }
+                $pdfB64 = base64_encode($bin);
+            }
+        }
+    }
+}
+
+if ($pdfB64 === '') {
+    $log("pdf blob vuoto");
+    $fail("PDF non presente in contratti.file (BLOB) per contratto $contrattoId");
+}
+$log("pdf ok filename=$pdfFilename b64_len=" . strlen($pdfB64) . " path=" . (string)$pdfPathUsed);
+
+$pdfBinRaw = base64_decode($pdfB64, true);
+$pdfPageCount = 0;
+if (is_string($pdfBinRaw) && $pdfBinRaw !== '') {
+    $pdfPageCount = preg_match_all('/\/Type\s*\/Page[^s]/', $pdfBinRaw, $pdfPageMatches);
+    if ($pdfPageCount <= 0) {
+        $pdfPageCount = 1;
+    }
+}
+$log("pdf pageCount=$pdfPageCount");
+
+if (!function_exists('easygn_pdf_decode_pdf_string')) {
+    function easygn_pdf_decode_pdf_string($raw)
+    {
+        $raw = (string)$raw;
+        if ($raw === '') {
+            return '';
+        }
+        if (strncmp($raw, "\xFE\xFF", 2) === 0) {
+            $out = '';
+            $len = strlen($raw);
+            for ($i = 2; $i + 1 < $len; $i += 2) {
+                $out .= chr(ord($raw[$i]) * 256 + ord($raw[$i + 1]));
+            }
+            return $out;
+        }
+        return stripcslashes($raw);
+    }
+}
+
+$easygn_pdf_extract_subject = function ($pdfBin) {
+    $pdfBin = (string)$pdfBin;
+    if ($pdfBin === '') {
+        return '';
+    }
+    if (preg_match('/\/Subject\s*\((?:\\\\.|[^\\\\\)])*\)/s', $pdfBin, $m)) {
+        $inner = substr($m[0], 9, -1);
+        return easygn_pdf_decode_pdf_string($inner);
+    }
+    if (preg_match('/\/Subject\s*<([0-9A-Fa-f]+)>/', $pdfBin, $m)) {
+        $hex = $m[1];
+        if (strncmp($hex, 'FEFF', 4) === 0) {
+            $hex = substr($hex, 4);
+        }
+        $bin = @hex2bin($hex);
+        return $bin === false ? '' : easygn_pdf_decode_pdf_string($bin);
+    }
+    return '';
+};
+
+$easygn_pdf_parse_sign_visuals = function ($pdfBin) use ($easygn_pdf_extract_subject) {
+    $subject = $easygn_pdf_extract_subject($pdfBin);
+    if ($subject === '' || stripos($subject, 'EGN_SIGN:') !== 0) {
+        return null;
+    }
+    $b64 = trim(substr($subject, 9));
+    if ($b64 === '') {
+        return null;
+    }
+    $json = base64_decode($b64, true);
+    if (!is_string($json) || $json === '') {
+        return null;
+    }
+    $data = json_decode($json, true);
+    if (!is_array($data) || !isset($data['visuals']) || !is_array($data['visuals'])) {
+        return null;
+    }
+    $norm = function ($rows) {
+        $out = array();
+        if (!is_array($rows)) {
+            return $out;
+        }
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $page = isset($row['page']) ? (int)$row['page'] : 0;
+            if ($page < 1) {
+                continue;
+            }
+            $out[] = array(
+                'page' => $page,
+                'x'    => isset($row['x']) ? (float)$row['x'] : 0.0,
+                'y'    => isset($row['y']) ? (float)$row['y'] : 0.0,
+                'w'    => isset($row['w']) ? (float)$row['w'] : 0.0,
+                'h'    => isset($row['h']) ? (float)$row['h'] : 0.0,
+            );
+        }
+        return $out;
+    };
+    return array(
+        'vettore'     => $norm($data['visuals']['vettore'] ?? array()),
+        'committente' => $norm($data['visuals']['committente'] ?? array()),
+    );
+};
+
+$pdfSignVisualsFromMeta = null;
+if (is_string($pdfBinRaw) && $pdfBinRaw !== '') {
+    $pdfSignVisualsFromMeta = $easygn_pdf_parse_sign_visuals($pdfBinRaw);
+    if (is_array($pdfSignVisualsFromMeta)) {
+        $log('pdf sign metadata: vettore=' . count($pdfSignVisualsFromMeta['vettore'])
+            . ' committente=' . count($pdfSignVisualsFromMeta['committente']));
+    }
+}
+
+// 2) Recupero dati firmatario da subvettori_contratti: priorità campi *_firmatario, altrimenti *_rappresentante
+$signerEmail = '';
+$signerPhone = '';
+$signerName = '';
+$signerSurname = '';
+
+sc_lookup(rsSubvContr, "
+    SELECT
+        id,
+        email_firmatario,
+        email_rappresentante,
+        telefono_firmatario,
+        telefono_rappresentante,
+        nome_firmatario,
+        cognome_firmatario,
+        nome_rappresentante,
+        cognome_rappresentante
+    FROM subvettori_contratti
+    WHERE contratto_id = $contrattoId
+      AND subvettore_id = $subvettoreId
+    LIMIT 1
+");
+if (!isset({rsSubvContr[0][0]}) || (int){rsSubvContr[0][0]} <= 0) {
+    $fail("Nessuna riga in subvettori_contratti per contratto_id=$contrattoId e subvettore_id=$subvettoreId.");
+}
+
+$emailF = isset({rsSubvContr[0][1]}) ? trim((string){rsSubvContr[0][1]}) : '';
+$emailR = isset({rsSubvContr[0][2]}) ? trim((string){rsSubvContr[0][2]}) : '';
+$telF = isset({rsSubvContr[0][3]}) ? trim((string){rsSubvContr[0][3]}) : '';
+$telR = isset({rsSubvContr[0][4]}) ? trim((string){rsSubvContr[0][4]}) : '';
+$nomeF = isset({rsSubvContr[0][5]}) ? trim((string){rsSubvContr[0][5]}) : '';
+$cognomeF = isset({rsSubvContr[0][6]}) ? trim((string){rsSubvContr[0][6]}) : '';
+$nomeR = isset({rsSubvContr[0][7]}) ? trim((string){rsSubvContr[0][7]}) : '';
+$cognomeR = isset({rsSubvContr[0][8]}) ? trim((string){rsSubvContr[0][8]}) : '';
+
+$signerEmail = $emailF !== '' ? $emailF : $emailR;
+$signerPhone = $telF !== '' ? $telF : $telR;
+
+if ($nomeF !== '' || $cognomeF !== '') {
+    $signerName = $nomeF;
+    $signerSurname = $cognomeF;
+} else {
+    $signerName = $nomeR;
+    $signerSurname = $cognomeR;
+}
+
+if ($signerEmail === '') {
+    $fail("Email firmatario mancante in subvettori_contratti (email_firmatario / email_rappresentante).");
+}
+if ($signerPhone === '') {
+    $fail("Telefono firmatario mancante in subvettori_contratti (telefono_firmatario / telefono_rappresentante).");
+}
+if ($signerName === '') {
+    $fail("Nome firmatario mancante in subvettori_contratti (nome_firmatario+cognome_firmatario o nome_rappresentante+cognome_rappresentante).");
+}
+$log("signer ok (subvettori_contratti) email=$signerEmail phone=$signerPhone name=$signerName $signerSurname");
+
+// Normalizza telefono: swagger di solito vuole +39xxxxxxxxxx
+if ($signerPhone !== '' && $signerPhone[0] !== '+') {
+    $digits = preg_replace('/\D+/', '', $signerPhone);
+    if ($digits !== '') $signerPhone = '+39' . $digits;
+}
+
+// Easygn: alcuni validatori rifiutano caratteri "speciali" nel cognome (es: punti, slash, ecc.)
+$signerSurnameClean = trim((string)$signerSurname);
+$signerSurnameClean = preg_replace("/[^A-Za-zÀ-ÿ'\\-\\s]/u", ' ', $signerSurnameClean);
+$signerSurnameClean = preg_replace('/\s+/u', ' ', (string)$signerSurnameClean);
+$signerSurnameClean = trim((string)$signerSurnameClean);
+if ($signerSurnameClean === '') {
+    $signerSurnameClean = 'NA';
+}
+
+// Secondo firmatario (committente): sempre presente; layout coordinate solo per tipo_contratto_id
+$committenteEmail = trim($sc_setting('committente_legale_email', ''));
+$committentePhone = trim($sc_setting('committente_legale_phone', ''));
+$committenteNomeCompleto = trim($sc_setting('committente_legale_nome_completo', ''));
+$committenteNameParts = preg_split('/\s+/u', $committenteNomeCompleto, 2);
+$committenteName = trim((string)($committenteNameParts[0] ?? ''));
+$committenteSurname = trim((string)($committenteNameParts[1] ?? ''));
+if ($committenteEmail === '') {
+    $fail('Email committente legale mancante in sec_settings (committente_legale_email).');
+}
+if ($committentePhone === '') {
+    $fail('Telefono committente legale mancante in sec_settings (committente_legale_phone).');
+}
+if ($committenteName === '') {
+    $fail('Nome committente legale mancante in sec_settings (committente_legale_nome_completo).');
+}
+if ($committentePhone !== '' && $committentePhone[0] !== '+') {
+    $dComm = preg_replace('/\D+/', '', $committentePhone);
+    if ($dComm !== '') {
+        $committentePhone = '+39' . $dComm;
+    }
+}
+$committenteSurnameClean = trim((string)$committenteSurname);
+$committenteSurnameClean = preg_replace("/[^A-Za-zÀ-ÿ'\\-\\s]/u", ' ', $committenteSurnameClean);
+$committenteSurnameClean = preg_replace('/\s+/u', ' ', (string)$committenteSurnameClean);
+$committenteSurnameClean = trim((string)$committenteSurnameClean);
+if ($committenteSurnameClean === '') {
+    $committenteSurnameClean = 'NA';
+}
+if (strtolower(trim($signerEmail)) === strtolower(trim($committenteEmail))) {
+    $fail('Email vettore e committente identiche: EasyGN non accetta due firmatari con lo stesso indirizzo (S04).');
+}
+
+// 4) Coordinate firma (mm → visuals EasyGN)
+//    — priorità: metadata EGN_SIGN nel PDF (report nuovo_contratto_vettore / variazione_contratto).
+//    — tipo 1: fallback dinamico su conteggio pagine.
+//    — tipo 2/3 senza metadata: offset hardcoded sotto (ultima pagina PDF).
+$EASYGN_SIGN_PAGE = 1;
+$EASYGN_SIGN_X_MM = 203.5;
+$EASYGN_SIGN_Y_MM = 129.0;
+$EASYGN_SIGN_W_MM = 85.01;
+$EASYGN_SIGN_H_MM = 27.51;
+
+$mm = [
+    'page' => (int)$EASYGN_SIGN_PAGE,
+    'x'    => (float)$EASYGN_SIGN_X_MM,
+    'y'    => (float)$EASYGN_SIGN_Y_MM,
+    'w'    => (float)$EASYGN_SIGN_W_MM,
+    'h'    => (float)$EASYGN_SIGN_H_MM,
+];
+
+/** Committente: stessa pagina, y e h del subvettore; x spostata a sinistra del riquadro subvettore. */
+$easygn_mm_committente_sinistra = static function (array $mmSubv, $gapMm = 20.0) {
+    return [
+        'page' => (int)$mmSubv['page'],
+        'x'    => max(10.0, (float)$mmSubv['x'] - (float)$mmSubv['w'] - (float)$gapMm),
+        'y'    => (float)$mmSubv['y'],
+        'w'    => (float)$mmSubv['w'],
+        'h'    => (float)$mmSubv['h'],
+    ];
+};
+
+/** Coordinate allegati A/B in mm: valide SOLO con tipo_contratto_id === 1 (usate solo dal ramo sotto). */
+$easygn_sign_mm_tipo_1_allegati_ab = static function () {
+    $b = static function ($pagina, array $cmm) {
+        return [
+            'page' => (int)$pagina,
+            'x'    => (float)$cmm['x'],
+            'y'    => (float)$cmm['y'],
+            'w'    => (float)$cmm['width'],
+            'h'    => (float)$cmm['height'],
+        ];
+    };
+    return [
+        'subvettore' => [
+            $b(12, ['x' => 188.5, 'y' => 181, 'width' => 60.01, 'height' => 10.01]),
+            $b(13, ['x' => 196, 'y' => 178.5, 'width' => 75.01, 'height' => 12.51]),
+        ],
+        'committente' => [
+            $b(12, ['x' => 56, 'y' => 183.5, 'width' => 50.01, 'height' => 10.01]),
+        ],
+    ];
+};
+
+if (is_array($pdfSignVisualsFromMeta)
+    && (count($pdfSignVisualsFromMeta['vettore']) > 0 || count($pdfSignVisualsFromMeta['committente']) > 0)) {
+    $visualsMmListVettore = $pdfSignVisualsFromMeta['vettore'];
+    $visualsMmListCommittente = $pdfSignVisualsFromMeta['committente'];
+    $log('sign coords: da metadata PDF (tipo ' . $tipoContrattoId . ') vettore='
+        . count($visualsMmListVettore) . ' committente=' . count($visualsMmListCommittente));
+} elseif ($tipoContrattoId === 1) {
+    // Fallback tipo 1: calcolo pagine da conteggio PDF (senza metadata nel Subject)
+    $easygn_tipo1_dynamic_pages = static function ($totalPages) {
+        $totalPages = (int)$totalPages;
+        if ($totalPages < 3) {
+            return array(0, $totalPages, $totalPages);
+        }
+        // Ultima pagina = Allegato B, penultima = fine Allegato A (entrambe landscape nel template).
+        $allegatoBPage = $totalPages;
+        $allegatoAEndPage = max(1, $totalPages - 1);
+        $mainPagesEnd = max(1, $allegatoAEndPage - 1);
+        return array($mainPagesEnd, $allegatoAEndPage, $allegatoBPage);
+    };
+
+    list($mainPagesEnd, $allegatoAEndPage, $allegatoBPage) = $easygn_tipo1_dynamic_pages($pdfPageCount);
+
+    $visualsMmListCommittente = array(
+        array('page' => 1, 'x' => 160, 'y' => 12.5, 'w' => 32.51, 'h' => 5.01),
+    );
+    if ($mainPagesEnd >= 2) {
+        $visualsMmListCommittente[] = array('page' => $mainPagesEnd - 1, 'x' => 15, 'y' => 257.5, 'w' => 77.51, 'h' => 7.51);
+    }
+    if ($mainPagesEnd >= 1) {
+        $visualsMmListCommittente[] = array('page' => $mainPagesEnd, 'x' => 15, 'y' => 50, 'w' => 85.01, 'h' => 12.51);
+    }
+    $visualsMmListCommittente[] = array('page' => $allegatoAEndPage, 'x' => 56, 'y' => 183.5, 'w' => 50.01, 'h' => 10.01);
+
+    $visualsMmListVettore = array();
+    if ($mainPagesEnd >= 3) {
+        for ($p = 3; $p <= $mainPagesEnd - 2; $p++) {
+            $visualsMmListVettore[] = array('page' => $p, 'x' => 117.5, 'y' => 287, 'w' => 87.51, 'h' => 8.01);
+        }
+    }
+    if ($mainPagesEnd >= 2) {
+        $visualsMmListVettore[] = array('page' => $mainPagesEnd - 1, 'x' => 95, 'y' => 257.5, 'w' => 105.01, 'h' => 7.51);
+    }
+    if ($mainPagesEnd >= 1) {
+        $visualsMmListVettore[] = array('page' => $mainPagesEnd, 'x' => 105, 'y' => 50, 'w' => 100.01, 'h' => 12.51);
+    }
+    $visualsMmListVettore[] = array('page' => $allegatoAEndPage, 'x' => 188.5, 'y' => 181, 'w' => 60.01, 'h' => 10.01);
+    $visualsMmListVettore[] = array('page' => $allegatoBPage, 'x' => 196, 'y' => 178.5, 'w' => 75.01, 'h' => 12.51);
+
+    $log('sign coords: tipo 1 fallback dinamico mainEnd=' . $mainPagesEnd . ' allegatoA=' . $allegatoAEndPage
+        . ' allegatoB=' . $allegatoBPage . ' vettore=' . count($visualsMmListVettore)
+        . ' committente=' . count($visualsMmListCommittente));
+} else {
+    // tipo 2, 3 (e altri): ultima pagina PDF + offset hardcoded ($EASYGN_SIGN_*)
+    $mm['page'] = max(1, (int)$pdfPageCount);
+    $visualsMmListVettore = array($mm);
+    $visualsMmListCommittente = array($easygn_mm_committente_sinistra($mm));
+    $mmComm = $visualsMmListCommittente[0];
+    $log('sign coords: tipo ' . $tipoContrattoId . ' fallback last page=' . $mm['page']
+        . ' subvettore x=' . $mm['x'] . ' y=' . $mm['y']
+        . ' | committente x=' . $mmComm['x'] . ' y=' . $mmComm['y']);
+}
+
+$mm_to_pt = function ($mmVal) { return $mmVal * 72 / 25.4; };
+$easygn_position_from_mm = function ($pageMm) use ($mm_to_pt) {
+    // A4 portrait: 595.28 x 841.89 pt (altezza in pt)
+    $pageHeightPt = 841.89;
+    $xPt = $mm_to_pt($pageMm['x']);
+    $yTopPt = $mm_to_pt($pageMm['y']);
+    $wPt = $mm_to_pt($pageMm['w']);
+    $hPt = $mm_to_pt($pageMm['h']);
+
+    $x1 = $xPt;
+    $x2 = $xPt + $wPt;
+    $y1 = $pageHeightPt - $yTopPt - $hPt; // bottom
+    $y2 = $y1 + $hPt;
+
+    return implode(',', array_map(fn($v) => (string)round($v), [$x1, $y1, $x2, $y2]));
+};
+$easygn_visual_from_mm = function ($pageMm) use ($mm_to_pt, $easygn_position_from_mm) {
+    $xPt = (int)round($mm_to_pt($pageMm['x']));
+    $yTopPt = (int)round($mm_to_pt($pageMm['y']));
+    $wPt = (int)round($mm_to_pt($pageMm['w']));
+    $hPt = (int)round($mm_to_pt($pageMm['h']));
+    if ($hPt < 37) $hPt = 37; // vincolo API
+
+    return [
+        "page" => (int)$pageMm['page'],
+        "width" => $wPt,
+        "height" => $hPt,
+        "x" => $xPt,
+        "y" => $yTopPt,
+        "position" => $easygn_position_from_mm($pageMm),
+    ];
+};
+
+$signerVisualsVettore = array_values(array_filter(
+    array_map(fn($pageMm) => $easygn_visual_from_mm($pageMm), $visualsMmListVettore),
+    fn($v) => is_array($v)
+));
+$signerVisualsCommittente = array_values(array_filter(
+    array_map(fn($pageMm) => $easygn_visual_from_mm($pageMm), $visualsMmListCommittente),
+    fn($v) => is_array($v)
+));
+
+if (count($signerVisualsVettore) === 0) {
+    $fail('Nessun riquadro firma (visuals) per il vettore: rigenerare il PDF o verificare tipo contratto.');
+}
+if (count($signerVisualsCommittente) === 0) {
+    $fail('Nessun riquadro firma (visuals) per il committente.');
+}
+
+$easygn_validate_visual_pages = function (array $visuals, $roleLabel) use ($pdfPageCount, $fail, $tipoContrattoId) {
+    foreach ($visuals as $visual) {
+        $pageNo = (int)($visual['page'] ?? 0);
+        if ($pageNo < 1 || $pageNo > $pdfPageCount) {
+            $fail(
+                "Coordinate firma $roleLabel: pagina $pageNo non valida (il PDF ha $pdfPageCount pagine, tipo_contratto_id=$tipoContrattoId).\n\n"
+                . "Se il PDF è un'appendice (variazione_contratto), il tipo deve essere 2 o 3, non 1.\n"
+                . "Verificare che easygn_start_wf_auto legga tipo_contratto_id dall'URL del redirect "
+                . "(non la globale SC di default). Per tipo 2/3 rigenerare il PDF con metadata EGN_SIGN."
+            );
+        }
+    }
+};
+$easygn_validate_visual_pages($signerVisualsVettore, 'subvettore');
+$easygn_validate_visual_pages($signerVisualsCommittente, 'committente');
+
+// 5) Chiamate Easygn (senza wrapper)
+$easygn_request = function ($method, $url, $bearerKy, $jsonPayload = null) {
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+
+    $headers = ['Accept: application/json', 'Authorization: Bearer ' . $bearerKy];
+    if ($jsonPayload !== null) {
+        $headers[] = 'Content-Type: application/json';
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $jsonPayload);
+    }
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+
+    $body = curl_exec($ch);
+    $errno = curl_errno($ch);
+    $err = curl_error($ch);
+    $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($errno) {
+        return [false, "cURL error $errno: $err", $http, $body];
+    }
+    if ($http < 200 || $http >= 300) {
+        return [false, "HTTP $http", $http, $body];
+    }
+    return [true, "", $http, $body];
+};
+
+$preview_body = function ($body, $max = 600) {
+    $s = (string)$body;
+    $s = preg_replace('/\s+/u', ' ', $s);
+    if ($s === null) $s = (string)$body;
+    if (strlen($s) > $max) $s = substr($s, 0, $max) . '...';
+    return $s;
+};
+
+// URL di firma da un singolo oggetto signer (risposta create/start)
+$extract_sign_link_from_signer = function ($signer) {
+    if (!is_array($signer)) {
+        return '';
+    }
+    $isHttpUrl = function ($s) {
+        $s = trim((string)$s);
+        return $s !== '' && preg_match('#^https?://#i', $s) === 1;
+    };
+    $signerKeys = [
+        'link', 'url', 'href',
+        'sign_url', 'signUrl', 'sign_link', 'signLink',
+        'signing_url', 'signingUrl', 'signingLink', 'signing_link',
+        'invitation_url', 'invitationUrl', 'invite_url', 'inviteUrl',
+        'signature_url', 'signatureUrl', 'web_url', 'webUrl',
+        'redirect_url', 'redirectUrl', 'callback_url', 'callbackUrl',
+    ];
+    foreach ($signerKeys as $k) {
+        if (!array_key_exists($k, $signer)) {
+            continue;
+        }
+        $c = $signer[$k];
+        if (is_string($c) && $isHttpUrl($c)) {
+            return trim($c);
+        }
+    }
+    foreach (['link', 'url', 'sign_url'] as $k) {
+        if (isset($signer[$k]) && is_string($signer[$k]) && trim($signer[$k]) !== '') {
+            return trim((string)$signer[$k]);
+        }
+    }
+    $looksLikeSignUrl = function ($s) {
+        $s = trim((string)$s);
+        if ($s === '' || preg_match('#^https?://#i', $s) !== 1) {
+            return false;
+        }
+        return stripos($s, 'sign') !== false
+            || stripos($s, 'firma') !== false
+            || stripos($s, 'invitation') !== false
+            || stripos($s, 'invite') !== false
+            || stripos($s, '/platform/') !== false
+            || stripos($s, 'signature') !== false
+            || stripos($s, 'workflow') !== false;
+    };
+    $found = '';
+    $walker = function ($v) use (&$walker, &$found, $looksLikeSignUrl) {
+        if ($found !== '') {
+            return;
+        }
+        if (is_string($v)) {
+            if ($looksLikeSignUrl($v)) {
+                $found = trim($v);
+            }
+            return;
+        }
+        if (is_array($v)) {
+            foreach ($v as $vv) {
+                $walker($vv);
+            }
+        }
+    };
+    $walker($signer);
+    return $found;
+};
+
+// Link per subvettore (signers[0]) e committente (signers[1]) in easygn_sign_link come JSON.
+// - Risposta create: spesso i link sono in files[0].signers[].
+// - Risposta PUT workflow/start/{id}: in molte installazioni i link sono in signers[] a livello root (vedi esempio Yousign).
+$extract_sign_links_paired = function ($data) use ($extract_sign_link_from_signer) {
+    $pair = [
+        'link_subvettore' => '',
+        'link_committente' => '',
+    ];
+    if (!is_array($data)) {
+        return $pair;
+    }
+
+    $linkAt = function ($idx) use ($data, $extract_sign_link_from_signer) {
+        $f0 = $data['files'][0] ?? null;
+        $fromFile = (is_array($f0) && isset($f0['signers'][$idx]) && is_array($f0['signers'][$idx]))
+            ? $extract_sign_link_from_signer($f0['signers'][$idx])
+            : '';
+        if ($fromFile !== '') {
+            return $fromFile;
+        }
+        $root = $data['signers'] ?? null;
+        if (is_array($root) && isset($root[$idx]) && is_array($root[$idx])) {
+            return $extract_sign_link_from_signer($root[$idx]);
+        }
+        return '';
+    };
+
+    $pair['link_subvettore'] = $linkAt(0);
+    $pair['link_committente'] = $linkAt(1);
+    return $pair;
+};
+
+// SMTP settings per sc_send_mail_api (deve essere un array; verrà popolato più sotto)
+$sett_smtp = [];
+
+// Invio email link firma via sc_send_mail_api (SMTP da sec_settings, come job documenti in scadenza)
+$easygn_send_sign_link_email = function ($to, $recipientName, $signUrl, $roleLabel) use ($log, $sc_setting, $contrattoId, &$sett_smtp) {
+    $to = trim((string)$to);
+    $signUrl = trim((string)$signUrl);
+    if ($to === '' || filter_var($to, FILTER_VALIDATE_EMAIL) === false) {
+        $log('mail SKIP destinatario non valido ruolo=' . $roleLabel . ' to=[' . $to . ']');
+        return false;
+    }
+    if ($signUrl === '' || preg_match('#^https?://#i', $signUrl) !== 1) {
+        $log('mail SKIP link assente ruolo=' . $roleLabel . ' to=' . $to);
+        return false;
+    }
+    if (!function_exists('sc_send_mail_api')) {
+        $log('mail SKIP sc_send_mail_api non disponibile ruolo=' . $roleLabel);
+        return false;
+    }
+
+    $nome = trim((string)$recipientName);
+    if ($nome === '') {
+        $nome = 'Gentile firmatario';
+    }
+
+    $subjectTpl = trim($sc_setting('easygn_mail_subject', ''));
+    $titolo = ($subjectTpl !== '')
+        ? str_replace(['{contrattoId}', '{ruolo}'], [(string)$contrattoId, (string)$roleLabel], $subjectTpl)
+        : 'Firma contratto — link di firma digitale';
+
+    $messaggioTesto = $nome . ",\n\n"
+        . "Le chiediamo di firmare il contratto #" . (int)$contrattoId . " tramite firma digitale.\n\n"
+        . "Link di firma:\n" . $signUrl . "\n\n"
+        . "Messaggio automatico — non rispondere.";
+
+    $safeUrl = htmlspecialchars($signUrl, ENT_QUOTES, 'UTF-8');
+    $safeNome = htmlspecialchars($nome, ENT_QUOTES, 'UTF-8');
+    $mailBase = rtrim(trim($sc_setting('mail_base_url', '')), '/');
+    $mailLogoUrl = pigliacelli_mail_logo_src($sc_setting, __FILE__);
+    $mailLogoLog = (strpos($mailLogoUrl, 'data:image/') === 0)
+        ? 'embed bytes=' . (strlen($mailLogoUrl) - 22)
+        : 'url src=[' . $mailLogoUrl . ']';
+    $log('mail_logo ' . $mailLogoLog . ' mail_base_url=[' . $mailBase . ']');
+    $mailInner = '<p style="margin:0 0 16px;">' . $safeNome . ',</p>'
+        . '<p style="margin:0 0 24px;">Le chiediamo di firmare il contratto <strong>#' . (int)$contrattoId
+        . '</strong> tramite il servizio di firma digitale.</p>'
+        . '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;"><tr>'
+        . '<td align="center" bgcolor="#5b2d8e" style="border-radius:8px;background-color:#5b2d8e;">'
+        . '<a href="' . $safeUrl . '" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:bold;'
+        . 'color:#ffffff;text-decoration:none;font-family:Arial,Helvetica,sans-serif;">Apri il link di firma</a>'
+        . '</td></tr></table>'
+        . '<p style="margin:0 0 8px;font-size:13px;color:#718096;">Oppure copi questo indirizzo nel browser:</p>'
+        . '<p style="margin:0;word-break:break-all;font-size:13px;">'
+        . '<a href="' . $safeUrl . '" style="color:#5b2d8e;">' . $safeUrl . '</a></p>';
+    $htmlContent = pigliacelli_mail_layout($titolo, $mailInner, $mailLogoUrl);
+
+    $smtpCfg = is_array($sett_smtp) ? $sett_smtp : [];
+    $log('mail TRY ruolo=' . $roleLabel . ' to=' . $to . ' link_len=' . strlen($signUrl)
+        . ' smtp_keys=' . implode(',', array_keys($smtpCfg)));
+    try {
+        sc_send_mail_api(array_merge($smtpCfg, array(
+            'message' => array(
+                'html'    => $htmlContent,
+                'text'    => $messaggioTesto,
+                'to'      => $to,
+                'subject' => $titolo,
+            ),
+        )));
+    } catch (Throwable $e) {
+        $log('mail EXCEPTION ruolo=' . $roleLabel . ' msg=' . $e->getMessage());
+        return false;
+    }
+
+    $log('mail inviata (sc_send_mail_api) ruolo=' . $roleLabel . ' to=' . $to . ' contrattoId=' . $contrattoId);
+    return true;
+};
+
+$sign_links_pair_sql = function (array $pair) {
+    $j = json_encode($pair, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if ($j === false) {
+        return "NULL";
+    }
+    $sub = trim((string)($pair['link_subvettore'] ?? ''));
+    $com = trim((string)($pair['link_committente'] ?? ''));
+    if ($sub === '' && $com === '' && empty($pair['committente_email'])) {
+        return "NULL";
+    }
+    return "'" . str_replace("'", "''", $j) . "'";
+};
+
+$sign_links_for_db = function (array $signLinks, $tipoContrattoId, $preserveMeta = null) use ($committenteEmail, $committenteName, $committenteSurname) {
+    $pair = [
+        'link_subvettore' => (string)($signLinks['link_subvettore'] ?? ''),
+        'link_committente' => (string)($signLinks['link_committente'] ?? ''),
+        'committente_email' => trim((string)$committenteEmail),
+        'committente_nome' => trim((string)$committenteName . ' ' . (string)$committenteSurname),
+        'mail_committente_inviata' => 0,
+    ];
+    if (is_array($preserveMeta)) {
+        if (!empty($preserveMeta['committente_email'])) {
+            $pair['committente_email'] = trim((string)$preserveMeta['committente_email']);
+        }
+        if (!empty($preserveMeta['committente_nome'])) {
+            $pair['committente_nome'] = trim((string)$preserveMeta['committente_nome']);
+        }
+        if (array_key_exists('mail_committente_inviata', $preserveMeta)) {
+            $pair['mail_committente_inviata'] = (int)$preserveMeta['mail_committente_inviata'];
+        }
+    }
+    return $pair;
+};
+
+// Estrae un link di firma da una risposta Easygn (chiavi note + fallback ricorsivo su URL "da firma")
+$extract_sign_link = function ($data) {
+    if (!is_array($data)) return '';
+
+    $isHttpUrl = function ($s) {
+        $s = trim((string)$s);
+        return $s !== '' && preg_match('#^https?://#i', $s) === 1;
+    };
+
+    // Chiavi esplicite (snake + camel come in molti swagger)
+    $signerKeys = [
+        'link', 'url', 'href',
+        'sign_url', 'signUrl', 'sign_link', 'signLink',
+        'signing_url', 'signingUrl', 'signingLink', 'signing_link',
+        'invitation_url', 'invitationUrl', 'invite_url', 'inviteUrl',
+        'signature_url', 'signatureUrl', 'web_url', 'webUrl',
+        'redirect_url', 'redirectUrl', 'callback_url', 'callbackUrl',
+    ];
+    $files = $data['files'] ?? null;
+    $file0 = is_array($files) && isset($files[0]) && is_array($files[0]) ? $files[0] : null;
+    $signers = is_array($file0) ? ($file0['signers'] ?? null) : null;
+    if (is_array($signers)) {
+        foreach ($signers as $signer) {
+            if (!is_array($signer)) {
+                continue;
+            }
+            foreach ($signerKeys as $k) {
+                if (!array_key_exists($k, $signer)) {
+                    continue;
+                }
+                $c = $signer[$k];
+                if (is_string($c) && $isHttpUrl($c)) {
+                    return trim($c);
+                }
+            }
+        }
+    }
+
+    $rootSigners = isset($data['signers']) && is_array($data['signers']) ? $data['signers'] : null;
+    if (is_array($rootSigners)) {
+        foreach ($rootSigners as $signer) {
+            if (!is_array($signer)) {
+                continue;
+            }
+            foreach ($signerKeys as $k) {
+                if (!array_key_exists($k, $signer)) {
+                    continue;
+                }
+                $c = $signer[$k];
+                if (is_string($c) && $isHttpUrl($c)) {
+                    return trim($c);
+                }
+            }
+        }
+    }
+
+    $candidates = [];
+    if (is_array($signers)) {
+        foreach ($signers as $signer) {
+            if (!is_array($signer)) {
+                continue;
+            }
+            foreach (['link', 'url', 'sign_url'] as $k) {
+                if (isset($signer[$k]) && is_string($signer[$k]) && trim($signer[$k]) !== '') {
+                    $candidates[] = $signer[$k];
+                }
+            }
+        }
+    }
+    if (is_array($rootSigners)) {
+        foreach ($rootSigners as $signer) {
+            if (!is_array($signer)) {
+                continue;
+            }
+            foreach (['link', 'url', 'sign_url'] as $k) {
+                if (isset($signer[$k]) && is_string($signer[$k]) && trim($signer[$k]) !== '') {
+                    $candidates[] = $signer[$k];
+                }
+            }
+        }
+    }
+    $candidates = array_merge($candidates, [
+        $data['link'] ?? null,
+        $data['url'] ?? null,
+        $data['signUrl'] ?? null,
+        $data['sign_link'] ?? null,
+    ]);
+    foreach ($candidates as $c) {
+        if (is_string($c) && trim($c) !== '') {
+            return trim($c);
+        }
+    }
+
+    $looksLikeSignUrl = function ($s) {
+        $s = trim((string)$s);
+        if ($s === '' || preg_match('#^https?://#i', $s) !== 1) return false;
+        // Evita di prendere URL generici (es. solo api base); richiede indizi da flusso firma
+        return stripos($s, 'sign') !== false
+            || stripos($s, 'firma') !== false
+            || stripos($s, 'invitation') !== false
+            || stripos($s, 'invite') !== false
+            || stripos($s, '/platform/') !== false
+            || stripos($s, 'signature') !== false
+            || stripos($s, 'workflow') !== false;
+    };
+
+    $found = '';
+    $walker = function ($v) use (&$walker, &$found, $looksLikeSignUrl) {
+        if ($found !== '') return;
+        if (is_string($v)) {
+            if ($looksLikeSignUrl($v)) {
+                $found = trim($v);
+            }
+            return;
+        }
+        if (is_array($v)) {
+            foreach ($v as $vv) $walker($vv);
+        }
+    };
+    $walker($data);
+    return $found;
+};
+
+// Da risposta create/start: id file + id firmatari (workflow multi-firma: vettore, committente, …)
+$extract_easygn_file_signers = function ($data) {
+    $fileId = '';
+    $signerIds = [];
+    if (!is_array($data)) {
+        return [$fileId, $signerIds];
+    }
+    $collectIds = function ($signersList) {
+        $ids = [];
+        if (!is_array($signersList)) {
+            return $ids;
+        }
+        foreach ($signersList as $s) {
+            if (!is_array($s)) {
+                continue;
+            }
+            $sid = '';
+            foreach (['id', 'signer_id', 'signerId', 'uuid'] as $k) {
+                if (!array_key_exists($k, $s)) {
+                    continue;
+                }
+                $v = $s[$k];
+                if ($v === null || $v === '') {
+                    continue;
+                }
+                $sid = trim((string)$v);
+                break;
+            }
+            if ($sid !== '') {
+                $ids[] = $sid;
+            }
+        }
+        return $ids;
+    };
+
+    $f0 = $data['files'][0] ?? null;
+    if (is_array($f0)) {
+        if (isset($f0['id']) && $f0['id'] !== '' && $f0['id'] !== null) {
+            $fileId = trim((string)$f0['id']);
+        }
+        $signerIds = $collectIds($f0['signers'] ?? null);
+    }
+    if (count($signerIds) === 0) {
+        $signerIds = $collectIds($data['signers'] ?? null);
+    }
+    return [$fileId, $signerIds];
+};
+
+// Ordine EasyGN: [0]=firmatario (subvettore), [1]=committente
+$easygn_build_signer_ids_map = function (array $idsArr) {
+    $map = [];
+    if (count($idsArr) === 0) {
+        return $map;
+    }
+    $firm = trim((string)($idsArr[0] ?? ''));
+    if ($firm !== '') {
+        $map['signer_id_firmatario'] = $firm;
+    }
+    $comm = trim((string)($idsArr[1] ?? ''));
+    if ($comm !== '') {
+        $map['signer_id_committente'] = $comm;
+    }
+    return $map;
+};
+
+$easygn_sql_file_signer_columns = function ($fid, array $signerMap) {
+    $fileSql = ($fid !== '') ? "'" . str_replace("'", "''", $fid) . "'" : "NULL";
+    if (count($signerMap) === 0) {
+        return [$fileSql, "NULL"];
+    }
+    $j = json_encode($signerMap, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if ($j === false || $j === '{}' || $j === '[]') {
+        return [$fileSql, "NULL"];
+    }
+    return [$fileSql, "'" . str_replace("'", "''", $j) . "'"];
+};
+
+$signersPayload = [
+    [
+        'name' => $signerName,
+        'surname' => $signerSurnameClean,
+        'email' => $signerEmail,
+        'phone' => $signerPhone,
+        'language' => 'it',
+        'visuals' => $signerVisualsVettore,
+    ],
+];
+$signersPayload[0]['ordered'] = true;
+$signersPayload[0]['order'] = 1;
+$signersPayload[] = [
+    'name' => $committenteName,
+    'surname' => $committenteSurnameClean,
+    'email' => $committenteEmail,
+    'phone' => $committentePhone,
+    'language' => 'it',
+    'ordered' => true,
+    'order' => 2,
+    'visuals' => $signerVisualsCommittente,
+];
+
+$payload = [
+    'version' => 3,
+    'type' => 'FES',
+    'graphic' => true,
+    'files' => [[
+        'name' => basename($pdfFilename),
+        'content' => $pdfB64,
+        'signers' => $signersPayload,
+    ]],
+];
+
+
+$payloadLog = $payload;
+if (isset($payloadLog['files'][0]['content'])) {
+    $payloadLog['files'][0]['content'] = '<base64_pdf len=' . strlen((string)$payloadLog['files'][0]['content']) . '>';
+}
+foreach (array_keys($payloadLog['files'][0]['signers'] ?? []) as $si) {
+    if (!isset($payloadLog['files'][0]['signers'][$si])) {
+        continue;
+    }
+    if (isset($payloadLog['files'][0]['signers'][$si]['email'])) {
+        $e = (string)$payloadLog['files'][0]['signers'][$si]['email'];
+        $payloadLog['files'][0]['signers'][$si]['email'] = ($e === '') ? '' : (substr($e, 0, 2) . '***' . (strpos($e, '@') !== false ? substr($e, strpos($e, '@')) : ''));
+    }
+    if (isset($payloadLog['files'][0]['signers'][$si]['phone'])) {
+        $p = preg_replace('/\D+/', '', (string)$payloadLog['files'][0]['signers'][$si]['phone']);
+        $payloadLog['files'][0]['signers'][$si]['phone'] = ($p === '') ? '' : ('***' . substr($p, -3));
+    }
+}
+$payloadJsonForLog = json_encode($payloadLog, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+if ($payloadJsonForLog === false) {
+    $log('create payload (sanitized) json_encode FAIL: ' . (string)json_last_error_msg());
+} else {
+    $log('create payload (sanitized): ' . $payloadJsonForLog);
+}
+
+$payloadJson = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+if ($payloadJson === false) {
+    $fail('Payload EasyGN non serializzabile in JSON: ' . (string)json_last_error_msg());
+}
+[$ok, $err, $http, $resp] = $easygn_request('POST', $easygnBaseUrl . '/workflows/create', $bearer, $payloadJson);
+if (!$ok) {
+    $log("create FAIL http=$http body=" . $preview_body($resp));
+    $hint = '';
+    if ($http === 400 && is_string($resp) && stripos($resp, 'S04') !== false) {
+        $hint = "\n\nNota su S04: di solito email vettore = committente, oppure area firma committente non valida (tipo_contratto_id=" . $tipoContrattoId . ").";
+    }
+    $fail("Errore Easygn create: $err\nHTTP: $http\nRisposta: " . (string)$resp . $hint);
+}
+$log("create ok http=$http resp_len=" . strlen((string)$resp));
+
+$out = json_decode((string)$resp, true);
+if (!is_array($out)) $fail("Risposta Easygn non JSON: " . (string)$resp);
+
+$wfId = (string)($out['id'] ?? '');
+[$fileId, $signerIdsArr] = $extract_easygn_file_signers($out);
+$signLinks = $extract_sign_links_paired($out);
+if ($signLinks['link_subvettore'] === '' && $signLinks['link_committente'] === '') {
+    $fb = $extract_sign_link($out);
+    if ($fb !== '') {
+        $signLinks['link_subvettore'] = $fb;
+    }
+}
+$signerIdsMap = $easygn_build_signer_ids_map($signerIdsArr);
+$log("create parsed id=" . ($wfId !== '' ? $wfId : '<empty>') . " fileId=" . ($fileId !== '' ? $fileId : '<empty>') . " signer_ids=" . json_encode($signerIdsMap, JSON_UNESCAPED_UNICODE)
+    . " link_subv_len=" . strlen((string)$signLinks['link_subvettore']) . " link_comm_len=" . strlen((string)$signLinks['link_committente']));
+if ($signLinks['link_subvettore'] === '' && $signLinks['link_committente'] === '') {
+    // Body create è tipicamente corto: log intero per capire dove stanno (o se mancano) i link
+    $log("create response (full, no sign links extracted): " . (string)$resp);
+}
+
+if ($wfId === '') {
+    $log("wfId vuoto body=" . $preview_body($resp));
+    $fail("Risposta Easygn senza workflow id: " . (string)$resp);
+}
+$log("parsed wfId=$wfId");
+if ($fileId !== '') $log("parsed fileId=$fileId");
+
+// 6) Salvataggio su DB (subito dopo create: così resta salvato anche se start fallisce)
+$wfSql = str_replace("'", "''", $wfId);
+$linkSql = $sign_links_pair_sql($sign_links_for_db($signLinks, $tipoContrattoId));
+[$fileSql, $signerSql] = $easygn_sql_file_signer_columns($fileId, $signerIdsMap);
+sc_lookup(rsStAtt, "SELECT id FROM stati_contratti WHERE nome = 'In attesa' LIMIT 1");
+$statoAttesaId = !empty({rsStAtt[0][0]}) ? (int){rsStAtt[0][0]} : 0;
+$statoSql = $statoAttesaId > 0 ? ", stato_contratto_id = $statoAttesaId" : '';
+sc_exec_sql("UPDATE contratti SET easygn_workflow_id = '$wfSql', easygn_sign_link = $linkSql, easygn_file_id = $fileSql, easygn_signer_ids = $signerSql$statoSql WHERE id = $contrattoId");
+$log("db updated (workflow + link + file + signer_ids" . ($statoAttesaId > 0 ? ", stato=In attesa" : '') . ")");
+
+// Avvio workflow: PUT /workflows/start/{workflow_id}
+[$ok2, $err2, $http2, $resp2] = $easygn_request('PUT', $easygnBaseUrl . '/workflows/start/' . rawurlencode($wfId), $bearer, '{}');
+if (!$ok2) {
+    $log("start FAIL http=$http2 body=" . $preview_body($resp2));
+    // Non bloccare: workflow id resta salvato; start manuale se necessario
+} else {
+    $log("start ok http=$http2 resp_len=" . strlen((string)$resp2));
+
+    $out2 = json_decode((string)$resp2, true);
+    if (is_array($out2)) {
+        [$fileId2, $signerIds2] = $extract_easygn_file_signers($out2);
+        if ($fileId2 !== '') {
+            $fileId = $fileId2;
+        }
+        if (count($signerIds2) > 0) {
+            $signerIdsArr = $signerIds2;
+            $signerIdsMap = $easygn_build_signer_ids_map($signerIdsArr);
+        }
+
+        $signLinks2 = $extract_sign_links_paired($out2);
+        if ($signLinks2['link_subvettore'] === '' && $signLinks2['link_committente'] === '') {
+            $fb2 = $extract_sign_link($out2);
+            if ($fb2 !== '') {
+                $signLinks2['link_subvettore'] = $fb2;
+            }
+        }
+        foreach (['link_subvettore', 'link_committente'] as $lk) {
+            if (($signLinks2[$lk] ?? '') !== '') {
+                $signLinks[$lk] = $signLinks2[$lk];
+            }
+        }
+
+        $linksChangedFromStart = (($signLinks2['link_subvettore'] ?? '') !== '' || ($signLinks2['link_committente'] ?? '') !== '');
+        $metaFromStart = ($fileId2 !== '' || count($signerIds2) > 0);
+        if ($linksChangedFromStart || $metaFromStart) {
+            $parts = [];
+            if ($linksChangedFromStart) {
+                $parts[] = 'easygn_sign_link = ' . $sign_links_pair_sql($sign_links_for_db($signLinks, $tipoContrattoId));
+            }
+            if ($metaFromStart) {
+                [$fs, $ss] = $easygn_sql_file_signer_columns($fileId, $signerIdsMap);
+                $parts[] = "easygn_file_id = $fs";
+                $parts[] = "easygn_signer_ids = $ss";
+            }
+            if (count($parts) > 0) {
+                sc_exec_sql("UPDATE contratti SET " . implode(', ', $parts) . " WHERE id = $contrattoId");
+                $log('db updated after start');
+            }
+        }
+
+        if ($signLinks['link_subvettore'] === '' && $signLinks['link_committente'] === '') {
+            $log("start response (full, no sign links extracted): " . (string)$resp2);
+        }
+    }
+}
+
+// 7) Email con link di firma
+$log('pre-mail link_subv_len=' . strlen((string)($signLinks['link_subvettore'] ?? ''))
+    . ' link_comm_len=' . strlen((string)($signLinks['link_committente'] ?? '')));
+
+sc_lookup(rs_smtp, "SELECT set_name, set_value FROM sec_settings");
+if (isset({rs_smtp[0][0]})) {
+    foreach ({rs_smtp} as $f) {
+        $_SESSION['sett_' . $f[0]] = $f[1];
+    }
+}
+
+$smtpApi = isset($_SESSION['sett_smtp_api']) ? (string)$_SESSION['sett_smtp_api'] : '';
+if ($smtpApi === 'custom') {
+    $sett_smtp = array(
+        'settings' => array(
+            'gateway'       => 'smtp',
+            'smtp_server'   => (string)($_SESSION['sett_smtp_server'] ?? ''),
+            'smtp_protocol' => (string)($_SESSION['sett_smtp_security'] ?? ''),
+            'smtp_port'     => (string)($_SESSION['sett_smtp_port'] ?? ''),
+            'smtp_user'     => (string)($_SESSION['sett_smtp_user'] ?? ''),
+            'smtp_password' => (string)($_SESSION['sett_smtp_pass'] ?? ''),
+            'from_email'    => (string)($_SESSION['sett_smtp_from_email'] ?? ''),
+            'from_name'     => (string)($_SESSION['sett_smtp_from_name'] ?? ''),
+        ),
+    );
+    $log('smtp mode=custom server=' . ($sett_smtp['settings']['smtp_server'] ?? '')
+        . ' port=' . ($sett_smtp['settings']['smtp_port'] ?? '')
+        . ' user=' . (($sett_smtp['settings']['smtp_user'] ?? '') !== '' ? 'set' : 'empty'));
+} else {
+    $sett_smtp = array('profile' => $smtpApi);
+    $log('smtp mode=profile profile=' . ($smtpApi !== '' ? $smtpApi : '<empty>'));
+}
+
+$mailSkipSetting = trim($sc_setting('easygn_mail_skip', '0'));
+if ($mailSkipSetting === '1' || strtolower($mailSkipSetting) === 'true') {
+    $log('mail SKIP easygn_mail_skip attivo in sec_settings');
+}
+
+// Firma ordinata: solo subvettore ora; committente dopo member done (webhook)
+$firmatarioDisplayName = trim($signerName . ' ' . $signerSurname);
+if ($mailSkipSetting !== '1' && strtolower($mailSkipSetting) !== 'true') {
+    try {
+        $easygn_send_sign_link_email(
+            $signerEmail,
+            $firmatarioDisplayName,
+            (string)($signLinks['link_subvettore'] ?? ''),
+            'firmatario'
+        );
+    } catch (Throwable $e) {
+        $log('mail outer EXCEPTION: ' . $e->getMessage());
+    }
+}
+$log('mail committente differita: invio dopo firma subvettore (webhook) tipo_contratto_id=' . $tipoContrattoId);
+
+// 8) Redirect finale — sempre, anche se la mail fallisce (evita pagina bianca)
+while (ob_get_level() > 0) {
+    ob_end_clean();
+}
+
+if ($isSubvettoreMode) {
+    // Subvettore: reindirizza direttamente al proprio link di firma EasyGN.
+    $subvSignLink = trim((string)($signLinks['link_subvettore'] ?? ''));
+
+    // Fallback: rilegge il link salvato in contratti.easygn_sign_link (JSON).
+    if ($subvSignLink === '' || preg_match('#^https?://#i', $subvSignLink) !== 1) {
+        sc_lookup(rsLink, "SELECT easygn_sign_link FROM contratti WHERE id = $contrattoId LIMIT 1");
+        if (isset({rsLink[0][0]})) {
+            $decoded = json_decode((string){rsLink[0][0]}, true);
+            if (is_array($decoded) && !empty($decoded['link_subvettore'])) {
+                $subvSignLink = trim((string)$decoded['link_subvettore']);
+            }
+        }
+    }
+
+    if ($subvSignLink !== '' && preg_match('#^https?://#i', $subvSignLink) === 1) {
+        $log('redirect subvettore sign link');
+        $safeSignUrl = htmlspecialchars($subvSignLink, ENT_QUOTES, 'UTF-8');
+        if (!headers_sent()) {
+            header('Location: ' . $subvSignLink);
+            exit;
+        }
+        echo "<!doctype html><html lang='it'><head><meta charset='utf-8'>"
+            . "<meta http-equiv='refresh' content='0;url=" . $safeSignUrl . "'>"
+            . "<title>Reindirizzamento firma</title></head><body>"
+            . "<p>Reindirizzamento alla firma digitale...</p>"
+            . "<script>window.location.replace(" . json_encode($subvSignLink) . ");</script>"
+            . "</body></html>";
+        exit;
+    }
+
+    // Link non disponibile: la mail col link resta come backup → pagina di cortesia.
+    $log('subvettore mode: sign link assente, pagina di cortesia');
+    if (!headers_sent()) {
+        header('Content-Type: text/html; charset=UTF-8');
+    }
+    echo "<!doctype html>
+<html lang='it'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>Contratto preparato</title>
+<style>
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:#f3f4f6;color:#111827;}
+  .overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;}
+  .card{width:min(520px,100%);background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.08);padding:24px 26px;text-align:center;}
+  .ttl{font-size:18px;font-weight:700;margin-bottom:10px;color:#1a3a5c;}
+  .sub{font-size:14px;color:#4b5563;line-height:1.5;}
+</style>
+</head>
+<body>
+<div class='overlay'>
+  <div class='card'>
+    <div class='ttl'>Contratto preparato correttamente</div>
+    <div class='sub'>Le abbiamo inviato via email il link per la firma digitale del contratto.<br>Pu&ograve; chiudere questa pagina e proseguire dalla email ricevuta.</div>
+  </div>
+</div>
+</body>
+</html>";
+    exit;
+}
+
+$log('redirect grid_contratti');
+if (function_exists('sc_redir')) {
+    sc_redir('grid_contratti');
+}
+if (!headers_sent()) {
+    header('Location: ../grid_contratti/');
+}
+exit;
+

@@ -1,0 +1,233 @@
+/**
+ * Blank ScriptCase: scarica documenti.file dal server (readfile).
+ *
+ * Parametro globale: [documentoId]
+ * Cerca in templates_path + tutti i path tipici SC (doc/img), poi logga il path usato.
+ */
+$documentoId = (int)[documentoId];
+if ($documentoId <= 0) {
+    die('Manca il documentoId');
+}
+
+$usrLogin = trim((string)[usr_login]);
+
+sc_lookup(rsGrp, "
+    SELECT group_id
+    FROM sec_users_groups
+    WHERE login = " . "'" . str_replace("'", "''", $usrLogin) . "'
+    LIMIT 1
+");
+$groupId = !empty({rsGrp[0][0]}) ? (int){rsGrp[0][0]} : 0;
+
+sc_lookup(rsDoc, "
+    SELECT file, login
+    FROM documenti
+    WHERE id = $documentoId
+    LIMIT 1
+");
+
+if (empty({rsDoc})) {
+    die('Documento non trovato.');
+}
+
+$fileName = trim((string){rsDoc[0][0]});
+$docLogin = trim((string){rsDoc[0][1]});
+
+if ($fileName === '') {
+    die('Nessun file allegato al documento.');
+}
+
+if ($groupId === 2 && strcasecmp($usrLogin, $docLogin) !== 0) {
+    die('Non autorizzato a scaricare questo documento.');
+}
+
+$baseName = basename($fileName);
+
+sc_lookup(rsPath, "SELECT set_value FROM sec_settings WHERE set_name = 'templates_path'");
+$templatesPath = isset({rsPath[0][0]}) ? rtrim(trim((string){rsPath[0][0]}), '/\\') : '';
+
+$docApps = array('grid_documenti', 'form_documenti', 'documenti', 'templates');
+
+$docSuffixes = array();
+foreach ($docApps as $app) {
+    $docSuffixes[] = 'file/doc/' . $app;
+    $docSuffixes[] = '_lib/file/doc/' . $app;
+}
+$docSuffixes[] = 'file/doc';
+$docSuffixes[] = '_lib/file/doc';
+
+$imgSuffixes = array();
+foreach ($docApps as $app) {
+    $imgSuffixes[] = 'file/img/' . $app;
+    $imgSuffixes[] = '_lib/file/img/' . $app;
+}
+$imgSuffixes[] = 'file/img';
+$imgSuffixes[] = '_lib/file/img';
+$imgSuffixes[] = '_lib/img';
+
+$roots = array();
+if ($templatesPath !== '') {
+    $roots[] = $templatesPath;
+    $roots[] = dirname($templatesPath);
+}
+$roots[] = '/opt/Scriptcase/v9-php82/wwwroot/scriptcase';
+$roots[] = '/opt/Scriptcase/v9-php81/wwwroot/scriptcase';
+$roots[] = '/opt/Scriptcase/v9-php82/wwwroot/scriptcase/file/doc/templates';
+$roots[] = '/opt/Scriptcase/v9-php81/wwwroot/scriptcase/file/doc/templates';
+
+$appRoot = isset($this->Ini->root) ? rtrim((string)$this->Ini->root, '/\\') : '';
+$pathLink = isset($this->Ini->path_link) ? (string)$this->Ini->path_link : '../';
+
+if ($appRoot !== '') {
+    $roots[] = $appRoot;
+    $ws = @realpath($appRoot . '/..');
+    if ($ws !== false) {
+        $roots[] = $ws;
+        $sc = @realpath($ws . '/../..');
+        if ($sc !== false) {
+            $roots[] = $sc;
+        }
+    }
+}
+
+if (isset($this->Ini->path_doc) && trim((string)$this->Ini->path_doc) !== '') {
+    $roots[] = rtrim((string)$this->Ini->path_doc, '/\\');
+    $roots[] = dirname(rtrim((string)$this->Ini->path_doc, '/\\'));
+}
+
+$roots = array_values(array_unique(array_filter($roots)));
+
+$searchDirs = array();
+foreach ($roots as $root) {
+    $root = rtrim($root, '/\\');
+    if ($root === '') {
+        continue;
+    }
+    $searchDirs[] = $root;
+    foreach ($docSuffixes as $suffix) {
+        $searchDirs[] = $root . '/' . $suffix;
+    }
+    foreach ($imgSuffixes as $suffix) {
+        $searchDirs[] = $root . '/' . $suffix;
+    }
+    if ($appRoot !== '' && $root === $appRoot) {
+        foreach ($docSuffixes as $suffix) {
+            $searchDirs[] = $appRoot . '/' . $pathLink . $suffix;
+        }
+        foreach ($imgSuffixes as $suffix) {
+            $searchDirs[] = $appRoot . '/' . $pathLink . $suffix;
+        }
+    }
+}
+
+$searchDirs = array_values(array_unique(array_filter($searchDirs)));
+
+$triedPaths = array();
+$file_path = '';
+$matchedDir = '';
+
+$tryPath = function ($path) use (&$triedPaths, &$file_path, &$matchedDir) {
+    if ($file_path !== '') {
+        return;
+    }
+    $path = str_replace(array('\\', '//'), array('/', '/'), (string)$path);
+    if (in_array($path, $triedPaths, true)) {
+        return;
+    }
+    $triedPaths[] = $path;
+    if (is_file($path) && is_readable($path)) {
+        $file_path = $path;
+        $matchedDir = $path;
+    }
+};
+
+foreach ($searchDirs as $dir) {
+    if ($file_path !== '') {
+        break;
+    }
+    $tryPath(rtrim($dir, '/\\') . '/' . $baseName);
+}
+
+// Fallback glob: prefisso SC sul nome file (es. sc_xxx_DM_BPF.pdf)
+if ($file_path === '') {
+    $lb = chr(91);
+    $rb = chr(93);
+    $globName = str_replace(
+        array($lb, $rb),
+        array($lb . $lb . $lb, $rb . $lb . $rb),
+        $baseName
+    );
+    foreach ($searchDirs as $dir) {
+        if ($file_path !== '' || !is_dir($dir)) {
+            continue;
+        }
+        $matches = glob(rtrim($dir, '/\\') . '/*' . $globName);
+        if (!empty($matches)) {
+            foreach ($matches as $match) {
+                $tryPath($match);
+                if ($file_path !== '') {
+                    $matchedDir = $dir;
+                    break 2;
+                }
+            }
+        }
+        $matches = glob(rtrim($dir, '/\\') . '/*' . $baseName);
+        if (!empty($matches)) {
+            foreach ($matches as $match) {
+                $tryPath($match);
+                if ($file_path !== '') {
+                    $matchedDir = $dir;
+                    break 2;
+                }
+            }
+        }
+    }
+}
+
+if ($file_path === '') {
+    sc_log_add(
+        'DOC_DL',
+        'documentoId=' . $documentoId . ' | FAIL file=' . $baseName . ' | tentati=' . count($triedPaths)
+    );
+    echo 'File non trovato: ' . htmlspecialchars($baseName, ENT_QUOTES, 'UTF-8');
+    exit;
+}
+
+sc_log_add(
+    'DOC_DL',
+    'documentoId=' . $documentoId . ' | OK file=' . $baseName . ' | path=' . $file_path . ' | dir=' . $matchedDir
+);
+
+$filename = basename($file_path);
+$ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+$mimeMap = array(
+    'pdf'  => 'application/pdf',
+    'jpg'  => 'image/jpeg',
+    'jpeg' => 'image/jpeg',
+    'png'  => 'image/png',
+    'gif'  => 'image/gif',
+    'webp' => 'image/webp',
+    'bmp'  => 'image/bmp',
+    'doc'  => 'application/msword',
+    'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'xls'  => 'application/vnd.ms-excel',
+    'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+);
+$contentType = isset($mimeMap[$ext]) ? $mimeMap[$ext] : 'application/octet-stream';
+
+if (ob_get_length()) {
+    ob_end_clean();
+}
+
+$disposition = ($ext === 'pdf' || strpos($contentType, 'image/') === 0) ? 'inline' : 'attachment';
+
+header('Content-Description: File Transfer');
+header('Content-Type: ' . $contentType);
+header('Content-Disposition: ' . $disposition . '; filename="' . $filename . '"');
+header('Expires: 0');
+header('Cache-Control: must-revalidate');
+header('Pragma: public');
+header('Content-Length: ' . filesize($file_path));
+
+readfile($file_path);
+exit;

@@ -1,0 +1,130 @@
+/**
+ * form_subvettori_contratti_for_subvectors_magic_link
+ * → onValidate (validazione lato server prima del salvataggio / passaggio allo step successivo)
+ *
+ * Blocca il proseguimento finché non sono stati compilati:
+ * 1) Anagrafica subvettore
+ * 2) Dati legali rappresentante su subvettori_contratti (luogo/prov/data nascita)
+ * 3) Dati legale rappresentante per EasyGN (email, telefono, nome, cognome)
+ *
+ * In Scriptcase: num_iscrizione_albo NON impostare "Obbligatorio" (solo tipo 1 in onValidate).
+ *
+ */
+
+if (!function_exists('magic_link_form_tipo_contratto_id_validate')) {
+    function magic_link_form_tipo_contratto_id_validate()
+    {
+        $scId = 0;
+        if (isset({id}) && (int){id} > 0) {
+            $scId = (int){id};
+        } elseif (isset([subvettore_contratto_id]) && (int)[subvettore_contratto_id] > 0) {
+            $scId = (int)[subvettore_contratto_id];
+        } elseif (isset($_GET['subvettore_contratto_id']) && (int)$_GET['subvettore_contratto_id'] > 0) {
+            $scId = (int)$_GET['subvettore_contratto_id'];
+        } elseif (isset($_GET['id']) && (int)$_GET['id'] > 0) {
+            $scId = (int)$_GET['id'];
+        }
+
+        if ($scId > 0) {
+            sc_lookup(rsTipoContrattoValidate, "
+                SELECT c.tipo_contratto_id
+                FROM subvettori_contratti sc
+                INNER JOIN contratti c ON c.id = sc.contratto_id
+                WHERE sc.id = " . (int)$scId . "
+                LIMIT 1
+            ", "pigliacelli");
+
+            if (!empty({rsTipoContrattoValidate[0][0]})) {
+                return (int){rsTipoContrattoValidate[0][0]};
+            }
+        }
+
+        if (isset({contratto_id}) && (int){contratto_id} > 0) {
+            sc_lookup(rsTipoContrattoValidateByContratto, "
+                SELECT tipo_contratto_id
+                FROM contratti
+                WHERE id = " . (int){contratto_id} . "
+                LIMIT 1
+            ", "pigliacelli");
+
+            if (!empty({rsTipoContrattoValidateByContratto[0][0]})) {
+                return (int){rsTipoContrattoValidateByContratto[0][0]};
+            }
+        }
+
+        return 0;
+    }
+}
+
+$nome    = isset({nome_rappresentante})     ? trim((string){nome_rappresentante})     : '';
+$cognome = isset({cognome_rappresentante})  ? trim((string){cognome_rappresentante})  : '';
+$email   = isset({email_rappresentante})    ? trim((string){email_rappresentante})    : '';
+$tel     = isset({telefono_rappresentante}) ? trim((string){telefono_rappresentante}) : '';
+
+$errors = array();
+$tipoContrattoId = magic_link_form_tipo_contratto_id_validate();
+
+if (!function_exists('magic_link_form_require_field')) {
+    function magic_link_form_require_field(&$errors, $value, $label)
+    {
+        if (trim((string)$value) === '') {
+            $errors[] = $label;
+        }
+    }
+}
+
+magic_link_form_require_field($errors, isset({ragione_sociale}) ? {ragione_sociale} : '', 'Ragione sociale');
+magic_link_form_require_field($errors, isset({sede_citta}) ? {sede_citta} : '', 'Sede città');
+magic_link_form_require_field($errors, isset({sede_prov}) ? {sede_prov} : '', 'Sede provincia');
+magic_link_form_require_field($errors, isset({indirizzo}) ? {indirizzo} : '', 'Indirizzo');
+magic_link_form_require_field($errors, isset({civico}) ? {civico} : '', 'Civico');
+magic_link_form_require_field($errors, isset({cod_fiscale}) ? {cod_fiscale} : '', 'Codice fiscale');
+magic_link_form_require_field($errors, isset({piva}) ? {piva} : '', 'Partita IVA');
+magic_link_form_require_field($errors, isset({num_iscrizione_reg_imprese}) ? {num_iscrizione_reg_imprese} : '', 'Numero iscrizione Registro Imprese');
+magic_link_form_require_field($errors, isset({locazione_iscrizione_reg_imprese}) ? {locazione_iscrizione_reg_imprese} : '', 'Luogo iscrizione Registro Imprese');
+magic_link_form_require_field($errors, isset({rea}) ? {rea} : '', 'R.E.A.');
+magic_link_form_require_field($errors, isset({phone}) ? {phone} : '', 'Cellulare');
+
+// Numero iscrizione Albo: obbligatorio solo per contratto tipo 1.
+if ((int)$tipoContrattoId === 1) {
+    magic_link_form_require_field($errors, isset({num_iscrizione_albo}) ? {num_iscrizione_albo} : '', 'Numero iscrizione Albo');
+}
+
+$provNascita = '';
+if (isset({prov_luogo_nascita_rappresentante}) && trim((string){prov_luogo_nascita_rappresentante}) !== '') {
+    $provNascita = trim((string){prov_luogo_nascita_rappresentante});
+} elseif (isset({prov_nascita_rappresentante}) && trim((string){prov_nascita_rappresentante}) !== '') {
+    $provNascita = trim((string){prov_nascita_rappresentante});
+}
+
+magic_link_form_require_field($errors, isset({luogo_nascita_rappresentante}) ? {luogo_nascita_rappresentante} : '', 'Luogo di nascita rappresentante');
+magic_link_form_require_field($errors, $provNascita, 'Provincia di nascita rappresentante');
+magic_link_form_require_field($errors, isset({data_nascita_rappresentante}) ? {data_nascita_rappresentante} : '', 'Data di nascita rappresentante');
+
+if ($email === '' || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+    $errors[] = 'Email del rappresentante valida';
+}
+if ($tel === '') {
+    $errors[] = 'Telefono del rappresentante';
+}
+if ($nome === '') {
+    $errors[] = 'Nome del rappresentante';
+}
+if ($cognome === '') {
+    $errors[] = 'Cognome del rappresentante';
+}
+
+if (!empty($errors)) {
+    $msg = "Per proseguire con la firma del contratto è necessario compilare tutti i campi obbligatori:\n- "
+        . implode("\n- ", $errors);
+
+    // sc_err_msg = standard Scriptcase in onValidate; fallback per compatibilità.
+    if (function_exists('sc_err_msg')) {
+        sc_err_msg($msg);
+    } else {
+        sc_error_message($msg);
+        if (function_exists('sc_error_exit')) {
+            sc_error_exit();
+        }
+    }
+}

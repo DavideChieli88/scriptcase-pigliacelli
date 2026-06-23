@@ -1,0 +1,620 @@
+// Import tratte da SGA (SQL Server via PDO) verso pigliacelli (MySQL) — versione ottimizzata.
+// Versione T2BaseVettori: stesso filtro vettore di insert_new_trips_basevettori
+// (JOIN T2BaseVettori ATTIVO = 'S' al posto di BaCliFor in insert_new_trips_optimized).
+// App parallela a insert_new_trips_optimized (originale BaCliFor).
+// Eseguire dopo insert_new_subvectors_basevettori (richiede subvettori gia' presenti).
+// Viaggi: da export_viaggi_anno (sec_settings, default 2023) fino all'ANNO corrente,
+// elaborati UN ANNO ALLA VOLTA (scaglionato in un'unica run, per limitare il picco di memoria).
+// Ottimizzazioni: niente N+1 (localita/extra/subvettori/tariffe/hash in bulk),
+// limiti di esecuzione alzati, lock anti doppio avvio, logging a step, sync_date aggiornato a fine run.
+
+function log_insert_trips($step, $msg = '')
+{
+    $text = 'STEP ' . $step;
+    if ($msg !== '') {
+        $text .= ' | ' . $msg;
+    }
+    sc_log_add('INSERT_TRIPS_OPT', $text);
+}
+
+function sql_quote($v)
+{
+    if ($v === null) {
+        return "NULL";
+    }
+    $v = (string)$v;
+    return "'" . str_replace("'", "''", $v) . "'";
+}
+
+function sql_num($v)
+{
+    if ($v === null || $v === '') {
+        return "NULL";
+    }
+    return (string)(0 + $v);
+}
+
+function split_localita($s)
+{
+    $s = trim((string)$s);
+    if ($s === '') {
+        return [];
+    }
+
+    $parts = preg_split('/\s*\+\s*/', $s);
+
+    $out = [];
+    foreach ($parts as $part) {
+        $part = trim($part);
+        if ($part !== '') {
+            $out[] = $part;
+        }
+    }
+
+    return $out;
+}
+
+function normalizza_stringa($s)
+{
+    $s = trim((string)$s);
+    $s = strtoupper($s);
+    $s = preg_replace('/\s+/', ' ', $s);
+    return $s;
+}
+
+function crea_hash_tratta($carico_str, $scarico_str, $codice_vettore, $importo_unitario)
+{
+    $carichi = [];
+    foreach (split_localita($carico_str) as $loc) {
+        $carichi[] = normalizza_stringa($loc);
+    }
+
+    $scarichi = [];
+    foreach (split_localita($scarico_str) as $loc) {
+        $scarichi[] = normalizza_stringa($loc);
+    }
+
+    $carico_norm  = implode('|', $carichi);
+    $scarico_norm = implode('|', $scarichi);
+    $vettore      = normalizza_stringa($codice_vettore);
+    $importo      = number_format((float)$importo_unitario, 2, '.', '');
+
+    return hash('sha256', $carico_norm . '#' . $scarico_norm . '#' . $vettore . '#' . $importo);
+}
+
+function data_compare_value($value)
+{
+    if ($value === null || $value === '') {
+        return PHP_INT_MIN;
+    }
+
+    $ts = strtotime((string)$value);
+    return $ts === false ? PHP_INT_MIN : $ts;
+}
+
+function viaggio_piu_recente($nuovo, $corrente)
+{
+    $nuovo_partenza = data_compare_value($nuovo['partenza_data_ora']);
+    $corrente_partenza = data_compare_value($corrente['partenza_data_ora']);
+
+    if ($nuovo_partenza !== $corrente_partenza) {
+        return $nuovo_partenza > $corrente_partenza;
+    }
+
+    if ((int)$nuovo['ANNO'] !== (int)$corrente['ANNO']) {
+        return (int)$nuovo['ANNO'] > (int)$corrente['ANNO'];
+    }
+
+    return (int)$nuovo['NUMERO'] > (int)$corrente['NUMERO'];
+}
+
+function carica_localita_bulk($pdo_sga, $societa, $anno)
+{
+    $sql = "
+        SELECT ANNO, NUMERO, OPERAZIONE, LOCALITA
+        FROM T2ViaggiVettoriClienti
+        WHERE SOCIETA = :societa
+          AND ANNO = :anno
+          AND OPERAZIONE IN ('C', 'S')
+        ORDER BY ANNO, NUMERO, OPERAZIONE, PROGRESSIVO
+    ";
+    $params = array('societa' => $societa, 'anno' => $anno);
+    $stmt = $pdo_sga->prepare($sql);
+    $stmt->execute($params);
+
+    // Due mappe separate per evitare array annidati (ScriptCase interpreta [ ] come variabili globali).
+    $carichi_map = array();
+    $scarichi_map = array();
+    while (($row = $stmt->fetch(PDO::FETCH_NUM)) !== false) {
+        $key = (int)$row[0] . '|' . (int)$row[1];
+        if ($row[2] === 'C') {
+            if (!isset($carichi_map[$key])) {
+                $carichi_map[$key] = array();
+            }
+            $carichi_map[$key][] = $row[3];
+        } elseif ($row[2] === 'S') {
+            if (!isset($scarichi_map[$key])) {
+                $scarichi_map[$key] = array();
+            }
+            $scarichi_map[$key][] = $row[3];
+        }
+    }
+    $stmt->closeCursor();
+
+    return array($carichi_map, $scarichi_map);
+}
+
+function carica_extra_bulk($pdo_sga, $societa, $anno)
+{
+    $sql = "
+        SELECT ANNO, NUMERO, COALESCE(SUM(IMPORTO_TOTALE), 0)
+        FROM T2ViaggiVettoriAddebiti
+        WHERE SOCIETA = :societa
+          AND ANNO = :anno
+        GROUP BY ANNO, NUMERO
+    ";
+    $stmt = $pdo_sga->prepare($sql);
+    $stmt->execute(['societa' => $societa, 'anno' => $anno]);
+
+    $map = [];
+    while (($row = $stmt->fetch(PDO::FETCH_NUM)) !== false) {
+        $map[(int)$row[0] . '|' . (int)$row[1]] = $row[2];
+    }
+    $stmt->closeCursor();
+
+    return $map;
+}
+
+function acquisisci_lock_insert_trips()
+{
+    sc_lookup(lockRow, "SELECT GET_LOCK('insert_new_trips', 0)", "pigliacelli");
+    if (empty({lockRow}) || (int){lockRow[0][0]} !== 1) {
+        return false;
+    }
+
+    return true;
+}
+
+function rilascia_lock_insert_trips()
+{
+    sc_exec_sql("SELECT RELEASE_LOCK('insert_new_trips')", "pigliacelli");
+}
+
+function connetti_pdo_sga()
+{
+    $set_names = ['sgam_user', 'sgam_pswd', 'sgam_db', 'sgam_server'];
+
+    sc_lookup(settingsRows, "
+        SELECT set_name, set_value
+        FROM sec_settings
+        WHERE set_name IN (
+            'sgam_user', 'sgam_pswd', 'sgam_db', 'sgam_server',
+            'export_viaggi_anno', 'export_viaggi_societa'
+        )
+    ", "pigliacelli");
+
+    $settings = [];
+    if (!empty({settingsRows})) {
+        foreach ({settingsRows} as $settingRow) {
+            $settings[$settingRow[0]] = $settingRow[1];
+        }
+    }
+
+    foreach ($set_names as $set_name) {
+        if (!array_key_exists($set_name, $settings)) {
+            log_insert_trips('003', "Parametro sec_settings mancante: " . $set_name);
+            sc_error_message("Parametro '" . $set_name . "' non trovato in sec_settings.");
+            return null;
+        }
+    }
+
+    $societa = isset($settings['export_viaggi_societa']) && trim((string)$settings['export_viaggi_societa']) !== ''
+        ? (int)$settings['export_viaggi_societa']
+        : 1;
+    $anno_da = isset($settings['export_viaggi_anno']) && trim((string)$settings['export_viaggi_anno']) !== ''
+        ? (int)$settings['export_viaggi_anno']
+        : 2023;
+
+    log_insert_trips('003', 'sec_settings OK | societa=' . $societa . ' | anno_da=' . $anno_da);
+
+    try {
+        log_insert_trips('004', 'Connessione PDO SGA in corso');
+        $dsn_sga = "sqlsrv:Server=" . $settings['sgam_server'] .
+                   ";Database=" . $settings['sgam_db'] .
+                   ";Encrypt=1" .
+                   ";TrustServerCertificate=1";
+
+        $pdo_sga = new PDO(
+            $dsn_sga,
+            $settings['sgam_user'],
+            $settings['sgam_pswd'],
+            [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_NUM,
+            ]
+        );
+
+        log_insert_trips('004', 'Connessione PDO SGA OK');
+
+        return [
+            'pdo' => $pdo_sga,
+            'societa' => $societa,
+            'anno_da' => $anno_da,
+        ];
+    } catch (PDOException $e) {
+        log_insert_trips('004', 'Errore connessione PDO SGA: ' . $e->getMessage());
+        sc_error_message("Errore connessione PDO SGA: " . $e->getMessage());
+        return null;
+    }
+}
+
+if (!acquisisci_lock_insert_trips()) {
+    sc_log_add("INSERT_TRIPS_OPT", "Run ignorata: import gia' in corso (lock attivo)");
+    sc_error_message("Import tratte gia' in esecuzione. Attendere il completamento e riprovare.");
+    return;
+}
+
+log_insert_trips('001', 'Avvio run');
+log_insert_trips('002', 'Lock acquisito');
+
+// Import massivo: evita 500 da timeout / memoria.
+@set_time_limit(0);
+@ini_set('memory_limit', '1024M');
+@ignore_user_abort(true);
+
+// Nota: il lock MySQL (GET_LOCK) viene rilasciato automaticamente alla chiusura della
+// connessione di sessione, quindi non serve un register_shutdown_function (che fallirebbe:
+// a shutdown la connessione ScriptCase/ADOdb e' gia' chiusa). Sui percorsi normali e di
+// errore chiamiamo comunque rilascia_lock_insert_trips().
+
+$conn = connetti_pdo_sga();
+if ($conn === null) {
+    log_insert_trips('999', 'Run terminata: connessione SGA non disponibile');
+    rilascia_lock_insert_trips();
+    return;
+}
+
+$pdo_sga = $conn['pdo'];
+$societa = $conn['societa'];
+$anno_da = $conn['anno_da'];
+
+// Limite superiore = anno corrente. Importa tutti gli anni da anno_da a oggi, uno alla volta.
+$anno_a = (int)date('Y');
+if ($anno_da > $anno_a) {
+    $anno_a = $anno_da;
+}
+log_insert_trips('004b', 'Intervallo anni da elaborare: ' . $anno_da . ' .. ' . $anno_a);
+
+$sql_viaggi_base = "
+    SELECT
+      v.SOCIETA,
+      v.ANNO,
+      v.NUMERO,
+      v.VETTORE AS codice_vettore,
+      v.TARIFFA,
+      v.IMPORTO_UNITARIO,
+      v.PARTENZA_DATA_ORA AS partenza_data_ora,
+      COALESCE(v.UPDATE_DATA_ORA, v.INSERT_DATA_ORA, '1900-01-01 00:00:00') AS sync_data_ora
+    FROM T2ViaggiVettori v
+    INNER JOIN T2BaseVettori t
+      ON t.CODICE = v.VETTORE
+     AND t.SOCIETA = v.SOCIETA
+     AND t.ATTIVO = 'S'
+    WHERE v.SOCIETA = :societa
+      AND v.ANNO = :anno
+    ORDER BY v.ANNO, v.NUMERO
+";
+
+// Precarico mappe MySQL una sola volta (valide per tutti gli anni): niente lookup per viaggio.
+log_insert_trips('009', 'Precarico mappe pigliacelli (subvettori, tariffe, hash)');
+
+$subvettori_map = [];
+sc_lookup(subRows, "SELECT codice_sga, id FROM subvettori WHERE codice_sga IS NOT NULL", "pigliacelli");
+if (!empty({subRows})) {
+    foreach ({subRows} as $r) {
+        $subvettori_map[(string)$r[0]] = $r[1];
+    }
+}
+
+$tariffe_map = [];
+sc_lookup(tariffeRows, "SELECT UPPER(descrizione), id FROM tipo_tariffe", "pigliacelli");
+if (!empty({tariffeRows})) {
+    foreach ({tariffeRows} as $r) {
+        $tariffe_map[(string)$r[0]] = $r[1];
+    }
+}
+
+$hash_esistenti = [];
+sc_lookup(hashRows, "SELECT hash FROM tratte WHERE hash IS NOT NULL", "pigliacelli");
+if (!empty({hashRows})) {
+    foreach ({hashRows} as $r) {
+        $hash_esistenti[(string)$r[0]] = true;
+    }
+}
+
+log_insert_trips(
+    '009',
+    'Mappe pronte | subvettori=' . count($subvettori_map) .
+    ' | tariffe=' . count($tariffe_map) .
+    ' | hash_esistenti=' . count($hash_esistenti)
+);
+
+// Contatori globali (cumulati su tutti gli anni).
+$tot_inseriti = 0;
+$tot_saltati_hash = 0;
+$tot_saltati_subvettore = 0;
+$subvettori_mancanti = [];
+$ultima_sync_data_ora = null;
+
+try {
+    $stmt_viaggi_base = $pdo_sga->prepare($sql_viaggi_base);
+} catch (PDOException $e) {
+    log_insert_trips('005', 'Errore prepare PDO SGA: ' . $e->getMessage());
+    sc_error_message("Errore prepare PDO SGA: " . $e->getMessage());
+    log_insert_trips('999', 'Run terminata con errore STEP 005');
+    rilascia_lock_insert_trips();
+    return;
+}
+
+// ---- Ciclo per anno: ogni anno e' una mini-import indipendente, con memoria liberata a fine ciclo ----
+for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
+    $ultimo_viaggio_log = null;
+
+    try {
+        log_insert_trips('100', 'ANNO ' . $anno . ' | execute viaggi base');
+        $stmt_viaggi_base->execute(['societa' => $societa, 'anno' => $anno]);
+        $viaggi_base_rows = $stmt_viaggi_base->fetchAll(PDO::FETCH_NUM);
+        $stmt_viaggi_base->closeCursor();
+        $tot_righe_base = count($viaggi_base_rows);
+        log_insert_trips('100', 'ANNO ' . $anno . ' | viaggi base righe=' . $tot_righe_base);
+
+        if ($tot_righe_base === 0) {
+            log_insert_trips('100', 'ANNO ' . $anno . ' | nessun viaggio, salto');
+            unset($viaggi_base_rows);
+            continue;
+        }
+
+        log_insert_trips('101', 'ANNO ' . $anno . ' | carico bulk localita');
+        $localita_bulk = carica_localita_bulk($pdo_sga, $societa, $anno);
+        $carichi_map = $localita_bulk[0];
+        $scarichi_map = $localita_bulk[1];
+
+        log_insert_trips('101', 'ANNO ' . $anno . ' | carico bulk extra');
+        $extra_map = carica_extra_bulk($pdo_sga, $societa, $anno);
+
+        // Dedup viaggi dell'anno.
+        $viaggi_unici = [];
+        $viaggi_letti = 0;
+        $viaggi_senza_localita = 0;
+
+        foreach ($viaggi_base_rows as $row_sga) {
+            $viaggi_letti++;
+
+            $row_anno    = $row_sga[1];
+            $numero      = $row_sga[2];
+            $codice_vettore   = $row_sga[3];
+            $tariffa_sigla    = trim((string)$row_sga[4]);
+            $importo_unitario = $row_sga[5];
+            $partenza_data_ora = $row_sga[6];
+            $sync_data_ora     = $row_sga[7];
+            $ultimo_viaggio_log = (int)$row_anno . '/' . (int)$numero . ' vettore=' . (string)$codice_vettore;
+
+            if ($sync_data_ora !== null && ($ultima_sync_data_ora === null || $sync_data_ora > $ultima_sync_data_ora)) {
+                $ultima_sync_data_ora = $sync_data_ora;
+            }
+
+            $viaggio_key = (int)$row_anno . '|' . (int)$numero;
+
+            $carico_str = '';
+            $scarico_str = '';
+            if (isset($carichi_map[$viaggio_key])) {
+                $carico_str = implode(' + ', $carichi_map[$viaggio_key]);
+            }
+            if (isset($scarichi_map[$viaggio_key])) {
+                $scarico_str = implode(' + ', $scarichi_map[$viaggio_key]);
+            }
+
+            if ($carico_str === '' || $scarico_str === '') {
+                $viaggi_senza_localita++;
+                continue;
+            }
+
+            $extra_totale = isset($extra_map[$viaggio_key]) ? $extra_map[$viaggio_key] : 0;
+            $key = (string)$codice_vettore . '|' . $carico_str . '|' . $scarico_str;
+
+            $viaggio = [
+                'ANNO' => $row_anno,
+                'NUMERO' => $numero,
+                'codice_vettore' => $codice_vettore,
+                'carico_str' => $carico_str,
+                'scarico_str' => $scarico_str,
+                'tariffa_sigla' => $tariffa_sigla,
+                'importo_unitario' => $importo_unitario,
+                'extra_totale' => $extra_totale,
+                'partenza_data_ora' => $partenza_data_ora,
+            ];
+
+            if (!isset($viaggi_unici[$key]) || viaggio_piu_recente($viaggio, $viaggi_unici[$key])) {
+                $viaggi_unici[$key] = $viaggio;
+            }
+        }
+
+        unset($viaggi_base_rows, $localita_bulk, $carichi_map, $scarichi_map, $extra_map);
+
+        $candidati_insert = count($viaggi_unici);
+        log_insert_trips(
+            '102',
+            'ANNO ' . $anno . ' | dedup completato | letti=' . $viaggi_letti .
+            ' | senza_localita=' . $viaggi_senza_localita .
+            ' | candidati=' . $candidati_insert
+        );
+    } catch (PDOException $e) {
+        $ctx = $ultimo_viaggio_log !== null ? ' | ultimo_viaggio=' . $ultimo_viaggio_log : '';
+        log_insert_trips('100', 'ANNO ' . $anno . ' | errore lettura SGA: ' . $e->getMessage() . $ctx);
+        sc_error_message("Errore lettura dati SGA (anno " . $anno . "): " . $e->getMessage());
+        log_insert_trips('999', 'Run terminata con errore ANNO ' . $anno . $ctx);
+        rilascia_lock_insert_trips();
+        return;
+    } catch (Throwable $e) {
+        $ctx = $ultimo_viaggio_log !== null ? ' | ultimo_viaggio=' . $ultimo_viaggio_log : '';
+        log_insert_trips('100', 'ANNO ' . $anno . ' | errore generico: ' . $e->getMessage() . $ctx);
+        sc_error_message("Errore elaborazione SGA (anno " . $anno . "): " . $e->getMessage());
+        log_insert_trips('999', 'Run terminata con errore ANNO ' . $anno . $ctx);
+        rilascia_lock_insert_trips();
+        return;
+    }
+
+    // ---- Insert MySQL per l'anno ----
+    $inseriti = 0;
+    $saltati_hash = 0;
+    $saltati_subvettore = 0;
+    $insert_elaborati = 0;
+
+    log_insert_trips('110', 'ANNO ' . $anno . ' | inizio insert MySQL | candidati=' . $candidati_insert);
+
+    foreach ($viaggi_unici as $viaggio) {
+        $insert_elaborati++;
+        if ($insert_elaborati === 1 || $insert_elaborati % 500 === 0) {
+            log_insert_trips('110', 'ANNO ' . $anno . ' | insert ' . $insert_elaborati . '/' . $candidati_insert . ' | inseriti=' . $inseriti);
+        }
+        $codice_vettore   = $viaggio['codice_vettore'];
+        $carico_str       = $viaggio['carico_str'];
+        $scarico_str      = $viaggio['scarico_str'];
+        $tariffa_sigla    = $viaggio['tariffa_sigla'];
+        $importo_unitario = $viaggio['importo_unitario'];
+        $extra_totale     = $viaggio['extra_totale'];
+
+        $hash = crea_hash_tratta($carico_str, $scarico_str, $codice_vettore, $importo_unitario);
+
+        if (isset($hash_esistenti[$hash])) {
+            $saltati_hash++;
+            continue;
+        }
+
+        $codice_vettore_key = (string)$codice_vettore;
+        if (!isset($subvettori_map[$codice_vettore_key])) {
+            $saltati_subvettore++;
+            if (!isset($subvettori_mancanti[$codice_vettore_key])) {
+                $subvettori_mancanti[$codice_vettore_key] = 0;
+            }
+            $subvettori_mancanti[$codice_vettore_key]++;
+            continue;
+        }
+
+        $subvettore_id = $subvettori_map[$codice_vettore_key];
+
+        if ($tariffa_sigla === '') {
+            $tariffa_sigla = null;
+        }
+        $totale = (0 + $importo_unitario) + (0 + $extra_totale);
+
+        $tipo_tariffa_id = null;
+        if ($tariffa_sigla !== null) {
+            $tariffa_sigla = strtoupper($tariffa_sigla);
+            if (isset($tariffe_map[$tariffa_sigla])) {
+                $tipo_tariffa_id = $tariffe_map[$tariffa_sigla];
+            }
+        }
+
+        $tipo_tariffa_sql = $tipo_tariffa_id === null ? "NULL" : sql_num($tipo_tariffa_id);
+
+        $insTratta = "
+          INSERT INTO tratte
+            (subvettore_id, merce, caricatore, proprietario_merce, tipo_tariffa_id, tariffa, extra, totale, hash, version)
+          VALUES
+            (" . sql_num($subvettore_id) . ",
+             NULL, NULL, NULL,
+             " . $tipo_tariffa_sql . ",
+             " . sql_num($importo_unitario) . ",
+             " . sql_num($extra_totale) . ",
+             " . sql_num($totale) . ",
+             " . sql_quote($hash) . ",
+             1)
+        ";
+        sc_exec_sql($insTratta, "pigliacelli");
+
+        sc_lookup(lastId, "SELECT LAST_INSERT_ID()", "pigliacelli");
+        if (empty({lastId}) || {lastId[0][0]} === null || {lastId[0][0]} === '') {
+            sc_log_add("INSERT_TRIPS_OPT_ERROR", "LAST_INSERT_ID vuoto per hash " . $hash);
+            continue;
+        }
+
+        $tratta_id = {lastId[0][0]};
+        $hash_esistenti[$hash] = true;
+
+        $i = 1;
+        foreach (split_localita($carico_str) as $loc) {
+            sc_exec_sql("
+              INSERT INTO tratte_localita (tratta_id, tipo_tratta, localita, progressivo)
+              VALUES (" . sql_num($tratta_id) . ", 'C', " . sql_quote($loc) . ", " . sql_num($i) . ")
+            ", "pigliacelli");
+            $i++;
+        }
+
+        $i = 1;
+        foreach (split_localita($scarico_str) as $loc) {
+            sc_exec_sql("
+              INSERT INTO tratte_localita (tratta_id, tipo_tratta, localita, progressivo)
+              VALUES (" . sql_num($tratta_id) . ", 'S', " . sql_quote($loc) . ", " . sql_num($i) . ")
+            ", "pigliacelli");
+            $i++;
+        }
+
+        $inseriti++;
+    }
+
+    unset($viaggi_unici);
+
+    $tot_inseriti += $inseriti;
+    $tot_saltati_hash += $saltati_hash;
+    $tot_saltati_subvettore += $saltati_subvettore;
+
+    log_insert_trips(
+        '112',
+        'ANNO ' . $anno . ' | completato | inseriti=' . $inseriti .
+        ' | hash_skip=' . $saltati_hash .
+        ' | subvettore_skip=' . $saltati_subvettore
+    );
+}
+
+sc_log_add(
+    "INSERT_TRIPS_OPT",
+    "Totale tratte inserite: " . $tot_inseriti .
+    ", hash gia' presenti: " . $tot_saltati_hash .
+    ", subvettore mancante: " . $tot_saltati_subvettore .
+    ", anni=" . $anno_da . ".." . $anno_a
+);
+
+if (!empty($subvettori_mancanti)) {
+    $dettaglio_mancanti = [];
+    foreach ($subvettori_mancanti as $codice_sga => $num_tratte) {
+        $dettaglio_mancanti[] = $codice_sga . ' (' . (int)$num_tratte . ' tratte)';
+    }
+    sc_log_add(
+        "INSERT_TRIPS_OPT_SUB_MANC",
+        "codice_sga non presenti in subvettori: " . implode(', ', $dettaglio_mancanti)
+    );
+}
+
+// Aggiorna sync_date come check_new_trips_nuovo_contratto: massimo UPDATE/INSERT_DATA_ORA
+// tra i viaggi importati, senza mai farlo arretrare rispetto al valore corrente.
+if ($ultima_sync_data_ora !== null) {
+    sc_lookup(syncRow, "SELECT set_value FROM sec_settings WHERE set_name = 'sync_date'", "pigliacelli");
+    $sync_corrente = !empty({syncRow}) ? (string){syncRow[0][0]} : '';
+
+    if ($sync_corrente === '' || $ultima_sync_data_ora > $sync_corrente) {
+        sc_exec_sql("
+            UPDATE sec_settings
+            SET set_value = " . sql_quote($ultima_sync_data_ora) . "
+            WHERE set_name = 'sync_date'
+        ", "pigliacelli");
+        log_insert_trips('013', 'sync_date aggiornato a ' . $ultima_sync_data_ora);
+    } else {
+        log_insert_trips('013', 'sync_date invariato (corrente ' . $sync_corrente . ' >= ' . $ultima_sync_data_ora . ')');
+    }
+} else {
+    log_insert_trips('013', 'sync_date invariato: nessun viaggio letto');
+}
+
+log_insert_trips('999', 'Run completata OK | lock rilasciato');
+rilascia_lock_insert_trips();

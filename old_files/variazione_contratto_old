@@ -1,0 +1,468 @@
+$subvector = [subvector];
+$contrattoId = [contratto];
+
+$pdf = $this->Pdf;
+$pdf->SetAutoPageBreak(FALSE, 0);
+
+$subvectorData = $this->getSubvectorData($subvector);
+$nome_vettore = isset($subvectorData[0][0]) ? (string)$subvectorData[0][0] : '';
+$piva = isset($subvectorData[0][6]) ? (string)$subvectorData[0][6] : '';
+
+$sanitizePdfFilenamePart = function ($value) {
+    $value = (string)$value;
+    $value = str_replace(array('\\', '/', ':', '*', '?', '"', '<', '>', '|', "\0"), '_', $value);
+    $value = preg_replace('/\s+/u', '_', $value);
+    $value = preg_replace('/_+/u', '_', $value);
+    return trim($value, '._ ');
+};
+$pdfBaseName = 'contratto_' . (string)$contrattoId . '_' . $sanitizePdfFilenamePart($nome_vettore) . '_' . date('Y-m-d');
+$pdfFileName = $pdfBaseName . '.pdf';
+$pdf->SetTitle($pdfBaseName);
+
+$easygnSignVisuals = array('vettore' => array(), 'committente' => array());
+$easygnSignPush = function ($role, $page, $x, $y, $w, $h) use (&$easygnSignVisuals) {
+    if (!isset($easygnSignVisuals[$role])) {
+        $easygnSignVisuals[$role] = array();
+    }
+    $easygnSignVisuals[$role][] = array(
+        'page' => (int)$page,
+        'x'    => (float)$x,
+        'y'    => (float)$y,
+        'w'    => (float)$w,
+        'h'    => (float)$h,
+    );
+};
+$contrattiAttachEasygnSignMeta = function ($pdf, array $visuals) {
+    $payload = 'EGN_SIGN:' . base64_encode(json_encode(
+        array('version' => 1, 'visuals' => $visuals),
+        JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+    ));
+    if (method_exists($pdf, 'SetSubject')) {
+        $pdf->SetSubject($payload);
+    }
+};
+
+$tratteData = array();
+$rsTratte = $this->Db->Execute("
+    SELECT
+        COALESCE(NULLIF(ct.carico, ''), '') AS carico,
+        COALESCE(NULLIF(ct.scarico, ''), '') AS scarico,
+        COALESCE(NULLIF(ct.merce, ''), t.merce, '') AS merce,
+        COALESCE(NULLIF(ct.caricatore, ''), t.caricatore, '') AS caricatore,
+        COALESCE(NULLIF(ct.proprietario_merce, ''), t.proprietario_merce, '') AS proprietario_merce,
+        COALESCE(ct.tariffa, t.tariffa, '') AS tariffa,
+        COALESCE(ct.extra, t.extra, '') AS extra,
+        COALESCE(ct.totale, t.totale, '') AS totale,
+        COALESCE(ct.version, t.version, 1) AS version
+    FROM contratti_tratte ct
+    INNER JOIN tratte t ON t.id = ct.tratta_id
+    WHERE ct.contratto_id = " . (int)$contrattoId . "
+      AND t.subvettore_id = " . (int)$subvector . "
+    ORDER BY carico, scarico, t.id
+");
+if ($rsTratte !== false && !$rsTratte->EOF) {
+    while (!$rsTratte->EOF) {
+        $tratteData[] = array(
+            $rsTratte->fields[0],
+            $rsTratte->fields[1],
+            $rsTratte->fields[2],
+            $rsTratte->fields[3],
+            $rsTratte->fields[4],
+            $rsTratte->fields[5],
+            $rsTratte->fields[6],
+            $rsTratte->fields[7],
+            $rsTratte->fields[8],
+        );
+        $rsTratte->MoveNext();
+    }
+    $rsTratte->Close();
+}
+$tratteRows = array();
+$appendiceNumero = '1';
+$formatMoney = function ($value) {
+    $value = trim((string)$value);
+    if ($value === '') return '';
+
+    $normalized = str_replace(',', '.', $value);
+    if (!is_numeric($normalized)) return $value;
+
+    return number_format((float)$normalized, 2, ',', '.');
+};
+
+if (is_array($tratteData) && isset($tratteData[0]) && is_array($tratteData[0])) {
+    foreach ($tratteData as $tratta) {
+        $version = isset($tratta[8]) ? (int)$tratta[8] : 0;
+        if ($version > 0) {
+            $appendiceProgressivo = max(1, $version - 1);
+            if ($appendiceProgressivo > (int)$appendiceNumero) {
+                $appendiceNumero = (string)$appendiceProgressivo;
+            }
+        }
+
+        $tratteRows[] = array(
+            'carico' => isset($tratta[0]) ? (string)$tratta[0] : '',
+            'scarico' => isset($tratta[1]) ? (string)$tratta[1] : '',
+            'merce' => isset($tratta[2]) ? (string)$tratta[2] : '',
+            'caricatore' => isset($tratta[3]) ? (string)$tratta[3] : '',
+            'proprietario' => isset($tratta[4]) ? (string)$tratta[4] : '',
+            'tariffa' => $formatMoney(isset($tratta[5]) ? (string)$tratta[5] : ''),
+            'extra' => $formatMoney(isset($tratta[6]) ? (string)$tratta[6] : ''),
+            'totale' => $formatMoney(isset($tratta[7]) ? (string)$tratta[7] : ''),
+            'sosta_car' => '1,5',
+            'sosta_sca' => '1,5',
+        );
+    }
+}
+
+$marginL = 15;
+$marginR = 15;
+$marginT = 20;
+$ptToMm = 0.3527777778;
+
+$currentPage = method_exists($pdf, 'getPage') ? (int)$pdf->getPage() : 0;
+if ($currentPage > 0) {
+    if (method_exists($pdf, 'setPageOrientation')) {
+        $pdf->setPageOrientation('L', true, 0);
+    }
+} else {
+    $pdf->AddPage('L');
+}
+
+$pageW = method_exists($pdf, 'getPageWidth') ? (float)$pdf->getPageWidth() : 297.0;
+if ($pageW < 250) $pageW = 297.0;
+$availableW = $pageW - $marginL - $marginR;
+if ($availableW <= 0) {
+    $availableW = 267;
+}
+$contentX = $marginL;
+$contentW = $availableW;
+
+$pdf->SetMargins($marginL, $marginT, $marginR);
+
+$tableX = $contentX;
+$tableW = $contentW;
+$colPt = array(1300, 1500, 1250, 1350, 1000, 740, 640, 700, 610, 610);
+$scale = $tableW / (array_sum($colPt) * $ptToMm);
+$colW = array();
+foreach ($colPt as $pt) {
+    $colW[] = ($pt * $ptToMm) * $scale;
+}
+
+$hHeader = 16;
+$hRow = 10;
+$lineH = 3.7;
+$marginB = 10;
+$sigBlockH = 52;
+$headers = array(
+    'CARICO',
+    'SCARICO',
+    'CARICATORE',
+    'PROPRIETARIO',
+    'MERCE',
+    'TARIFFA',
+    'EXTRA',
+    'TOTALE',
+    "SOSTA\nCARICO",
+    "SOSTA\nSCARICO"
+);
+
+$refreshPageH = function () use ($pdf) {
+    if (method_exists($pdf, 'getPageHeight')) {
+        return (float)$pdf->getPageHeight();
+    }
+    return 210.0;
+};
+
+$drawPageTitle = function ($continuation) use (
+    $pdf, $contentX, $marginT, $appendiceNumero, $contrattoId, $nome_vettore
+) {
+    if ($continuation) {
+        $pdf->SetFont('Arial', 'B', 11);
+        $pdf->SetXY($contentX, $marginT);
+        $pdf->Cell(0, 6, 'APPENDICE N° ' . $appendiceNumero . ' - continuazione', 0, 1, 'L');
+        $pdf->SetFont('Arial', '', 9);
+        $pdf->SetX($contentX);
+        $pdf->Cell(
+            0,
+            5,
+            "Contratto di trasporto n° " . (string)$contrattoId . '/' . date('Y'),
+            0,
+            1,
+            'L'
+        );
+        return $marginT + 14;
+    }
+
+    $pdf->SetFont('Arial', 'B', 13);
+    $yTitle = $marginT + 4;
+    $xTitle = $contentX;
+    $leftTitle = "APPENDICE N° " . $appendiceNumero;
+    $pdf->SetXY($xTitle, $yTitle);
+    $pdf->Cell(0, 7, $leftTitle, 0, 0, 'L');
+    $xAfterTitle = $xTitle + $pdf->GetStringWidth($leftTitle) + 6;
+    $pdf->SetXY($xAfterTitle, $yTitle);
+    $pdf->Cell(0, 7, "ALL'ALLEGATO A DEL", 0, 1, 'L');
+
+    $pdf->SetFont('Arial', '', 10.5);
+    $yLine = $marginT + 15;
+    $prefix = "Contratto di trasporto n°";
+    $pdf->SetXY($contentX, $yLine);
+    $pdf->Cell(0, 6, $prefix, 0, 0, 'L');
+    $xAfterPrefix = $contentX + $pdf->GetStringWidth($prefix) + 6;
+    $pdf->SetXY($xAfterPrefix, $yLine);
+    $pdf->Cell(
+        0,
+        6,
+        (string)$contrattoId . "/" . date('Y') . " del " . date('d/m/Y') . " tra Aut.ti Pigliacelli S.p.A. e " . $nome_vettore,
+        0,
+        1,
+        'L'
+    );
+
+    return $marginT + 30;
+};
+
+$drawTableHeader = function ($tableY) use ($pdf, $tableX, $colW, $hHeader, $headers) {
+    $pdf->SetLineWidth(0.25);
+    $pdf->SetFont('Arial', 'B', 8.2);
+    $x = $tableX;
+    for ($i = 0; $i < count($headers); $i++) {
+        $pdf->Rect($x, $tableY, $colW[$i], $hHeader, 'D');
+        $pdf->SetXY($x + 0.8, $tableY + 1.7);
+        $pdf->MultiCell($colW[$i] - 1.6, 3.3, $headers[$i], 0, 'C', false);
+        $pdf->SetXY($x + $colW[$i], $tableY);
+        $x += $colW[$i];
+    }
+    return $tableY + $hHeader;
+};
+
+$startTablePage = function ($continuation) use (
+    $pdf, $marginL, $marginT, $marginR, $drawPageTitle, $drawTableHeader
+) {
+    if ($continuation) {
+        $pdf->AddPage('L');
+    }
+    $pdf->SetMargins($marginL, $marginT, $marginR);
+    $tableY = $drawPageTitle($continuation);
+    return $drawTableHeader($tableY);
+};
+
+$pageH = $refreshPageH();
+$yRow = $startTablePage(false);
+$pdf->SetFont('Arial', '', 8.5);
+
+foreach ($tratteRows as $r) {
+    $rowTexts = array(
+        (string)$r['carico'],
+        (string)$r['scarico'],
+        (string)$r['caricatore'],
+        (string)$r['proprietario'],
+        (string)$r['merce'],
+        (string)$r['tariffa'],
+        (string)$r['extra'],
+        (string)$r['totale'],
+        (string)$r['sosta_car'],
+        (string)$r['sosta_sca'],
+    );
+
+    $maxLines = 1;
+    for ($i = 0; $i < count($headers); $i++) {
+        if (method_exists($pdf, 'getNumLines')) {
+            $lines = (int)$pdf->getNumLines($rowTexts[$i], $colW[$i]);
+            if ($lines > $maxLines) {
+                $maxLines = $lines;
+            }
+        }
+    }
+
+    $currentHRow = max($hRow, $maxLines * $lineH);
+    $pageH = $refreshPageH();
+    $bodyLimit = $pageH - $marginB;
+
+    if ($yRow + $currentHRow > $bodyLimit) {
+        $yRow = $startTablePage(true);
+        $pageH = $refreshPageH();
+        $bodyLimit = $pageH - $marginB;
+    }
+
+    $x = $tableX;
+    for ($i = 0; $i < count($headers); $i++) {
+        $pdf->Rect($x, $yRow, $colW[$i], $currentHRow, 'D');
+        $align = ($i >= 5 && $i <= 7) ? 'R' : (($i >= 8) ? 'C' : 'L');
+        $pdf->SetXY($x + 0.8, $yRow + 1.2);
+        $pdf->MultiCell($colW[$i] - 1.6, $lineH, $rowTexts[$i], 0, $align, false);
+        $pdf->SetXY($x + $colW[$i], $yRow);
+        $x += $colW[$i];
+    }
+
+    $yRow += $currentHRow;
+}
+
+$pageH = $refreshPageH();
+if ($yRow + $sigBlockH > $pageH - $marginB) {
+    $pdf->AddPage('L');
+    $pdf->SetMargins($marginL, $marginT, $marginR);
+}
+
+$pageH = $refreshPageH();
+$sigAnchorY = $pageH - $marginB - $sigBlockH;
+$sigPage = method_exists($pdf, 'getPage') ? (int)$pdf->getPage() : 1;
+
+$pdf->SetFont('Arial', 'B', 13);
+$pdf->SetXY($contentX, $sigAnchorY + 20);
+$pdf->Cell(0, 7, 'Veroli,', 0, 0, 'L');
+$annoBoxX = $contentX + 48;
+$annoBoxY = $sigAnchorY + 21.8;
+$annoBoxW = 32;
+$annoBoxH = 5.8;
+$pdf->Rect($annoBoxX, $annoBoxY, $annoBoxW, $annoBoxH, 'D');
+$pdf->SetXY($annoBoxX, $annoBoxY + 0.2);
+$pdf->Cell($annoBoxW, $annoBoxH, date('d/m/Y'), 0, 1, 'C');
+$pdf->SetXY($contentX, $sigAnchorY + 31);
+$pdf->Cell(100, 7, 'IL COMMITTENTE', 0, 0, 'L');
+$pdf->SetXY($tableX + $tableW - 60, $sigAnchorY + 31);
+$pdf->Cell(60, 7, 'IL VETTORE', 0, 1, 'R');
+$pdf->SetXY($contentX, $sigAnchorY + 42);
+$pdf->SetFont('Arial', 'B', 12);
+$pdf->Cell(110, 7, 'Autotrasporti Pigliacelli SpA', 0, 1, 'L');
+
+// Riquadri firma EasyGN sotto le etichette (y = top del box in mm dall'alto pagina)
+$sigBoxYCommittente = $sigAnchorY + 50; // sotto "Autotrasporti Pigliacelli SpA"
+$sigBoxYVettore     = $sigAnchorY + 40; // sotto "IL VETTORE"
+$easygnSignPush('committente', $sigPage, $contentX, $sigBoxYCommittente, 100, 12);
+$easygnSignPush('vettore', $sigPage, $tableX + $tableW - 75, $sigBoxYVettore, 75, 12);
+$contrattiAttachEasygnSignMeta($pdf, $easygnSignVisuals);
+
+// --- Output: anteprima browser (default) oppure salvataggio per campo Document filename ---
+$autoSavePdf = (
+    (isset($_SESSION['pdf_auto_save']) && strtoupper(trim((string)$_SESSION['pdf_auto_save'])) === 'S') ||
+    (isset([auto_save_pdf]) && strtoupper(trim((string)[auto_save_pdf])) === 'S')
+);
+if ($autoSavePdf) {
+    $sqlQuote = function ($v) {
+        return "'" . str_replace("'", "''", (string)$v) . "'";
+    };
+
+    $rsBaseDir = $this->Db->Execute("
+        SELECT set_value
+        FROM sec_settings
+        WHERE set_name = 'contratti_base_dir'
+        LIMIT 1
+    ");
+
+    $contrattiBaseDirRaw = '';
+    if ($rsBaseDir !== false && !$rsBaseDir->EOF) {
+        $contrattiBaseDirRaw = trim((string)$rsBaseDir->fields[0]);
+        $rsBaseDir->Close();
+    }
+    if ($contrattiBaseDirRaw === '') {
+        die('Impostare sec_settings.contratti_base_dir.');
+    }
+
+    if (!function_exists('contratti_detect_workspace_root')) {
+        function contratti_detect_workspace_root($anchorFile = null)
+        {
+            if ($anchorFile === null || $anchorFile === '') {
+                $anchorFile = __FILE__;
+            }
+            if (is_dir($anchorFile)) {
+                $dir = realpath($anchorFile);
+            } else {
+                $dir = dirname($anchorFile);
+                $resolved = realpath($dir);
+                if ($resolved !== false) {
+                    $dir = $resolved;
+                }
+            }
+            if ($dir === false || $dir === '') {
+                return '';
+            }
+            $current = $dir;
+            for ($i = 0; $i < 12; $i++) {
+                if (is_file($current . DIRECTORY_SEPARATOR . 'index.php')
+                    && (is_dir($current . DIRECTORY_SEPARATOR . '_lib') || is_dir($current . DIRECTORY_SEPARATOR . 'grid_contratti'))) {
+                    return $current;
+                }
+                $parent = dirname($current);
+                if ($parent === $current) {
+                    break;
+                }
+                $current = $parent;
+            }
+            $parent = dirname($dir);
+            return ($parent !== '' && $parent !== $dir) ? $parent : $dir;
+        }
+    }
+    if (!function_exists('resolve_contratti_base_dir')) {
+        function resolve_contratti_base_dir($configuredPath, $anchorFile = null)
+        {
+            $configuredPath = trim((string)$configuredPath);
+            if ($configuredPath === '') {
+                return '';
+            }
+            $normalized = str_replace('\\', '/', $configuredPath);
+            if ($normalized[0] === '/') {
+                $resolved = realpath($configuredPath);
+                return $resolved !== false ? $resolved : rtrim($configuredPath, "/\\");
+            }
+            if (preg_match('#^[A-Za-z]:/#', $normalized) || preg_match('#^[A-Za-z]:\\\\#', $configuredPath)) {
+                $resolved = realpath($configuredPath);
+                return $resolved !== false ? $resolved : rtrim($configuredPath, "/\\");
+            }
+            $root = contratti_detect_workspace_root($anchorFile);
+            if ($root === '') {
+                return '';
+            }
+            $full = $root . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, trim($normalized, '/'));
+            $resolved = realpath($full);
+            return $resolved !== false ? $resolved : $full;
+        }
+    }
+    $contrattiBaseDir = resolve_contratti_base_dir($contrattiBaseDirRaw, __FILE__);
+    if ($contrattiBaseDir === '') {
+        die('contratti_base_dir non risolvibile: ' . $contrattiBaseDirRaw);
+    }
+
+    $relPath = $pdfFileName;
+    $fullPath = $contrattiBaseDir . DIRECTORY_SEPARATOR . $relPath;
+    $dirPdf = dirname($fullPath);
+    if (!is_dir($dirPdf) && !@mkdir($dirPdf, 0775, true) && !is_dir($dirPdf)) {
+        die('Impossibile creare la cartella: ' . $dirPdf);
+    }
+
+    // Genera in memoria, salva su disco, poi mostra inline nel browser.
+    $pdfBin = $pdf->Output($pdfFileName, 'S');
+    if (!is_string($pdfBin) || strncmp($pdfBin, '%PDF', 4) !== 0) {
+        die('Generazione PDF non valida (no header %PDF).');
+    }
+    if (@file_put_contents($fullPath, $pdfBin) === false) {
+        die('Impossibile salvare PDF su disco: ' . $fullPath);
+    }
+
+    $okUpdate = $this->Db->Execute("
+        UPDATE contratti
+        SET file = " . $sqlQuote($relPath) . "
+        WHERE id = " . (int)$contrattoId . "
+    ");
+    if ($okUpdate === false) {
+        die('Errore update contratti.file: ' . $this->Db->ErrorMsg());
+    }
+
+    $redirectAfter = isset($_SESSION['pdf_redirect_after']) ? trim((string)$_SESSION['pdf_redirect_after']) : '';
+    if ($redirectAfter === '' && isset([redirect_after])) {
+        $redirectAfter = trim((string)[redirect_after]);
+    }
+    unset($_SESSION['pdf_auto_save'], $_SESSION['pdf_redirect_after']);
+    if ($redirectAfter !== '') {
+        header('Location: ' . $redirectAfter);
+        exit;
+    }
+
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: inline; filename="' . $pdfFileName . '"');
+    header('Content-Length: ' . strlen($pdfBin));
+    echo $pdfBin;
+    exit;
+}
+
+$pdf->Output($pdfFileName, 'I');

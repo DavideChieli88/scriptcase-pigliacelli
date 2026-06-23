@@ -1,0 +1,28 @@
+$tipo_documento = {tipo_documento_id};
+sc_lookup(rs, "SELECT nome FROM tipi_documento WHERE id = $tipo_documento");
+$nome_documento = {rs[0][0]};
+$intestatario   = {login};
+$usrLogin       = [usr_login];
+
+if ({is_not_ok} == 1) {
+
+    // Aggiorna stato documento a "Da Revisionare" (id=3)
+    sc_exec_sql("UPDATE documenti SET stato_documento_id = 3 WHERE id = {id}");
+
+    // Notifica al subvettore
+    $titolo    = "Documento $nome_documento da correggere";
+    $messaggio = "Il documento '$nome_documento' risulta errato e deve essere sostituito o corretto. Si richiede di effettuare l'upload di una versione aggiornata.";
+
+    sc_send_notification([
+        'title'        => $titolo,
+        'message'      => $messaggio,
+        'destiny_type' => 'user',
+        'to'           => $intestatario,
+        'from'         => $usrLogin,
+        'link'         => '',
+        'dtexpire'     => '',
+        'profile'      => 'Pigliacelli_Notifications'
+    ]);
+
+    sc_log_add("Revisione documento", "Documento '$nome_documento' (id={id}) segnato da correggere da $usrLogin");
+}

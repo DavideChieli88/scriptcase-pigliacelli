@@ -1,0 +1,208 @@
+// Import una-tantum (upsert) da SGA (SQL Server via PDO) verso pigliacelli (MySQL).
+// Popola due tabelle:
+//   - societa   <- BaSocieta            (tutte)
+//   - fornitori <- BaCliFor (F, ATTIVO=S, tutte le societa' del gruppo)
+// Idempotente: INSERT ... ON DUPLICATE KEY UPDATE (tabelle societa e fornitori devono esistere).
+// Modellato su insert_new_subvectors (PDO SGA, sql_quote, sc_exec_sql, logging).
+
+function sql_quote($v)
+{
+    if ($v === null) {
+        return "NULL";
+    }
+    $v = (string)$v;
+    return "'" . str_replace("'", "''", $v) . "'";
+}
+
+function sql_num($v)
+{
+    if ($v === null || $v === '') {
+        return "NULL";
+    }
+    return (string)(0 + $v);
+}
+
+function valore_o_null($v)
+{
+    if ($v === null) {
+        return null;
+    }
+    $v = trim((string)$v);
+    return $v === '' ? null : $v;
+}
+
+function connetti_pdo_sga($settings)
+{
+    $set_names = ['sgam_user', 'sgam_pswd', 'sgam_db', 'sgam_server'];
+
+    foreach ($set_names as $set_name) {
+        if (!array_key_exists($set_name, $settings) || trim((string)$settings[$set_name]) === '') {
+            sc_error_message("Parametro '" . $set_name . "' non trovato o vuoto in sec_settings.");
+            return null;
+        }
+    }
+
+    try {
+        $dsn_sga = "sqlsrv:Server=" . $settings['sgam_server'] .
+                   ";Database=" . $settings['sgam_db'] .
+                   ";Encrypt=1" .
+                   ";TrustServerCertificate=1";
+
+        return new PDO(
+            $dsn_sga,
+            $settings['sgam_user'],
+            $settings['sgam_pswd'],
+            [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_NUM,
+            ]
+        );
+    } catch (PDOException $e) {
+        sc_error_message("Errore connessione PDO SGA: " . $e->getMessage());
+        return null;
+    }
+}
+
+@set_time_limit(0);
+@ini_set('memory_limit', '512M');
+
+sc_log_add("UPSERT_SOC_FOR", "Avvio import societa + fornitori");
+
+// --- pigliacelli: credenziali SGA da sec_settings ---
+sc_lookup(settingsRows, "
+    SELECT set_name, set_value
+    FROM sec_settings
+    WHERE set_name IN ('sgam_user', 'sgam_pswd', 'sgam_db', 'sgam_server')
+", "pigliacelli");
+
+$settings = [];
+if (!empty({settingsRows})) {
+    foreach ({settingsRows} as $settingRow) {
+        $settings[$settingRow[0]] = $settingRow[1];
+    }
+}
+
+$pdo_sga = connetti_pdo_sga($settings);
+if ($pdo_sga === null) {
+    sc_log_add("UPSERT_SOC_FOR", "Connessione SGA non riuscita");
+    return;
+}
+
+// =====================================================================
+// 1) SOCIETA  <- BaSocieta
+// =====================================================================
+$sql_societa = "
+    SELECT CODICE, RAGIONE_SOCIALE, PARTITA_IVA, CODICE_FISCALE
+    FROM BaSocieta
+    ORDER BY CODICE
+";
+
+try {
+    $stmt_soc = $pdo_sga->query($sql_societa);
+} catch (PDOException $e) {
+    sc_error_message("Errore select BaSocieta: " . $e->getMessage());
+    sc_log_add("UPSERT_SOC_FOR", "Errore select BaSocieta: " . $e->getMessage());
+    return;
+}
+
+$societa_elaborate = 0;
+
+while (($row = $stmt_soc->fetch(PDO::FETCH_NUM)) !== false) {
+    $codice_sga      = valore_o_null($row[0]);
+    $ragione_sociale = valore_o_null($row[1]);
+    $partita_iva     = valore_o_null($row[2]);
+    $codice_fiscale  = valore_o_null($row[3]);
+
+    if ($codice_sga === null) {
+        continue;
+    }
+
+    // Nota: codice_zucchetti NON viene toccato in update (mappatura manuale preservata).
+    $ins = "
+        INSERT INTO societa
+            (codice_sga, ragione_sociale, piva, cod_fiscale)
+        VALUES
+            (" . sql_quote($codice_sga) . ", " . sql_quote($ragione_sociale) . ", " . sql_quote($partita_iva) . ", " . sql_quote($codice_fiscale) . ")
+        ON DUPLICATE KEY UPDATE
+            ragione_sociale = VALUES(ragione_sociale),
+            piva = VALUES(piva),
+            cod_fiscale = VALUES(cod_fiscale),
+            updated_at = CURRENT_TIMESTAMP
+    ";
+    sc_exec_sql($ins, "pigliacelli");
+    $societa_elaborate++;
+}
+$stmt_soc->closeCursor();
+sc_log_add("UPSERT_SOC_FOR", "Societa elaborate (upsert): " . $societa_elaborate);
+
+// =====================================================================
+// 2) FORNITORI  <- BaCliFor (F, ATTIVO=S, tutte le societa')
+// =====================================================================
+$sql_fornitori = "
+    SELECT SOCIETA, CODICE, RAGIONE_SOCIALE, PARTITA_IVA, CODICE_FISCALE,
+           TELEFONO, CELLULARE, E_MAIL
+    FROM BaCliFor
+    WHERE CLIENTE_FORNITORE = 'F'
+      AND ATTIVO = 'S'
+    ORDER BY SOCIETA, CODICE
+";
+
+try {
+    $stmt_for = $pdo_sga->query($sql_fornitori);
+} catch (PDOException $e) {
+    sc_error_message("Errore select BaCliFor: " . $e->getMessage());
+    sc_log_add("UPSERT_SOC_FOR", "Errore select BaCliFor: " . $e->getMessage());
+    return;
+}
+
+$fornitori_elaborati = 0;
+
+while (($row = $stmt_for->fetch(PDO::FETCH_NUM)) !== false) {
+    $societa_sga     = $row[0];
+    $codice_sga      = valore_o_null($row[1]);
+    $ragione_sociale = valore_o_null($row[2]);
+    $partita_iva     = valore_o_null($row[3]);
+    $codice_fiscale  = valore_o_null($row[4]);
+    $phone           = valore_o_null($row[5]);
+    $cellphone       = valore_o_null($row[6]);
+    $email           = valore_o_null($row[7]);
+
+    if ($societa_sga === null || $societa_sga === '' || $codice_sga === null) {
+        continue;
+    }
+
+    $ins = "
+        INSERT INTO fornitori
+            (societa_sga, codice_sga, ragione_sociale, piva, cod_fiscale,
+             phone, cellphone, email)
+        VALUES
+            (" . sql_num($societa_sga) . ",
+             " . sql_quote($codice_sga) . ",
+             " . sql_quote($ragione_sociale) . ",
+             " . sql_quote($partita_iva) . ",
+             " . sql_quote($codice_fiscale) . ",
+             " . sql_quote($phone) . ",
+             " . sql_quote($cellphone) . ",
+             " . sql_quote($email) . ")
+        ON DUPLICATE KEY UPDATE
+            ragione_sociale = VALUES(ragione_sociale),
+            piva            = VALUES(piva),
+            cod_fiscale     = VALUES(cod_fiscale),
+            phone           = VALUES(phone),
+            cellphone       = VALUES(cellphone),
+            email           = VALUES(email),
+            updated_at      = CURRENT_TIMESTAMP
+    ";
+    sc_exec_sql($ins, "pigliacelli");
+    $fornitori_elaborati++;
+
+    if ($fornitori_elaborati % 1000 === 0) {
+        sc_log_add("UPSERT_SOC_FOR", "Fornitori in corso: " . $fornitori_elaborati);
+    }
+}
+$stmt_for->closeCursor();
+
+sc_log_add(
+    "UPSERT_SOC_FOR",
+    "Completato | societa=" . $societa_elaborate . " | fornitori=" . $fornitori_elaborati
+);

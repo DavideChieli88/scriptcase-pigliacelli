@@ -1,0 +1,94 @@
+/**
+ * onLoad — incollare su ENTRAMBE le form:
+ *   - form_subvettori_contratti
+ *   - form_subvettori_contratti_for_subvectors_magic_link
+ *
+ * 1) Modale errore EasyGN (redirect con dati mancanti)
+ * 2) Caricamento anagrafica subvettore (campi virtuali → tabella subvettori)
+ *
+ * PK form: subvettore_contratto_id / id (= subvettori_contratti.id).
+ * subvettore_id si ricava con lookup, non serve come campo form.
+ */
+
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    @session_start();
+}
+
+if (!empty($_SESSION['easygn_error_modal'])) {
+    $msg = $_SESSION['easygn_error_modal'];
+    unset($_SESSION['easygn_error_modal']);
+
+    sc_ajax_message(
+        $msg,
+        "Dati mancanti per la firma",
+        "error",
+        "Y",
+        0,
+        "OK",
+        "Y",
+        "350",
+        "auto"
+    );
+}
+
+$subvettoreId = 0;
+if (isset({subvettore_id}) && (int){subvettore_id} > 0) {
+    $subvettoreId = (int){subvettore_id};
+}
+
+$scId = 0;
+if ($subvettoreId <= 0 && isset({id}) && (int){id} > 0) {
+    $scId = (int){id};
+} elseif ($subvettoreId <= 0 && isset([subvettore_contratto_id]) && (int)[subvettore_contratto_id] > 0) {
+    $scId = (int)[subvettore_contratto_id];
+}
+
+if ($subvettoreId <= 0 && $scId > 0) {
+    sc_lookup(rsSubId, "
+        SELECT subvettore_id
+        FROM subvettori_contratti
+        WHERE id = " . (int)$scId . "
+        LIMIT 1
+    ", "pigliacelli");
+    if (!empty({rsSubId[0][0]})) {
+        $subvettoreId = (int){rsSubId[0][0]};
+    }
+}
+
+if ($subvettoreId <= 0) {
+    return;
+}
+
+sc_lookup(rsSub, "
+    SELECT
+        ragione_sociale,
+        sede_citta,
+        sede_prov,
+        indirizzo,
+        civico,
+        cod_fiscale,
+        piva,
+        num_iscrizione_reg_imprese,
+        locazione_iscrizione_reg_imprese,
+        rea,
+        cellphone
+    FROM subvettori
+    WHERE id = " . (int)$subvettoreId . "
+    LIMIT 1
+", "pigliacelli");
+
+if (empty({rsSub})) {
+    return;
+}
+
+{ragione_sociale}                  = (string){rsSub[0][0]};
+{sede_citta}                       = (string){rsSub[0][1]};
+{sede_prov}                        = (string){rsSub[0][2]};
+{indirizzo}                        = (string){rsSub[0][3]};
+{civico}                           = (string){rsSub[0][4]};
+{cod_fiscale}                      = (string){rsSub[0][5]};
+{piva}                             = (string){rsSub[0][6]};
+{num_iscrizione_reg_imprese}       = (string){rsSub[0][7]};
+{locazione_iscrizione_reg_imprese} = (string){rsSub[0][8]};
+{rea}                              = (string){rsSub[0][9]};
+{phone}                            = (string){rsSub[0][10]};

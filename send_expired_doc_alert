@@ -1,0 +1,130 @@
+$check_sql = "SELECT set_name, set_value FROM sec_settings";
+sc_lookup(rs_smtp, $check_sql);
+
+if (isset({rs_smtp[0][0]})) {
+    foreach({rs_smtp} as $f) {
+        $_SESSION['sett_' . $f[0]] = $f[1];
+    }
+}
+
+if ($_SESSION['sett_smtp_api'] == 'custom') {
+    [sett_smtp] = array(
+        'settings' => array(
+            'gateway'       => 'smtp',
+            'smtp_server'   => $_SESSION['sett_smtp_server'],
+            'smtp_protocol' => $_SESSION['sett_smtp_security'],
+            'smtp_port'     => $_SESSION['sett_smtp_port'],
+            'smtp_user'     => $_SESSION['sett_smtp_user'],
+            'smtp_password' => $_SESSION['sett_smtp_pass'],
+            'from_email'    => $_SESSION['sett_smtp_from_email'],
+            'from_name'     => $_SESSION['sett_smtp_from_name'],
+        )
+    );
+} else {
+    [sett_smtp] = array('profile' => $_SESSION['sett_smtp_api']);
+}
+
+$oggi = date('Y-m-d');
+
+$sql = "
+    SELECT 
+        d.id,
+        td.nome,
+        d.data_scadenza,
+        d.login,
+        u.email,
+        u.subvettore_id,
+        s.ragione_sociale
+    FROM documenti d
+    INNER JOIN tipi_documento td 
+        ON td.id = d.tipo_documento_id
+    LEFT JOIN sec_users u
+        ON u.login = d.login
+    LEFT JOIN subvettori s
+        ON s.id = u.subvettore_id
+    WHERE DATE(d.data_scadenza) <= '$oggi'
+";
+
+sc_select(ds, $sql);
+
+if ({ds} !== false)
+{
+    while (!$ds->EOF)
+    {
+        $documento_id     = $ds->fields[0];
+        $nome_documento   = $ds->fields[1];
+        $data_scadenza    = date('d/m/Y', strtotime($ds->fields[2]));
+        $login            = $ds->fields[3];
+        $email            = $ds->fields[4];
+        $subvettore_id    = (int)$ds->fields[5];
+        $ragione_sociale  = trim((string)$ds->fields[6]);
+
+        $subvettore_label = $subvettore_id > 0
+            ? (string)$subvettore_id
+            : 'n/d';
+        $ragione_label = $ragione_sociale !== ''
+            ? $ragione_sociale
+            : 'n/d';
+
+        $titolo = "Documento $nome_documento in scadenza";
+
+        $messaggio = "Il documento '$nome_documento' è in scadenza il $data_scadenza.\n"
+            . "Subvettore ID: $subvettore_label\n"
+            . "Ragione sociale: $ragione_label\n\n"
+            . "Si richiede di effettuare l'upload di una versione aggiornata.";
+
+        $ragione_sociale_html = htmlspecialchars($ragione_label, ENT_QUOTES, 'UTF-8');
+
+        sc_send_notification([
+            'title'        => $titolo,
+            'message'      => $messaggio,
+            'destiny_type' => 'user',
+            'to'           => $login,
+            'from'         => '',
+            'link'         => '',
+            'dtexpire'     => '',
+            'profile'      => 'Pigliacelli_Notifications'
+        ]);
+
+		$htmlContent = "
+		<html>
+		<head>
+			<style>
+				body {font-family: Arial; background:#f4f4f4; padding:20px;}
+				.box {background:#fff; padding:20px; border-radius:8px;}
+				.title {font-size:18px; font-weight:bold; color:#004080;}
+			</style>
+		</head>
+		<body>
+			<div class='box'>
+				<div class='title'>$titolo</div>
+				<p>Il documento <strong>$nome_documento</strong> è in scadenza il <strong>$data_scadenza</strong>.</p>
+				<p>
+					<strong>Subvettore ID:</strong> $subvettore_label<br>
+					<strong>Ragione sociale:</strong> $ragione_sociale_html
+				</p>
+				<p>Si richiede di effettuare l'upload di una versione aggiornata.</p>
+			</div>
+		</body>
+		</html>
+		";
+
+		sc_send_mail_api(array_merge([sett_smtp], array(
+			'message' => [
+				'html'    => $htmlContent,
+				'text'    => $messaggio,
+				'to'      => $email,
+				'subject' => $titolo
+			]
+		)));
+        
+
+        $ds->MoveNext();
+    }
+
+    $ds->Close();
+}
+else
+{
+    sc_log_add("Errore invio notifica scadenza", "Errore nella query documenti");
+}

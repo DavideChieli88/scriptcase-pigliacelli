@@ -1,0 +1,7 @@
+/**
+ * form_contratti_tratte → onLoad
+ *
+ * Salva/Inserisci/Elimina: configurati dalla form padre via sc_apl_conf
+ * in onApplicationInit (form_subvettori_contratti*).
+ * Lasciare vuoto.
+ */

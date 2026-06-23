@@ -1,0 +1,524 @@
+// Scriptcase blank app: web_hook_simulate_check_new_trips
+//
+// Simula l'arrivo di un nuovo contratto subvettore SENZA passare da SGA.
+// Allineato a check_new_trips_nuovo_contratto_basevettori:
+// il contratto contiene SOLO le tratte del payload valide per la firma
+// (PARTENZA_DATA_ORA e IMPORTO_UNITARIO presenti); le altre vengono loggate e saltate.
+//
+// Riceve in POST un JSON con subvettore + tratte e fa gli inserimenti a DB:
+//
+//   1) subvettori                  (find o insert per codice_sga)
+//   2) tratte + tratte_localita    (una per ogni elemento "tratte")
+//   3) contratti                   (solo se almeno una tratta valida per contratto)
+//   4) subvettori_contratti
+//   5) contratti_tratte            (solo tratte valide del payload)
+//
+// I dati per la firma (email/telefono/nome/cognome) NON vengono impostati qui:
+// vanno compilati in form come legale rappresentante (email_rappresentante, ecc.).
+// vanno compilati a mano seguendo il flusso (magic link / form).
+//
+// NB: helper definiti come CLOSURE in variabili (le function nominate non sono
+//     affidabili dentro l'evento ScriptCase: vengono perse). Stesso pattern di
+//     easygn_start_wf_auto.
+
+@set_time_limit(0);
+@ini_set('memory_limit', '256M');
+
+if (!headers_sent()) {
+    header('Content-Type: application/json; charset=UTF-8');
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+}
+
+// --- Helper (closure) ---
+$wh_sql_quote = function ($v) {
+    if ($v === null) {
+        return "NULL";
+    }
+    return "'" . str_replace("'", "''", (string)$v) . "'";
+};
+
+$wh_sql_num = function ($v) {
+    if ($v === null || $v === '') {
+        return "NULL";
+    }
+    return (string)(0 + $v);
+};
+
+$wh_split_localita = function ($s) {
+    $s = trim((string)$s);
+    if ($s === '') {
+        return array();
+    }
+    $parts = preg_split('/\s*\+\s*/', $s);
+    $out = array();
+    foreach ($parts as $p) {
+        if ($p !== '') {
+            $out[] = $p;
+        }
+    }
+    return $out;
+};
+
+$wh_normalizza_stringa = function ($s) {
+    $s = trim((string)$s);
+    $s = strtoupper($s);
+    $s = preg_replace('/\s+/', ' ', $s);
+    return $s;
+};
+
+$wh_crea_hash_tratta = function ($carico_str, $scarico_str, $codice_vettore, $importo_unitario) use ($wh_split_localita, $wh_normalizza_stringa) {
+    $carichi = array();
+    foreach ($wh_split_localita($carico_str) as $loc) {
+        $carichi[] = $wh_normalizza_stringa($loc);
+    }
+    $scarichi = array();
+    foreach ($wh_split_localita($scarico_str) as $loc) {
+        $scarichi[] = $wh_normalizza_stringa($loc);
+    }
+    $carico_norm  = implode('|', $carichi);
+    $scarico_norm = implode('|', $scarichi);
+    $vettore      = $wh_normalizza_stringa($codice_vettore);
+    $importo      = number_format((float)$importo_unitario, 2, '.', '');
+    return hash('sha256', $carico_norm . '#' . $scarico_norm . '#' . $vettore . '#' . $importo);
+};
+
+$wh_valore = function ($arr, $key, $default = null) {
+    if (!is_array($arr) || !array_key_exists($key, $arr)) {
+        return $default;
+    }
+    $v = $arr[$key];
+    if (is_string($v)) {
+        $v = trim($v);
+        if ($v === '') {
+            return $default;
+        }
+    }
+    return $v;
+};
+
+$wh_respond = function ($httpCode, array $body) {
+    if (!headers_sent()) {
+        http_response_code($httpCode);
+    }
+    echo json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+    exit;
+};
+
+$wh_partenza_data_ora_valida = function ($value) {
+    $value = trim((string)$value);
+    if ($value === '') {
+        return false;
+    }
+    if ($value === '1900-01-01 00:00:00' || strpos($value, '1900-01-01') === 0) {
+        return false;
+    }
+    return strtotime($value) !== false;
+};
+
+$wh_importo_unitario_valido = function ($value) {
+    if ($value === null) {
+        return false;
+    }
+    if (is_string($value) && trim($value) === '') {
+        return false;
+    }
+    return is_numeric($value);
+};
+
+$wh_tratta_ammessa_per_contratto = function ($tr, &$motivo_skip) use ($wh_valore, $wh_partenza_data_ora_valida, $wh_importo_unitario_valido) {
+    $motivo_skip = '';
+    $partenza = $wh_valore($tr, 'partenza_data_ora');
+    $importo = array_key_exists('importo_unitario', $tr) ? $tr['importo_unitario'] : null;
+
+    if (!$wh_partenza_data_ora_valida($partenza)) {
+        $motivo_skip = 'partenza_data_ora_mancante';
+        return false;
+    }
+    if (!$wh_importo_unitario_valido($importo)) {
+        $motivo_skip = 'importo_unitario_mancante';
+        return false;
+    }
+    return true;
+};
+
+// --- 1) Lettura payload JSON (più sorgenti per compatibilità ScriptCase/Apache) ---
+$rawBody = (string)@file_get_contents('php://input');
+
+if (trim($rawBody) === '' && isset($_POST['payload'])) {
+    $rawBody = (string)$_POST['payload'];
+}
+if (trim($rawBody) === '' && isset($GLOBALS['HTTP_RAW_POST_DATA'])) {
+    $rawBody = (string)$GLOBALS['HTTP_RAW_POST_DATA'];
+}
+if (trim($rawBody) === '' && is_array($_POST) && count($_POST) === 1) {
+    $solaChiave = array_keys($_POST)[0];
+    $solaValore = $_POST[$solaChiave];
+    if (is_string($solaValore) && trim($solaValore) === '' && strpos($solaChiave, '{') === 0) {
+        $rawBody = $solaChiave;
+    } elseif (is_string($solaValore) && strpos(trim($solaValore), '{') === 0) {
+        $rawBody = $solaValore;
+    }
+}
+
+$rawBody = preg_replace('/^\xEF\xBB\xBF/', '', $rawBody);
+
+$data = json_decode(trim($rawBody), true);
+if (!is_array($data)) {
+    $diag = array(
+        'metodo'        => isset($_SERVER['REQUEST_METHOD']) ? $_SERVER['REQUEST_METHOD'] : '',
+        'content_type'  => isset($_SERVER['CONTENT_TYPE']) ? $_SERVER['CONTENT_TYPE'] : '',
+        'body_len'      => strlen($rawBody),
+        'post_keys'     => is_array($_POST) ? array_keys($_POST) : array(),
+        'json_error'    => json_last_error_msg(),
+    );
+    sc_log_add('WEBHOOK_SIM', 'Payload JSON non valido | ' . json_encode($diag, JSON_UNESCAPED_SLASHES));
+    $wh_respond(400, array(
+        'ok'    => false,
+        'error' => 'Payload JSON mancante o non valido. Inviare un body JSON in POST.',
+        'hint'  => 'Se il metodo risulta GET, è un redirect (301) che ha perso il body: usa la URL CON lo slash finale e/o disattiva CURLOPT_FOLLOWLOCATION.',
+        'diag'  => $diag,
+    ));
+}
+
+// --- 2) Sezione subvettore ---
+$sub = is_array($wh_valore($data, 'subvettore')) ? $data['subvettore'] : array();
+
+$codice_sga      = $wh_valore($sub, 'codice_sga', $wh_valore($sub, 'codice_vettore'));
+$ragione_sociale = $wh_valore($sub, 'ragione_sociale');
+$piva            = $wh_valore($sub, 'piva');
+$cod_fiscale     = $wh_valore($sub, 'cod_fiscale');
+$indirizzo       = $wh_valore($sub, 'indirizzo');
+$sede_citta      = $wh_valore($sub, 'sede_citta');
+$sede_prov       = $wh_valore($sub, 'sede_prov');
+$phone           = $wh_valore($sub, 'phone');
+$cellphone       = $wh_valore($sub, 'cellphone');
+$email           = $wh_valore($sub, 'email');
+
+if ($codice_sga === null) {
+    $wh_respond(400, array(
+        'ok'    => false,
+        'error' => 'subvettore.codice_sga (o codice_vettore) obbligatorio.',
+    ));
+}
+
+// --- 3) Tipo contratto + tratte ---
+$tipo_contratto_id = (int)$wh_valore($data, 'tipo_contratto_id', 2);
+if ($tipo_contratto_id <= 0) {
+    $tipo_contratto_id = 2;
+}
+
+$tratte_in = $wh_valore($data, 'tratte', array());
+if (!is_array($tratte_in) || count($tratte_in) === 0) {
+    $wh_respond(400, array(
+        'ok'    => false,
+        'error' => 'Almeno una tratta richiesta in "tratte" (array).',
+    ));
+}
+
+sc_log_add('WEBHOOK_SIM', 'Avvio simulazione contratto codice_sga=' . $codice_sga
+    . ' tipo=' . $tipo_contratto_id . ' tratte=' . count($tratte_in));
+
+// --- 4) Subvettore: find o insert ---
+sc_lookup(rsSub, "SELECT id FROM subvettori WHERE codice_sga = " . $wh_sql_quote($codice_sga) . " LIMIT 1", "pigliacelli");
+
+$subvettore_creato = false;
+if (!empty({rsSub})) {
+    $subvettore_id = (int){rsSub[0][0]};
+} else {
+    sc_exec_sql("
+        INSERT INTO subvettori
+          (login_subvettore, ragione_sociale, cod_fiscale, piva, phone, cellphone,
+           indirizzo, sede_citta, sede_prov, codice_sga)
+        VALUES
+          (" . $wh_sql_quote($email) . ",
+           " . $wh_sql_quote($ragione_sociale) . ",
+           " . $wh_sql_quote($cod_fiscale) . ",
+           " . $wh_sql_quote($piva) . ",
+           " . $wh_sql_quote($phone) . ",
+           " . $wh_sql_quote($cellphone) . ",
+           " . $wh_sql_quote($indirizzo) . ",
+           " . $wh_sql_quote($sede_citta) . ",
+           " . $wh_sql_quote($sede_prov) . ",
+           " . $wh_sql_quote($codice_sga) . ")
+    ", "pigliacelli");
+
+    sc_lookup(rsLastSub, "SELECT LAST_INSERT_ID()", "pigliacelli");
+    if (empty({rsLastSub}) || (int){rsLastSub[0][0]} <= 0) {
+        $wh_respond(500, array('ok' => false, 'error' => 'Inserimento subvettore fallito.'));
+    }
+    $subvettore_id = (int){rsLastSub[0][0]};
+    $subvettore_creato = true;
+}
+
+// --- 5) Intestatario contratto: riusa utenza esistente del subvettore, altrimenti la crea ---
+//     (contratti.intestatario ha FK verso sec_users.login: l'utenza DEVE esistere)
+sc_lookup(rsUser, "SELECT login FROM sec_users WHERE subvettore_id = " . $wh_sql_num($subvettore_id) . " LIMIT 1", "pigliacelli");
+if (!empty({rsUser})) {
+    $intestatario = (string){rsUser[0][0]};
+} else {
+    $emailValida = is_string($email) && $email !== ''
+        && strpos($email, ';') === false && strpos($email, ',') === false && strpos($email, ' ') === false
+        && filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+
+    if ($emailValida) {
+        $loginNuovo = $email;
+        $emailNuovo = $email;
+    } else {
+        $loginNuovo = 'SUBVETTORE_' . $subvettore_id;
+        $emailNuovo = $loginNuovo . '@local.invalid';
+    }
+
+    // Se il login esiste gia' (altro subvettore con stessa email) lo riuso senza ricrearlo.
+    sc_lookup(rsLoginEsiste, "SELECT login FROM sec_users WHERE login = " . $wh_sql_quote($loginNuovo) . " LIMIT 1", "pigliacelli");
+    if (empty({rsLoginEsiste})) {
+        $tempPassword  = '';
+        $alfabeto      = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        $alfabetoLen   = strlen($alfabeto);
+        for ($p = 0; $p < 12; $p++) {
+            $tempPassword .= $alfabeto[random_int(0, $alfabetoLen - 1)];
+        }
+        $password_hash = md5($tempPassword);
+
+        sc_exec_sql("
+            INSERT INTO sec_users
+              (login, pswd, name, email, phone, active, subvettore_id)
+            VALUES
+              (" . $wh_sql_quote($loginNuovo) . ",
+               " . $wh_sql_quote($password_hash) . ",
+               " . $wh_sql_quote($ragione_sociale) . ",
+               " . $wh_sql_quote($emailNuovo) . ",
+               " . $wh_sql_quote($phone) . ",
+               'N',
+               " . $wh_sql_num($subvettore_id) . ")
+        ", "pigliacelli");
+
+        sc_exec_sql("
+            INSERT INTO sec_users_groups (login, group_id)
+            VALUES (" . $wh_sql_quote($loginNuovo) . ", 2)
+        ", "pigliacelli");
+    }
+
+    $intestatario = $loginNuovo;
+}
+
+// --- 6) Tratte + localita (sempre); contratto solo per quelle valide ---
+$tratte_create = array();
+$tratte_skipped = array();
+$tratte_per_contratto = array();
+
+foreach ($tratte_in as $idx => $tr) {
+    if (!is_array($tr)) {
+        continue;
+    }
+    $carico_str       = (string)$wh_valore($tr, 'carico', $wh_valore($tr, 'carico_str', ''));
+    $scarico_str      = (string)$wh_valore($tr, 'scarico', $wh_valore($tr, 'scarico_str', ''));
+    $tariffa_sigla    = $wh_valore($tr, 'tariffa_sigla');
+    $importo_raw      = array_key_exists('importo_unitario', $tr) ? $tr['importo_unitario'] : null;
+    $importo_unitario = $wh_importo_unitario_valido($importo_raw) ? (float)$importo_raw : 0;
+    $extra_totale     = (float)$wh_valore($tr, 'extra_totale', 0);
+
+    if ($carico_str === '' && $scarico_str === '') {
+        continue;
+    }
+
+    $motivo_skip = '';
+    $ammessa_contratto = $wh_tratta_ammessa_per_contratto($tr, $motivo_skip);
+
+    $totale = $importo_unitario + $extra_totale;
+    $hash   = $wh_crea_hash_tratta($carico_str, $scarico_str, $codice_sga, $importo_unitario);
+
+    // Mappa sigla tariffa (P/G/F) -> tipo_tariffa_id
+    $tipo_tariffa_id = null;
+    if ($tariffa_sigla !== null) {
+        $tariffa_sigla = strtoupper((string)$tariffa_sigla);
+        sc_lookup(rsTipoTar, "SELECT id FROM tipo_tariffe WHERE UPPER(descrizione) = " . $wh_sql_quote($tariffa_sigla) . " LIMIT 1", "pigliacelli");
+        if (!empty({rsTipoTar})) {
+            $tipo_tariffa_id = (int){rsTipoTar[0][0]};
+        }
+    }
+    $tipo_tariffa_sql = $tipo_tariffa_id === null ? "NULL" : $wh_sql_num($tipo_tariffa_id);
+
+    // tratta (riusa se hash gia' presente per il subvettore)
+    sc_lookup(rsHash, "
+        SELECT id FROM tratte
+        WHERE hash = " . $wh_sql_quote($hash) . " AND subvettore_id = " . $wh_sql_num($subvettore_id) . "
+        LIMIT 1
+    ", "pigliacelli");
+
+    if (!empty({rsHash})) {
+        $tratta_id = (int){rsHash[0][0]};
+    } else {
+        sc_exec_sql("
+            INSERT INTO tratte
+              (subvettore_id, merce, caricatore, proprietario_merce, tipo_tariffa_id, tariffa, extra, totale, hash, version)
+            VALUES
+              (" . $wh_sql_num($subvettore_id) . ", NULL, NULL, NULL, " . $tipo_tariffa_sql . ",
+               " . $wh_sql_num($importo_unitario) . ", " . $wh_sql_num($extra_totale) . ", " . $wh_sql_num($totale) . ",
+               " . $wh_sql_quote($hash) . ", 1)
+            ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)
+        ", "pigliacelli");
+
+        sc_lookup(rsLastTr, "SELECT LAST_INSERT_ID()", "pigliacelli");
+        if (empty({rsLastTr}) || (int){rsLastTr[0][0]} <= 0) {
+            continue;
+        }
+        $tratta_id = (int){rsLastTr[0][0]};
+
+        $i = 1;
+        foreach ($wh_split_localita($carico_str) as $loc) {
+            sc_exec_sql("
+                INSERT INTO tratte_localita (tratta_id, tipo_tratta, localita, progressivo)
+                VALUES (" . $wh_sql_num($tratta_id) . ", 'C', " . $wh_sql_quote($loc) . ", " . $wh_sql_num($i) . ")
+            ", "pigliacelli");
+            $i++;
+        }
+        $i = 1;
+        foreach ($wh_split_localita($scarico_str) as $loc) {
+            sc_exec_sql("
+                INSERT INTO tratte_localita (tratta_id, tipo_tratta, localita, progressivo)
+                VALUES (" . $wh_sql_num($tratta_id) . ", 'S', " . $wh_sql_quote($loc) . ", " . $wh_sql_num($i) . ")
+            ", "pigliacelli");
+            $i++;
+        }
+    }
+
+    $tratta_info = array(
+        'tratta_id' => $tratta_id,
+        'carico'    => $carico_str,
+        'scarico'   => $scarico_str,
+        'totale'    => $totale,
+        'in_contratto' => $ammessa_contratto,
+    );
+
+    if ($ammessa_contratto) {
+        $tratte_per_contratto[] = array(
+            'tratta_id'        => $tratta_id,
+            'carico_str'       => $carico_str,
+            'scarico_str'      => $scarico_str,
+            'tipo_tariffa_id'  => $tipo_tariffa_id,
+            'importo_unitario' => $importo_unitario,
+            'extra_totale'     => $extra_totale,
+            'totale'           => $totale,
+            'hash'             => $hash,
+        );
+    } else {
+        sc_log_add(
+            'WEBHOOK_SIM',
+            'SKIP_CONTR motivo=' . $motivo_skip .
+            ' codice_sga=' . $codice_sga .
+            ' tratta_id=' . $tratta_id .
+            ' partenza=' . (string)$wh_valore($tr, 'partenza_data_ora', '') .
+            ' importo_unitario=' . (is_scalar($importo_raw) ? (string)$importo_raw : '')
+        );
+        $tratta_info['skip_motivo'] = $motivo_skip;
+        $tratte_skipped[] = $tratta_info;
+    }
+
+    $tratte_create[] = $tratta_info;
+}
+
+if (count($tratte_per_contratto) === 0) {
+    $wh_respond(422, array(
+        'ok'              => false,
+        'error'           => 'Nessuna tratta valida per contratto (servono partenza_data_ora e importo_unitario).',
+        'subvettore_id'   => $subvettore_id,
+        'subvettore_creato' => $subvettore_creato,
+        'tratte'          => $tratte_create,
+        'tratte_skipped'  => $tratte_skipped,
+    ));
+}
+
+// --- 7) Contratto (solo tratte valide del payload, come il job a fine run) ---
+sc_exec_sql("
+    INSERT INTO contratti
+      (tipo_contratto_id, intestatario)
+    VALUES
+      (" . $wh_sql_num($tipo_contratto_id) . ", " . $wh_sql_quote($intestatario) . ")
+", "pigliacelli");
+
+sc_lookup(rsLastContr, "SELECT LAST_INSERT_ID()", "pigliacelli");
+if (empty({rsLastContr}) || (int){rsLastContr[0][0]} <= 0) {
+    $wh_respond(500, array('ok' => false, 'error' => 'Inserimento contratto fallito.'));
+}
+$contratto_id = (int){rsLastContr[0][0]};
+
+// --- 8) subvettori_contratti ---
+sc_exec_sql("
+    INSERT INTO subvettori_contratti
+      (subvettore_id, contratto_id)
+    VALUES
+      (" . $wh_sql_num($subvettore_id) . ", " . $wh_sql_num($contratto_id) . ")
+", "pigliacelli");
+
+sc_lookup(rsLastSc, "SELECT LAST_INSERT_ID()", "pigliacelli");
+$subvettori_contratti_id = empty({rsLastSc}) ? 0 : (int){rsLastSc[0][0]};
+
+// --- 9) contratti_tratte (solo tratte valide) ---
+foreach ($tratte_per_contratto as $tr_contr) {
+    $tratta_id = (int)$tr_contr['tratta_id'];
+    $tipo_tariffa_sql = $tr_contr['tipo_tariffa_id'] === null ? "NULL" : $wh_sql_num($tr_contr['tipo_tariffa_id']);
+
+    sc_lookup(rsCt, "
+        SELECT id FROM contratti_tratte
+        WHERE contratto_id = " . $wh_sql_num($contratto_id) . " AND tratta_id = " . $wh_sql_num($tratta_id) . "
+        LIMIT 1
+    ", "pigliacelli");
+
+    if (empty({rsCt})) {
+        sc_exec_sql("
+            INSERT INTO contratti_tratte
+              (tratta_id, contratto_id, version, carico, scarico, merce, caricatore, proprietario_merce,
+               tipo_tariffa_id, tariffa, extra, totale, hash)
+            VALUES
+              (" . $wh_sql_num($tratta_id) . ", " . $wh_sql_num($contratto_id) . ", 1,
+               " . $wh_sql_quote($tr_contr['carico_str']) . ", " . $wh_sql_quote($tr_contr['scarico_str']) . ",
+               NULL, NULL, NULL,
+               " . $tipo_tariffa_sql . ", " . $wh_sql_num($tr_contr['importo_unitario']) . ",
+               " . $wh_sql_num($tr_contr['extra_totale']) . ", " . $wh_sql_num($tr_contr['totale']) . ",
+               " . $wh_sql_quote($tr_contr['hash']) . ")
+        ", "pigliacelli");
+    }
+}
+
+// --- 10) URL di test (base da sec_settings.mail_base_url) ---
+sc_lookup(rsBase, "SELECT set_value FROM sec_settings WHERE set_name = 'mail_base_url' LIMIT 1", "pigliacelli");
+$baseUrl = empty({rsBase[0][0]}) ? '' : rtrim((string){rsBase[0][0]}, '/');
+
+$finalizeUrl = '';
+$easygnUrl   = '';
+if ($baseUrl !== '') {
+    $finalizeUrl = $baseUrl . '/finalize_contract_subvector/?contrattoId=' . $contratto_id
+        . '&subvettoreId=' . $subvettore_id
+        . '&tipoContrattoId=' . $tipo_contratto_id;
+    $easygnUrl = $baseUrl . '/easygn_start_wf_auto/?contrattoId=' . $contratto_id
+        . '&subvettoreId=' . $subvettore_id
+        . '&tipo_contratto_id=' . $tipo_contratto_id
+        . '&tipoContrattoId=' . $tipo_contratto_id
+        . '&mode=subvettore&wf_mode=subvettore';
+}
+
+sc_log_add('WEBHOOK_SIM', 'Completato: subvettore=' . $subvettore_id
+    . ' contratto=' . $contratto_id . ' sc=' . $subvettori_contratti_id
+    . ' tratte_contratto=' . count($tratte_per_contratto)
+    . ' tratte_skipped=' . count($tratte_skipped));
+
+$wh_respond(200, array(
+    'ok'                      => true,
+    'subvettore_id'           => $subvettore_id,
+    'subvettore_creato'       => $subvettore_creato,
+    'contratto_id'            => $contratto_id,
+    'tipo_contratto_id'       => $tipo_contratto_id,
+    'subvettori_contratti_id' => $subvettori_contratti_id,
+    'intestatario'            => $intestatario,
+    'tratte'                  => $tratte_create,
+    'tratte_in_contratto'     => count($tratte_per_contratto),
+    'tratte_skipped'          => $tratte_skipped,
+    'test_urls'               => array(
+        'finalize'         => $finalizeUrl,
+        'easygn_diretto'   => $easygnUrl,
+        'send_magic_link'  => array(
+            'contrattoId'  => $contratto_id,
+            'subvettoreId' => $subvettore_id,
+        ),
+    ),
+));

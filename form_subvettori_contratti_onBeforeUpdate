@@ -1,0 +1,10 @@
+/**
+ * form_subvettori_contratti
+ * → onBeforeUpdate
+ *
+ * Lasciare vuoto: in onBefore Scriptcase ha già aperto la transazione del form.
+ * Query manuali con sc_lookup/sc_exec_sql possono generare:
+ * "There is already an active transaction".
+ *
+ * La sincronizzazione anagrafica va fatta in onAfterUpdate.
+ */

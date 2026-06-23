@@ -1,0 +1,26 @@
+/**
+ * form_subvettori_contratti_for_subvectors_magic_link → onApplicationInit
+ *
+ * Subvettore: form_contratti_tratte sempre in sola lettura (no insert/update/delete).
+ */
+
+$pk = 0;
+if (isset($_GET['subvettore_contratto_id'])) {
+    $pk = (int)$_GET['subvettore_contratto_id'];
+} elseif (isset($_GET['id'])) {
+    $pk = (int)$_GET['id'];
+}
+
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    @session_start();
+}
+$_SESSION['pigliacelli_contract_form_mode'] = 'subvettore_public';
+
+if ($pk > 0) {
+    [subvettore_contratto_id] = $pk;
+    [id] = $pk;
+}
+
+sc_apl_conf('form_contratti_tratte', 'insert', 'off');
+sc_apl_conf('form_contratti_tratte', 'update', 'off');
+sc_apl_conf('form_contratti_tratte', 'delete', 'off');

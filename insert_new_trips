@@ -1,0 +1,433 @@
+// Import iniziale tratte da SGA (SQL Server via PDO) verso pigliacelli (MySQL).
+// Eseguire dopo insert_new_subvectors (richiede subvettori gia' presenti).
+// Viaggi: v.ANNO >= export_viaggi_anno (sec_settings, default 2023) — tutti gli anni da quella soglia.
+
+function sql_quote($v)
+{
+    if ($v === null) {
+        return "NULL";
+    }
+    $v = (string)$v;
+    return "'" . str_replace("'", "''", $v) . "'";
+}
+
+function sql_num($v)
+{
+    if ($v === null || $v === '') {
+        return "NULL";
+    }
+    return (string)(0 + $v);
+}
+
+function split_localita($s)
+{
+    $s = trim((string)$s);
+    if ($s === '') {
+        return [];
+    }
+
+    $parts = preg_split('/\s*\+\s*/', $s);
+
+    $out = [];
+    foreach ($parts as $part) {
+        $part = trim($part);
+        if ($part !== '') {
+            $out[] = $part;
+        }
+    }
+
+    return $out;
+}
+
+function normalizza_stringa($s)
+{
+    $s = trim((string)$s);
+    $s = strtoupper($s);
+    $s = preg_replace('/\s+/', ' ', $s);
+    return $s;
+}
+
+function crea_hash_tratta($carico_str, $scarico_str, $codice_vettore, $importo_unitario)
+{
+    $carichi = [];
+    foreach (split_localita($carico_str) as $loc) {
+        $carichi[] = normalizza_stringa($loc);
+    }
+
+    $scarichi = [];
+    foreach (split_localita($scarico_str) as $loc) {
+        $scarichi[] = normalizza_stringa($loc);
+    }
+
+    $carico_norm  = implode('|', $carichi);
+    $scarico_norm = implode('|', $scarichi);
+    $vettore      = normalizza_stringa($codice_vettore);
+    $importo      = number_format((float)$importo_unitario, 2, '.', '');
+
+    return hash('sha256', $carico_norm . '#' . $scarico_norm . '#' . $vettore . '#' . $importo);
+}
+
+function data_compare_value($value)
+{
+    if ($value === null || $value === '') {
+        return PHP_INT_MIN;
+    }
+
+    $ts = strtotime((string)$value);
+    return $ts === false ? PHP_INT_MIN : $ts;
+}
+
+function viaggio_piu_recente($nuovo, $corrente)
+{
+    $nuovo_partenza = data_compare_value($nuovo['partenza_data_ora']);
+    $corrente_partenza = data_compare_value($corrente['partenza_data_ora']);
+
+    if ($nuovo_partenza !== $corrente_partenza) {
+        return $nuovo_partenza > $corrente_partenza;
+    }
+
+    if ((int)$nuovo['ANNO'] !== (int)$corrente['ANNO']) {
+        return (int)$nuovo['ANNO'] > (int)$corrente['ANNO'];
+    }
+
+    return (int)$nuovo['NUMERO'] > (int)$corrente['NUMERO'];
+}
+
+function carica_localita_viaggio($stmt_localita, $societa, $anno, $numero)
+{
+    $stmt_localita->execute([
+        'societa' => $societa,
+        'anno' => $anno,
+        'numero' => $numero,
+    ]);
+
+    $carichi = [];
+    $scarichi = [];
+
+    while (($row = $stmt_localita->fetch(PDO::FETCH_NUM)) !== false) {
+        if ($row[0] === 'C') {
+            $carichi[] = $row[1];
+        } elseif ($row[0] === 'S') {
+            $scarichi[] = $row[1];
+        }
+    }
+    $stmt_localita->closeCursor();
+
+    return [
+        implode(' + ', $carichi),
+        implode(' + ', $scarichi),
+    ];
+}
+
+function carica_extra_viaggio($stmt_extra, $societa, $anno, $numero)
+{
+    $stmt_extra->execute([
+        'societa' => $societa,
+        'anno' => $anno,
+        'numero' => $numero,
+    ]);
+
+    $extra = $stmt_extra->fetchColumn();
+    $stmt_extra->closeCursor();
+    return $extra === null || $extra === false ? 0 : $extra;
+}
+
+function connetti_pdo_sga()
+{
+    $set_names = ['sgam_user', 'sgam_pswd', 'sgam_db', 'sgam_server'];
+
+    sc_lookup(settingsRows, "
+        SELECT set_name, set_value
+        FROM sec_settings
+        WHERE set_name IN (
+            'sgam_user', 'sgam_pswd', 'sgam_db', 'sgam_server',
+            'export_viaggi_anno', 'export_viaggi_societa'
+        )
+    ", "pigliacelli");
+
+    $settings = [];
+    if (!empty({settingsRows})) {
+        foreach ({settingsRows} as $settingRow) {
+            $settings[$settingRow[0]] = $settingRow[1];
+        }
+    }
+
+    foreach ($set_names as $set_name) {
+        if (!array_key_exists($set_name, $settings)) {
+            sc_error_message("Parametro '" . $set_name . "' non trovato in sec_settings.");
+            return null;
+        }
+    }
+
+    try {
+        $dsn_sga = "sqlsrv:Server=" . $settings['sgam_server'] .
+                   ";Database=" . $settings['sgam_db'] .
+                   ";Encrypt=1" .
+                   ";TrustServerCertificate=1";
+
+        return [
+            'pdo' => new PDO(
+                $dsn_sga,
+                $settings['sgam_user'],
+                $settings['sgam_pswd'],
+                [
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_NUM,
+                ]
+            ),
+            'societa' => isset($settings['export_viaggi_societa']) && trim((string)$settings['export_viaggi_societa']) !== ''
+                ? (int)$settings['export_viaggi_societa']
+                : 1,
+            'anno_da' => isset($settings['export_viaggi_anno']) && trim((string)$settings['export_viaggi_anno']) !== ''
+                ? (int)$settings['export_viaggi_anno']
+                : 2023,
+        ];
+    } catch (PDOException $e) {
+        sc_error_message("Errore connessione PDO SGA: " . $e->getMessage());
+        return null;
+    }
+}
+sc_log_add("INSERT_TRIPS", "Connessione al DB SGA");
+$conn = connetti_pdo_sga();
+sc_log_add("INSERT_TRIPS", "Connesso al DB SGA");
+if ($conn === null) {
+	sc_log_add("INSERT_TRIPS", "Connessione non riuscita");
+    return;
+}
+
+$pdo_sga = $conn['pdo'];
+$societa = $conn['societa'];
+$anno_da = $conn['anno_da'];
+
+$sql_viaggi_base = "
+    SELECT
+      v.SOCIETA,
+      v.ANNO,
+      v.NUMERO,
+      v.VETTORE AS codice_vettore,
+      v.TARIFFA,
+      v.IMPORTO_UNITARIO,
+      v.PARTENZA_DATA_ORA AS partenza_data_ora
+    FROM T2ViaggiVettori v
+    JOIN BaCliFor b
+      ON b.CODICE = v.VETTORE
+     AND b.SOCIETA = v.SOCIETA
+     AND b.CLIENTE_FORNITORE = 'F'
+     AND b.ATTIVO = 'S'
+    WHERE v.SOCIETA = :societa
+      AND v.ANNO >= :anno_da
+    ORDER BY v.ANNO, v.NUMERO
+";
+
+$params_viaggi = [
+    'societa' => $societa,
+    'anno_da' => $anno_da,
+];
+
+$sql_localita = "
+    SELECT OPERAZIONE, LOCALITA
+    FROM T2ViaggiVettoriClienti
+    WHERE SOCIETA = :societa
+      AND ANNO = :anno
+      AND NUMERO = :numero
+      AND OPERAZIONE IN ('C', 'S')
+    ORDER BY OPERAZIONE, PROGRESSIVO
+";
+
+$sql_extra = "
+    SELECT COALESCE(SUM(IMPORTO_TOTALE), 0)
+    FROM T2ViaggiVettoriAddebiti
+    WHERE SOCIETA = :societa
+      AND ANNO = :anno
+      AND NUMERO = :numero
+";
+
+try {
+	sc_log_add("INSERT_TRIPS", "Inizio Sql viaggi base");
+    $stmt_viaggi_base = $pdo_sga->prepare($sql_viaggi_base);
+	
+	sc_log_add("INSERT_TRIPS", "Inizio Sql localita");
+    $stmt_localita = $pdo_sga->prepare($sql_localita);
+	
+	sc_log_add("INSERT_TRIPS", "Inizio Sql extra");
+    $stmt_extra = $pdo_sga->prepare($sql_extra);
+
+    $stmt_viaggi_base->execute($params_viaggi);
+	sc_log_add("INSERT_TRIPS", "Execute completata");
+} catch (PDOException $e) {
+    sc_error_message("Errore select PDO SGA: " . $e->getMessage());
+	sc_log_add("INSERT_TRIPS", "Errore select PDO SGA: " . $e->getMessage());
+    return;
+}
+
+$viaggi_unici = [];
+
+try {
+    $viaggi_base_rows = $stmt_viaggi_base->fetchAll(PDO::FETCH_NUM);
+    $stmt_viaggi_base->closeCursor();
+
+    foreach ($viaggi_base_rows as $row_sga) {
+        $row_societa = $row_sga[0];
+        $row_anno    = $row_sga[1];
+        $numero      = $row_sga[2];
+        $codice_vettore   = $row_sga[3];
+        $tariffa_sigla    = trim((string)$row_sga[4]);
+        $importo_unitario = $row_sga[5];
+        $partenza_data_ora = $row_sga[6];
+
+        [$carico_str, $scarico_str] = carica_localita_viaggio($stmt_localita, $row_societa, $row_anno, $numero);
+
+        if ($carico_str === '' || $scarico_str === '') {
+            continue;
+        }
+
+        $extra_totale = carica_extra_viaggio($stmt_extra, $row_societa, $row_anno, $numero);
+        $key = (string)$codice_vettore . '|' . $carico_str . '|' . $scarico_str;
+
+        $viaggio = [
+            'ANNO' => $row_anno,
+            'NUMERO' => $numero,
+            'codice_vettore' => $codice_vettore,
+            'carico_str' => $carico_str,
+            'scarico_str' => $scarico_str,
+            'tariffa_sigla' => $tariffa_sigla,
+            'importo_unitario' => $importo_unitario,
+            'extra_totale' => $extra_totale,
+            'partenza_data_ora' => $partenza_data_ora,
+        ];
+
+        if (!isset($viaggi_unici[$key]) || viaggio_piu_recente($viaggio, $viaggi_unici[$key])) {
+            $viaggi_unici[$key] = $viaggio;
+        }
+    }
+} catch (PDOException $e) {
+    sc_error_message("Errore elaborazione dati PDO SGA: " . $e->getMessage());
+    return;
+}
+
+$inseriti = 0;
+$saltati_hash = 0;
+$saltati_subvettore = 0;
+$subvettori_mancanti = [];
+
+foreach ($viaggi_unici as $viaggio) {
+    $codice_vettore   = $viaggio['codice_vettore'];
+    $carico_str       = $viaggio['carico_str'];
+    $scarico_str      = $viaggio['scarico_str'];
+    $tariffa_sigla    = $viaggio['tariffa_sigla'];
+    $importo_unitario = $viaggio['importo_unitario'];
+    $extra_totale     = $viaggio['extra_totale'];
+
+    $hash = crea_hash_tratta($carico_str, $scarico_str, $codice_vettore, $importo_unitario);
+
+    sc_lookup(checkHash, "
+        SELECT id FROM tratte
+        WHERE hash = " . sql_quote($hash) . "
+        LIMIT 1
+    ", "pigliacelli");
+
+    if (!empty({checkHash})) {
+        $saltati_hash++;
+        continue;
+    }
+
+    sc_lookup(sub, "
+        SELECT id FROM subvettori
+        WHERE codice_sga = " . sql_quote($codice_vettore) . "
+        LIMIT 1
+    ", "pigliacelli");
+
+    if (empty({sub})) {
+        $saltati_subvettore++;
+        $codice_mancante = (string)$codice_vettore;
+        if (!isset($subvettori_mancanti[$codice_mancante])) {
+            $subvettori_mancanti[$codice_mancante] = 0;
+        }
+        $subvettori_mancanti[$codice_mancante]++;
+        continue;
+    }
+
+    $subvettore_id = {sub[0][0]};
+
+    if ($tariffa_sigla === '') {
+        $tariffa_sigla = null;
+    }
+    $totale = (0 + $importo_unitario) + (0 + $extra_totale);
+
+    $tipo_tariffa_id = null;
+    if ($tariffa_sigla !== null) {
+        $tariffa_sigla = strtoupper($tariffa_sigla);
+        sc_lookup(tipotar, "
+            SELECT id FROM tipo_tariffe
+            WHERE UPPER(descrizione) = " . sql_quote($tariffa_sigla) . "
+            LIMIT 1
+        ", "pigliacelli");
+        if (!empty({tipotar})) {
+            $tipo_tariffa_id = {tipotar[0][0]};
+        }
+    }
+
+    $tipo_tariffa_sql = $tipo_tariffa_id === null ? "NULL" : sql_num($tipo_tariffa_id);
+
+    $insTratta = "
+      INSERT INTO tratte
+        (subvettore_id, merce, caricatore, proprietario_merce, tipo_tariffa_id, tariffa, extra, totale, hash, version)
+      VALUES
+        (" . sql_num($subvettore_id) . ",
+         NULL, NULL, NULL,
+         " . $tipo_tariffa_sql . ",
+         " . sql_num($importo_unitario) . ",
+         " . sql_num($extra_totale) . ",
+         " . sql_num($totale) . ",
+         " . sql_quote($hash) . ",
+         1)
+    ";
+    sc_exec_sql($insTratta, "pigliacelli");
+
+    sc_lookup(lastId, "SELECT LAST_INSERT_ID()", "pigliacelli");
+    if (empty({lastId}) || {lastId[0][0]} === null || {lastId[0][0]} === '') {
+        sc_log_add("INSERT_TRIPS_ERROR", "LAST_INSERT_ID vuoto per hash " . $hash);
+        continue;
+    }
+
+    $tratta_id = {lastId[0][0]};
+
+    $i = 1;
+    foreach (split_localita($carico_str) as $loc) {
+        sc_exec_sql("
+          INSERT INTO tratte_localita (tratta_id, tipo_tratta, localita, progressivo)
+          VALUES (" . sql_num($tratta_id) . ", 'C', " . sql_quote($loc) . ", " . sql_num($i) . ")
+        ", "pigliacelli");
+        $i++;
+    }
+
+    $i = 1;
+    foreach (split_localita($scarico_str) as $loc) {
+        sc_exec_sql("
+          INSERT INTO tratte_localita (tratta_id, tipo_tratta, localita, progressivo)
+          VALUES (" . sql_num($tratta_id) . ", 'S', " . sql_quote($loc) . ", " . sql_num($i) . ")
+        ", "pigliacelli");
+        $i++;
+    }
+
+    $inseriti++;
+}
+
+sc_log_add(
+    "INSERT_TRIPS",
+    "Tratte inserite: " . $inseriti .
+    ", hash gia' presenti: " . $saltati_hash .
+    ", subvettore mancante: " . $saltati_subvettore .
+    ", anno_da>=" . (int)$anno_da
+);
+
+if (!empty($subvettori_mancanti)) {
+    $dettaglio_mancanti = [];
+    foreach ($subvettori_mancanti as $codice_sga => $num_tratte) {
+        $dettaglio_mancanti[] = $codice_sga . ' (' . (int)$num_tratte . ' tratte)';
+    }
+    sc_log_add(
+        "INSERT_TRIPS_SUBVETTORI_MANCANTI",
+        "codice_sga non presenti in subvettori: " . implode(', ', $dettaglio_mancanti)
+    );
+}

@@ -1,0 +1,225 @@
+﻿/**
+ * form_subvettori_contratti_for_subvectors_magic_link
+ * → onAfterInsert E onAfterUpdate (incollare lo stesso codice in entrambi gli eventi)
+ *
+ * 1) Sync anagrafica + dati legali (dopo commit SC, evita errore transazione PDO)
+ * 2) Redirect a finalize_contract_subvector per avviare PDF + firma EasyGN
+ */
+
+// === SYNC (form_subvettori_contratti_sync_after_save) ===
+if (!function_exists('magic_link_form_sql_quote')) {
+    function magic_link_form_sql_quote($v)
+    {
+        if ($v === null) {
+            return 'NULL';
+        }
+        return "'" . str_replace("'", "''", (string)$v) . "'";
+    }
+}
+
+if (!function_exists('magic_link_form_normalize_date_db')) {
+    function magic_link_form_normalize_date_db($value)
+    {
+        $value = trim((string)$value);
+        if ($value === '' || $value === '0000-00-00') {
+            return null;
+        }
+        if (preg_match('/^\d{4}-\d{2}-\d{2}/', $value) === 1) {
+            return substr($value, 0, 10);
+        }
+        $dt = \DateTime::createFromFormat('d/m/Y', $value);
+        if ($dt instanceof \DateTime) {
+            return $dt->format('Y-m-d');
+        }
+        $ts = strtotime($value);
+        if ($ts !== false) {
+            return date('Y-m-d', $ts);
+        }
+        return null;
+    }
+}
+
+if (!function_exists('magic_link_form_prov_nascita_value')) {
+    function magic_link_form_prov_nascita_value()
+    {
+        if (isset({prov_luogo_nascita_rappresentante}) && trim((string){prov_luogo_nascita_rappresentante}) !== '') {
+            return trim((string){prov_luogo_nascita_rappresentante});
+        }
+        if (isset({prov_nascita_rappresentante}) && trim((string){prov_nascita_rappresentante}) !== '') {
+            return trim((string){prov_nascita_rappresentante});
+        }
+        return '';
+    }
+}
+
+if (!function_exists('magic_link_form_sync_after_save')) {
+    function magic_link_form_sync_after_save()
+    {
+        $scId = 0;
+        if (isset({id}) && (int){id} > 0) {
+            $scId = (int){id};
+        } elseif (isset([subvettore_contratto_id]) && (int)[subvettore_contratto_id] > 0) {
+            $scId = (int)[subvettore_contratto_id];
+        }
+
+        $subvettoreId = 0;
+        if (isset({subvettore_id}) && (int){subvettore_id} > 0) {
+            $subvettoreId = (int){subvettore_id};
+        }
+
+        if ($subvettoreId <= 0 && $scId > 0) {
+            sc_lookup(rsSubId, "
+                SELECT subvettore_id
+                FROM subvettori_contratti
+                WHERE id = " . (int)$scId . "
+                LIMIT 1
+            ");
+            if (!empty({rsSubId[0][0]})) {
+                $subvettoreId = (int){rsSubId[0][0]};
+            }
+        }
+
+        $ragione_sociale                  = isset({ragione_sociale})                  ? trim((string){ragione_sociale})                  : '';
+        $sede_citta                       = isset({sede_citta})                       ? trim((string){sede_citta})                       : '';
+        $sede_prov                        = isset({sede_prov})                        ? trim((string){sede_prov})                        : '';
+        $indirizzo                        = isset({indirizzo})                        ? trim((string){indirizzo})                        : '';
+        $civico                           = isset({civico})                           ? trim((string){civico})                           : '';
+        $cod_fiscale                      = isset({cod_fiscale})                      ? trim((string){cod_fiscale})                      : '';
+        $piva                             = isset({piva})                             ? trim((string){piva})                             : '';
+        $num_iscrizione_reg_imprese       = isset({num_iscrizione_reg_imprese})       ? trim((string){num_iscrizione_reg_imprese})       : '';
+        $locazione_iscrizione_reg_imprese = isset({locazione_iscrizione_reg_imprese}) ? trim((string){locazione_iscrizione_reg_imprese}) : '';
+        $rea                              = isset({rea})                              ? trim((string){rea})                              : '';
+        $cellphone                        = isset({phone})                            ? trim((string){phone})                            : '';
+
+        $hasAnagrafica = (
+            $ragione_sociale !== '' || $piva !== '' || $cod_fiscale !== ''
+            || $sede_citta !== '' || $indirizzo !== '' || $cellphone !== ''
+        );
+
+        if ($subvettoreId > 0 && $hasAnagrafica) {
+            sc_exec_sql("
+                UPDATE subvettori
+                SET
+                    ragione_sociale                  = " . magic_link_form_sql_quote($ragione_sociale) . ",
+                    sede_citta                       = " . magic_link_form_sql_quote($sede_citta) . ",
+                    sede_prov                        = " . magic_link_form_sql_quote($sede_prov) . ",
+                    indirizzo                        = " . magic_link_form_sql_quote($indirizzo) . ",
+                    civico                           = " . magic_link_form_sql_quote($civico) . ",
+                    cod_fiscale                      = " . magic_link_form_sql_quote($cod_fiscale) . ",
+                    piva                             = " . magic_link_form_sql_quote($piva) . ",
+                    num_iscrizione_reg_imprese       = " . magic_link_form_sql_quote($num_iscrizione_reg_imprese) . ",
+                    locazione_iscrizione_reg_imprese = " . magic_link_form_sql_quote($locazione_iscrizione_reg_imprese) . ",
+                    rea                              = " . magic_link_form_sql_quote($rea) . ",
+                    cellphone                        = " . magic_link_form_sql_quote($cellphone) . "
+                WHERE id = " . (int)$subvettoreId . "
+                LIMIT 1
+            ");
+            sc_log_add('MAGIC_LINK_SUB_SYNC', 'subvettori aggiornato id=' . (int)$subvettoreId);
+        }
+
+        $num_iscrizione_albo          = isset({num_iscrizione_albo})          ? trim((string){num_iscrizione_albo})          : '';
+        $luogo_nascita_rappresentante = isset({luogo_nascita_rappresentante}) ? trim((string){luogo_nascita_rappresentante}) : '';
+        $prov_nascita                 = magic_link_form_prov_nascita_value();
+        $data_nascita_raw             = isset({data_nascita_rappresentante}) ? {data_nascita_rappresentante} : '';
+        $data_nascita_db              = magic_link_form_normalize_date_db($data_nascita_raw);
+
+        $hasLegali = (
+            $num_iscrizione_albo !== '' || $luogo_nascita_rappresentante !== ''
+            || $prov_nascita !== '' || trim((string)$data_nascita_raw) !== ''
+        );
+
+        if ($scId > 0 && $hasLegali) {
+            $data_nascita_sql = ($data_nascita_db !== null) ? magic_link_form_sql_quote($data_nascita_db) : 'NULL';
+            sc_exec_sql("
+                UPDATE subvettori_contratti
+                SET
+                    num_iscrizione_albo               = " . magic_link_form_sql_quote($num_iscrizione_albo) . ",
+                    luogo_nascita_rappresentante      = " . magic_link_form_sql_quote($luogo_nascita_rappresentante) . ",
+                    prov_luogo_nascita_rappresentante = " . magic_link_form_sql_quote($prov_nascita) . ",
+                    data_nascita_rappresentante       = $data_nascita_sql
+                WHERE id = " . (int)$scId . "
+                LIMIT 1
+            ");
+            sc_log_add(
+                'MAGIC_LINK_SUB_SYNC',
+                'subvettori_contratti aggiornato id=' . (int)$scId
+                . ' albo=' . ($num_iscrizione_albo !== '' ? 'ok' : 'vuoto')
+                . ' data_nascita=' . ($data_nascita_db !== null ? $data_nascita_db : 'null')
+            );
+        }
+    }
+}
+
+magic_link_form_sync_after_save();
+// === FINE SYNC ===
+
+// 1) Risoluzione scId (PK subvettori_contratti) — coerente con onApplicationInit del form.
+$scId = 0;
+if (isset({id}) && (int){id} > 0) {
+    $scId = (int){id};
+} elseif (isset([subvettore_contratto_id]) && (int)[subvettore_contratto_id] > 0) {
+    $scId = (int)[subvettore_contratto_id];
+} elseif (isset([id]) && (int)[id] > 0) {
+    $scId = (int)[id];
+} elseif (isset($_GET['subvettore_contratto_id'])) {
+    $scId = (int)$_GET['subvettore_contratto_id'];
+}
+
+if ($scId <= 0) {
+    sc_log_add('MAGIC_LINK_FINALIZE', 'scId non risolvibile in after-save');
+    return;
+}
+
+// 2) contrattoId + subvettoreId dal record subvettori_contratti.
+sc_lookup(rsScMeta, "
+    SELECT contratto_id, subvettore_id
+    FROM subvettori_contratti
+    WHERE id = " . (int)$scId . "
+    LIMIT 1
+");
+if (empty({rsScMeta})) {
+    sc_log_add('MAGIC_LINK_FINALIZE', "subvettori_contratti id=$scId non trovato");
+    return;
+}
+$contrattoId  = (int){rsScMeta[0][0]};
+$subvettoreId = (int){rsScMeta[0][1]};
+
+// 3) tipoContrattoId dal contratto.
+$tipoContrattoId = 0;
+sc_lookup(rsTipo, "
+    SELECT tipo_contratto_id
+    FROM contratti
+    WHERE id = " . (int)$contrattoId . "
+    LIMIT 1
+");
+if (!empty({rsTipo})) {
+    $tipoContrattoId = (int){rsTipo[0][0]};
+}
+
+if ($contrattoId <= 0 || $subvettoreId <= 0) {
+    sc_log_add('MAGIC_LINK_FINALIZE', "parametri non validi contratto=$contrattoId subvettore=$subvettoreId");
+    return;
+}
+
+if ($tipoContrattoId <= 0) {
+    sc_log_add('MAGIC_LINK_FINALIZE', "tipoContrattoId non valido per contratto=$contrattoId");
+    if (function_exists('sc_err_msg')) {
+        sc_err_msg('Tipo contratto non riconosciuto. Contatti l\'assistenza.');
+    } else {
+        sc_error_message('Tipo contratto non riconosciuto. Contatti l\'assistenza.');
+    }
+    return;
+}
+
+sc_log_add(
+    'MAGIC_LINK_FINALIZE',
+    "redirect orchestratore contratto=$contrattoId subvettore=$subvettoreId tipo=$tipoContrattoId"
+);
+
+// 4) Avvio orchestratore (loader → PDF → EasyGN → firma).
+$redirParams = 'contrattoId=' . (int)$contrattoId
+    . '&subvettoreId=' . (int)$subvettoreId
+    . '&tipoContrattoId=' . (int)$tipoContrattoId;
+
+sc_redir('finalize_contract_subvector', $redirParams);
+exit;

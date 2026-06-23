@@ -1,0 +1,115 @@
+/**
+ * Scriptcase blank: start_contract_firma_after_review
+ *
+ * Pulsante su grid_contratti (operatori/admin): dopo revisione dati subvettore,
+ * genera PDF + avvia EasyGN (easygn_start_wf, flusso admin).
+ *
+ * Parametri: [contrattoId], [subvettoreId] (o GET omonimi)
+ *
+ * Grid: Defined application method → start_contract_firma_after_review
+ *       contrattoId={contratto_id};subvettoreId={subvettore_id}
+ *       Visibilità: stato_contratto = 'Da revisionare'
+ *       Gruppi: 1, 3
+ */
+$contrattoId = 0;
+if (isset($_GET['contrattoId']) && (int)$_GET['contrattoId'] > 0) {
+    $contrattoId = (int)$_GET['contrattoId'];
+} elseif (isset([contrattoId]) && (int)[contrattoId] > 0) {
+    $contrattoId = (int)[contrattoId];
+}
+
+$subvettoreId = 0;
+if (isset($_GET['subvettoreId']) && (int)$_GET['subvettoreId'] > 0) {
+    $subvettoreId = (int)$_GET['subvettoreId'];
+} elseif (isset([subvettoreId]) && (int)[subvettoreId] > 0) {
+    $subvettoreId = (int)[subvettoreId];
+}
+
+$fail = function ($msg) {
+    sc_log_add('START_FIRMA_REVIEW', 'FAIL: ' . (string)$msg);
+    if (function_exists('sc_error_message')) {
+        sc_error_message((string)$msg);
+    }
+    if (function_exists('sc_error_exit')) {
+        sc_error_exit();
+    }
+    exit;
+};
+
+if ($contrattoId <= 0 || $subvettoreId <= 0) {
+    $fail('Parametri mancanti: contrattoId e subvettoreId.');
+}
+
+sc_lookup(rsScReview, "
+    SELECT id
+    FROM subvettori_contratti
+    WHERE contratto_id = " . (int)$contrattoId . "
+      AND subvettore_id = " . (int)$subvettoreId . "
+    LIMIT 1
+", "pigliacelli");
+
+if (empty({rsScReview})) {
+    $fail('Nessun record subvettori_contratti per questo contratto/subvettore.');
+}
+
+$scId = (int){rsScReview[0][0]};
+
+sc_lookup(rsStatoRevId, "
+    SELECT id
+    FROM stati_contratti
+    WHERE nome = 'Da revisionare'
+    LIMIT 1
+", "pigliacelli");
+
+if (empty({rsStatoRevId[0][0]})) {
+    $fail("Stato 'Da revisionare' non configurato in stati_contratti.");
+}
+
+$statoRevId = (int){rsStatoRevId[0][0]};
+
+sc_lookup(rsContrattoStato, "
+    SELECT c.tipo_contratto_id, c.stato_contratto_id, COALESCE(st.nome, '')
+    FROM contratti c
+    LEFT JOIN stati_contratti st ON st.id = c.stato_contratto_id
+    WHERE c.id = " . (int)$contrattoId . "
+    LIMIT 1
+", "pigliacelli");
+
+if (empty({rsContrattoStato})) {
+    $fail('Contratto #' . (int)$contrattoId . ' non trovato.');
+}
+
+$tipoContrattoId = (int){rsContrattoStato[0][0]};
+$statoAttualeId = (int){rsContrattoStato[0][1]};
+$statoAttualeNome = trim((string){rsContrattoStato[0][2]});
+
+if ($tipoContrattoId <= 0) {
+    $fail('Tipo contratto non riconosciuto per contratto #' . (int)$contrattoId);
+}
+
+if ($statoAttualeId !== $statoRevId) {
+    $fail(
+        'Il contratto non è in stato "Da revisionare".'
+        . ($statoAttualeNome !== '' ? ' Stato attuale: ' . $statoAttualeNome . '.' : '')
+        . ' Verificare i dati prima di avviare la firma.'
+    );
+}
+
+sc_log_add(
+    'START_FIRMA_REVIEW',
+    "redirect finalize admin scId=$scId contratto=$contrattoId subvettore=$subvettoreId tipo=$tipoContrattoId"
+);
+
+if (!isset($_SESSION) || !is_array($_SESSION)) {
+    $_SESSION = array();
+}
+$_SESSION['finalize_send_mail_only'] = (int)$contrattoId;
+
+$redirParams = 'contrattoId=' . (int)$contrattoId
+    . '&subvettoreId=' . (int)$subvettoreId
+    . '&tipoContrattoId=' . (int)$tipoContrattoId
+    . '&mode=admin'
+    . '&sendMailOnly=1';
+
+sc_redir('finalize_contract_subvector', $redirParams);
+exit;

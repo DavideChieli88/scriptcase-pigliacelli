@@ -1,0 +1,610 @@
+﻿/**
+ * web_hook_firma - EasyGN / Yousign webhook (versione minimale)
+ *
+ * Flusso tipo 1 (firma ordinata), 3 callback attesi:
+ *   1) member  done -> firmatario ha firmato -> firmato_il + mail committente
+ *   2) member  done -> committente ha firmato -> solo log
+ *   3) procedure done -> Completato + data_inizio + attiva subvettore + mail credenziali
+ *
+ * Mapping EasyGN:
+ *   member:    body.id = signer UUID (easygn_signer_ids)
+ *   procedure: body.id = workflow UUID (easygn_workflow_id)
+ *
+ * Log: INSERT diretto su sc_log (Guest) + file api_logs/
+ */
+date_default_timezone_set('Europe/Rome');
+
+// --- 1. Body POST (subito, prima di qualsiasi lookup) ---
+$WH_RAW = @file_get_contents('php:' . chr(47) . chr(47) . 'input');
+if ($WH_RAW === false) {
+    $WH_RAW = '';
+}
+$GLOBALS['wh_raw_body'] = (string)$WH_RAW;
+$WH_METHOD = isset($_SERVER['REQUEST_METHOD']) ? strtoupper((string)$_SERVER['REQUEST_METHOD']) : '?';
+$WH_URI    = isset($_SERVER['REQUEST_URI']) ? (string)$_SERVER['REQUEST_URI'] : '';
+$WH_IP     = isset($_SERVER['REMOTE_ADDR']) ? (string)$_SERVER['REMOTE_ADDR'] : '';
+if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+    $WH_IP .= ' fwd=' . trim(explode(',', (string)$_SERVER['HTTP_X_FORWARDED_FOR'])[0]);
+}
+
+// --- 2. Cartella log (senza lookup DB) ---
+$WH_LOG_DIR = defined('__DIR__') ? (__DIR__ . DIRECTORY_SEPARATOR . 'api_logs') : 'api_logs';
+if (!is_dir($WH_LOG_DIR)) {
+    @mkdir($WH_LOG_DIR, 0755, true);
+}
+if (!is_dir($WH_LOG_DIR) || !is_writable($WH_LOG_DIR)) {
+    $WH_LOG_DIR = sys_get_temp_dir();
+}
+$WH_EARLY_FILE = $WH_LOG_DIR . DIRECTORY_SEPARATOR . 'early_' . date('d-m-Y') . '.txt';
+$WH_LOG_FILE   = $WH_LOG_DIR . DIRECTORY_SEPARATOR . date('d-m-Y') . '.txt';
+
+if (!function_exists('wh_file_log')) {
+    function wh_file_log($line)
+    {
+        global $WH_EARLY_FILE, $WH_LOG_FILE;
+        $out = date('H:i:s') . ' ' . (string)$line . "\n";
+        @file_put_contents($WH_EARLY_FILE, $out, FILE_APPEND | LOCK_EX);
+        @file_put_contents($WH_LOG_FILE, $out, FILE_APPEND | LOCK_EX);
+    }
+}
+
+if (!function_exists('wh_sc_log_insert')) {
+    function wh_sc_log_insert($description)
+    {
+        global $WH_IP;
+        $date = str_replace("'", "''", date('Y-m-d H:i:s'));
+        $ip   = str_replace("'", "''", (string)$WH_IP);
+        $desc = str_replace("'", "''", (string)$description);
+        try {
+            sc_exec_sql("
+                INSERT INTO sc_log (inserted_date, username, application, creator, ip_user, action, description)
+                VALUES ('$date', 'Guest', 'web_hook_firma', 'System', '$ip', 'WEB_HOOK_FIRMA', '$desc')
+            ");
+        } catch (Throwable $e) {
+            wh_file_log('SC_LOG_FAIL ' . $e->getMessage());
+        }
+    }
+}
+
+if (!function_exists('wh_log')) {
+    function wh_log($msg)
+    {
+        wh_file_log($msg);
+    }
+}
+
+wh_file_log('EARLY method=' . $WH_METHOD . ' uri=' . $WH_URI . ' body_len=' . strlen($WH_RAW) . ' body=' . ($WH_RAW === '' ? '(empty)' : $WH_RAW));
+wh_sc_log_insert('EARLY BODY method=' . $WH_METHOD . ' uri=' . $WH_URI . ' body_len=' . strlen($WH_RAW) . ' body=' . ($WH_RAW === '' ? '(empty)' : $WH_RAW));
+
+// --- 3. Ping / diag (GET) ---
+if (isset($_GET['ping']) && (string)$_GET['ping'] === '1') {
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(array('ok' => true, 'service' => 'web_hook_firma', 'time' => date('c')));
+    exit;
+}
+if (isset($_GET['diag']) && (int)($_GET['contrattoId'] ?? 0) > 0) {
+    $cid = (int)$_GET['contrattoId'];
+    sc_lookup(rsDiag, "SELECT easygn_workflow_id, easygn_signer_ids FROM contratti WHERE id = $cid LIMIT 1");
+    $wf = !empty({rsDiag[0][0]}) ? trim((string){rsDiag[0][0]}) : '';
+    $signers = array();
+    if (!empty({rsDiag[0][1]})) {
+        $signers = json_decode(trim((string){rsDiag[0][1]}), true);
+        if (!is_array($signers)) {
+            $signers = array();
+        }
+    }
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(array(
+        'ok' => true,
+        'contratto_id' => $cid,
+        'easygn_workflow_id' => $wf,
+        'signer_id_firmatario' => (string)($signers['signer_id_firmatario'] ?? ''),
+        'signer_id_committente' => (string)($signers['signer_id_committente'] ?? ''),
+        'test_member_firmatario' => array('type' => 'member', 'status' => 'done', 'id' => (string)($signers['signer_id_firmatario'] ?? '')),
+        'test_procedure_done' => array('type' => 'procedure', 'status' => 'done', 'id' => $wf),
+    ), JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+// --- 4. Helper compatti ---
+if (!function_exists('wh_sql')) {
+    function wh_sql($s)
+    {
+        return str_replace("'", "''", (string)$s);
+    }
+}
+
+if (!function_exists('wh_commit')) {
+    function wh_commit()
+    {
+        try { sc_exec_sql('COMMIT'); } catch (Throwable $e) { /* noop */ }
+        try { sc_exec_sql('SET autocommit=1'); } catch (Throwable $e) { /* noop */ }
+    }
+}
+
+if (!function_exists('wh_load_smtp')) {
+    function wh_load_smtp()
+    {
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            @session_start();
+        }
+        sc_lookup(rsSmtp, "SELECT set_name, set_value FROM sec_settings");
+        if (isset({rsSmtp[0][0]})) {
+            foreach ({rsSmtp} as $row) {
+                $_SESSION['sett_' . $row[0]] = $row[1];
+            }
+        }
+        $api = isset($_SESSION['sett_smtp_api']) ? (string)$_SESSION['sett_smtp_api'] : '';
+        if ($api === 'custom') {
+            return array('settings' => array(
+                'gateway'       => 'smtp',
+                'smtp_server'   => (string)($_SESSION['sett_smtp_server'] ?? ''),
+                'smtp_protocol' => (string)($_SESSION['sett_smtp_security'] ?? ''),
+                'smtp_port'     => (string)($_SESSION['sett_smtp_port'] ?? ''),
+                'smtp_user'     => (string)($_SESSION['sett_smtp_user'] ?? ''),
+                'smtp_password' => (string)($_SESSION['sett_smtp_pass'] ?? ''),
+                'from_email'    => (string)($_SESSION['sett_smtp_from_email'] ?? ''),
+                'from_name'     => (string)($_SESSION['sett_smtp_from_name'] ?? ''),
+            ));
+        }
+        return array('profile' => $api);
+    }
+}
+
+if (!function_exists('wh_setting')) {
+    function wh_setting($name, $default = '')
+    {
+        $name = wh_sql(trim((string)$name));
+        sc_lookup(rsSet, "SELECT set_value FROM sec_settings WHERE set_name = '$name' LIMIT 1");
+        return isset({rsSet[0][0]}) ? trim((string){rsSet[0][0]}) : (string)$default;
+    }
+}
+
+if (!function_exists('wh_mail_layout')) {
+    function wh_mail_layout($title, $inner)
+    {
+        $t = htmlspecialchars((string)$title, ENT_QUOTES, 'UTF-8');
+        $base = rtrim(wh_setting('mail_base_url', ''), '/');
+        $logo = ($base !== '' && preg_match('#^https?://#i', $base))
+            ? htmlspecialchars($base . '/_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png', ENT_QUOTES, 'UTF-8')
+            : '';
+        $logoTd = $logo !== '' ? '<td align="right"><img src="' . $logo . '" width="140" alt="Logo" /></td>' : '';
+        return '<!DOCTYPE html><html lang="it"><body style="margin:0;background:#eef1f4;font-family:Arial,sans-serif;">'
+            . '<table width="100%"><tr><td align="center" style="padding:24px;">'
+            . '<table width="600" style="background:#fff;border-radius:8px;"><tr><td style="padding:20px;">'
+            . '<table width="100%"><tr><td style="font-size:18px;font-weight:bold;color:#1a3a5c;">' . $t . '</td>' . $logoTd . '</tr></table>'
+            . '<div style="padding:16px 0;font-size:15px;color:#2d3748;">' . $inner . '</div>'
+            . '<div style="font-size:12px;color:#718096;">Messaggio automatico - non rispondere.</div>'
+            . '</td></tr></table></td></tr></table></body></html>';
+    }
+}
+
+if (!function_exists('wh_send_mail')) {
+    function wh_send_mail($to, $subject, $text, $html)
+    {
+        if (!function_exists('sc_send_mail_api')) {
+            wh_log('mail SKIP sc_send_mail_api assente');
+            return false;
+        }
+        global $sett_smtp;
+        $sett_smtp = wh_load_smtp();
+        try {
+            sc_send_mail_api(array_merge($sett_smtp, array(
+                'message' => array(
+                    'to'      => $to,
+                    'subject' => $subject,
+                    'text'    => $text,
+                    'html'    => $html,
+                ),
+            )));
+            return true;
+        } catch (Throwable $e) {
+            wh_log('mail EXCEPTION to=' . $to . ' ' . $e->getMessage());
+            return false;
+        }
+    }
+}
+
+if (!function_exists('wh_find_contratto')) {
+    function wh_find_contratto($workflowId, $signerId)
+    {
+        $workflowId = trim((string)$workflowId);
+        $signerId   = trim((string)$signerId);
+        if ($workflowId !== '') {
+            $wf = wh_sql($workflowId);
+            sc_lookup(rsWf, "SELECT id FROM contratti WHERE easygn_workflow_id = '$wf' LIMIT 1");
+            if (!empty({rsWf[0][0]})) {
+                return (int){rsWf[0][0]};
+            }
+        }
+        if ($signerId !== '') {
+            $sid = wh_sql($signerId);
+            sc_lookup(rsMem, "SELECT id FROM contratti WHERE easygn_signer_ids LIKE '%$sid%' LIMIT 1");
+            if (!empty({rsMem[0][0]})) {
+                return (int){rsMem[0][0]};
+            }
+        }
+        return 0;
+    }
+}
+
+if (!function_exists('wh_workflow_id')) {
+    function wh_workflow_id($contrattoId)
+    {
+        $contrattoId = (int)$contrattoId;
+        if ($contrattoId <= 0) {
+            return '';
+        }
+        sc_lookup(rsWfId, "SELECT easygn_workflow_id FROM contratti WHERE id = $contrattoId LIMIT 1");
+        return !empty({rsWfId[0][0]}) ? trim((string){rsWfId[0][0]}) : '';
+    }
+}
+
+if (!function_exists('wh_signer_map')) {
+    function wh_signer_map($contrattoId)
+    {
+        sc_lookup(rsMap, "SELECT easygn_signer_ids FROM contratti WHERE id = " . (int)$contrattoId . " LIMIT 1");
+        if (empty({rsMap[0][0]})) {
+            return array();
+        }
+        $data = json_decode(trim((string){rsMap[0][0]}), true);
+        return is_array($data) ? $data : array();
+    }
+}
+
+if (!function_exists('wh_signer_role')) {
+    function wh_signer_role($contrattoId, $signerId)
+    {
+        $signerId = strtolower(trim((string)$signerId));
+        $map = wh_signer_map($contrattoId);
+        $firm = strtolower(trim((string)($map['signer_id_firmatario'] ?? '')));
+        $comm = strtolower(trim((string)($map['signer_id_committente'] ?? '')));
+        if ($firm !== '' && $signerId === $firm) {
+            return 'firmatario';
+        }
+        if ($comm !== '' && $signerId === $comm) {
+            return 'committente';
+        }
+        return 'unknown';
+    }
+}
+
+if (!function_exists('wh_sign_link_json')) {
+    function wh_sign_link_json($contrattoId)
+    {
+        sc_lookup(rsLink, "SELECT easygn_sign_link FROM contratti WHERE id = " . (int)$contrattoId . " LIMIT 1");
+        if (empty({rsLink[0][0]})) {
+            return array();
+        }
+        $data = json_decode(trim((string){rsLink[0][0]}), true);
+        return is_array($data) ? $data : array();
+    }
+}
+
+if (!function_exists('wh_save_sign_link_json')) {
+    function wh_save_sign_link_json($contrattoId, array $data)
+    {
+        $j = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($j === false) {
+            return false;
+        }
+        $js = wh_sql($j);
+        sc_exec_sql("UPDATE contratti SET easygn_sign_link = '$js' WHERE id = " . (int)$contrattoId);
+        wh_commit();
+        return true;
+    }
+}
+
+if (!function_exists('wh_stato_id')) {
+    function wh_stato_id($nome)
+    {
+        $n = wh_sql(trim((string)$nome));
+        if ($n === '') {
+            return 0;
+        }
+        sc_lookup(rsSt, "SELECT id FROM stati_contratti WHERE nome = '$n' LIMIT 1");
+        return !empty({rsSt[0][0]}) ? (int){rsSt[0][0]} : 0;
+    }
+}
+
+if (!function_exists('wh_is_done')) {
+    function wh_is_done($status)
+    {
+        return in_array(strtolower(trim((string)$status)), array('done', 'completed', 'finished', 'complete', 'signed'), true);
+    }
+}
+
+if (!function_exists('wh_resolve_stato')) {
+    function wh_resolve_stato($tipo, $status)
+    {
+        $tipo   = strtolower(trim((string)$tipo));
+        $status = strtolower(trim((string)$status));
+        if ($tipo === 'procedure' || $tipo === 'workflow') {
+            if (wh_is_done($status)) {
+                return 'Completato';
+            }
+            $bad = array('refused', 'rejected', 'declined', 'canceled', 'cancelled', 'failed', 'failure', 'expired', 'aborted', 'error');
+            return in_array($status, $bad, true) ? 'Rifiutato' : null;
+        }
+        if ($tipo === 'member' || $tipo === 'signer') {
+            if (wh_is_done($status)) {
+                return null;
+            }
+            $ok = array('', 'pending', 'waiting', 'opened', 'started', 'in_progress', 'processing', 'sent', 'notified', 'active', 'created', 'initiated', 'activated');
+            return in_array($status, $ok, true) ? null : 'Rifiutato';
+        }
+        return null;
+    }
+}
+
+if (!function_exists('wh_send_committente_mail')) {
+    function wh_send_committente_mail($contrattoId)
+    {
+        $result = array('sent' => false, 'reason' => '', 'to' => '', 'link_len' => 0);
+        $meta = wh_sign_link_json($contrattoId);
+        if (!empty($meta['mail_committente_inviata'])) {
+            $result['reason'] = 'gia_inviata';
+            return $result;
+        }
+        $to   = trim((string)($meta['committente_email'] ?? ''));
+        $nome = trim((string)($meta['committente_nome'] ?? ''));
+        $link = trim((string)($meta['link_committente'] ?? ''));
+        $result['to'] = $to;
+        $result['link_len'] = strlen($link);
+        if ($to === '' || filter_var($to, FILTER_VALIDATE_EMAIL) === false) {
+            $result['reason'] = 'committente_email_assente';
+            return $result;
+        }
+        if ($link === '' || !preg_match('#^https?://#i', $link)) {
+            $result['reason'] = 'link_committente_assente';
+            return $result;
+        }
+        if ($nome === '') {
+            $nome = 'Gentile firmatario';
+        }
+        $titolo = 'Firma contratto - link di firma digitale (committente)';
+        $safeUrl  = htmlspecialchars($link, ENT_QUOTES, 'UTF-8');
+        $safeNome = htmlspecialchars($nome, ENT_QUOTES, 'UTF-8');
+        $testo = $nome . ",\n\nIl subvettore ha completato la firma. Contratto #" . (int)$contrattoId . ".\n\n" . $link;
+        $inner = '<p>' . $safeNome . ',</p><p>Il subvettore ha firmato. Firmi il contratto <strong>#' . (int)$contrattoId . '</strong>.</p>'
+            . '<p><a href="' . $safeUrl . '" style="background:#5b2d8e;color:#fff;padding:12px 24px;text-decoration:none;border-radius:6px;">Apri link di firma</a></p>'
+            . '<p style="word-break:break-all;"><a href="' . $safeUrl . '">' . $safeUrl . '</a></p>';
+        wh_log('mail TRY committente to=' . $to . ' link_len=' . strlen($link));
+        if (!wh_send_mail($to, $titolo, $testo, wh_mail_layout($titolo, $inner))) {
+            $result['reason'] = 'invio_fallito';
+            return $result;
+        }
+        $meta['mail_committente_inviata'] = 1;
+        wh_save_sign_link_json($contrattoId, $meta);
+        $result['sent'] = true;
+        $result['reason'] = 'ok';
+        wh_log('mail committente OK to=' . $to);
+        return $result;
+    }
+}
+
+if (!function_exists('wh_temp_password')) {
+    function wh_temp_password()
+    {
+        $chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%';
+        $out = '';
+        for ($i = 0; $i < 12; $i++) {
+            $out .= $chars[random_int(0, strlen($chars) - 1)];
+        }
+        return $out;
+    }
+}
+
+if (!function_exists('wh_activate_subvettore')) {
+    function wh_activate_subvettore($contrattoId)
+    {
+        $contrattoId = (int)$contrattoId;
+        sc_lookup(rsSub, "
+            SELECT sc.subvettore_id, s.login_subvettore, s.ragione_sociale,
+                   sc.email_firmatario, sc.email_rappresentante,
+                   TRIM(CONCAT(COALESCE(sc.nome_firmatario,''), ' ', COALESCE(sc.cognome_firmatario,''))) AS nome
+            FROM subvettori_contratti sc
+            INNER JOIN subvettori s ON s.id = sc.subvettore_id
+            WHERE sc.contratto_id = $contrattoId ORDER BY sc.id ASC LIMIT 1
+        ");
+        if (empty({rsSub[0][0]})) {
+            wh_log('completato: subvettore assente contratto_id=' . $contrattoId);
+            return;
+        }
+        $subId   = (int){rsSub[0][0]};
+        $login   = trim((string){rsSub[0][1]});
+        $ragione = trim((string){rsSub[0][2]});
+        $email   = trim((string){rsSub[0][3]}) !== '' ? trim((string){rsSub[0][3]}) : trim((string){rsSub[0][4]});
+        $nome    = trim((string){rsSub[0][5]});
+        if ($email === '' || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+            wh_log('completato: email subvettore assente');
+            return;
+        }
+        $userLogin = '';
+        if ($login !== '') {
+            $lq = wh_sql($login);
+            sc_lookup(rsU, "SELECT login, active, email FROM sec_users WHERE login = '$lq' LIMIT 1");
+            if (!empty({rsU[0][0]})) {
+                $userLogin = trim((string){rsU[0][0]});
+            }
+        }
+        if ($userLogin === '') {
+            sc_lookup(rsU2, "SELECT login FROM sec_users WHERE subvettore_id = $subId LIMIT 1");
+            if (!empty({rsU2[0][0]})) {
+                $userLogin = trim((string){rsU2[0][0]});
+                $login = $userLogin;
+            }
+        }
+        $plain = wh_temp_password();
+        $hash  = wh_sql(md5($plain));
+        if ($userLogin === '') {
+            $login = $email;
+            $lq = wh_sql($login);
+            $le = wh_sql($email);
+            $ln = wh_sql($ragione !== '' ? $ragione : $nome);
+            sc_exec_sql("INSERT INTO sec_users (login, pswd, name, email, active, subvettore_id) VALUES ('$lq', '$hash', '$ln', '$le', 'Y', $subId)");
+            sc_lookup(rsG, "SELECT login FROM sec_users_groups WHERE login = '$lq' AND group_id = 2 LIMIT 1");
+            if (empty({rsG[0][0]})) {
+                sc_exec_sql("INSERT INTO sec_users_groups (login, group_id) VALUES ('$lq', 2)");
+            }
+            sc_exec_sql("UPDATE subvettori SET login_subvettore = '$lq' WHERE id = $subId AND (login_subvettore IS NULL OR login_subvettore = '')");
+            wh_log('completato: creato sec_users login=' . $login);
+        } else {
+            $lq = wh_sql($login);
+            sc_exec_sql("UPDATE sec_users SET active = 'Y', pswd = '$hash' WHERE login = '$lq'");
+            wh_log('completato: aggiornato sec_users login=' . $login);
+        }
+        wh_commit();
+        $portal = wh_setting('portal_url', wh_setting('app_url', ''));
+        $titolo = 'Credenziali area riservata - contratto #' . $contrattoId;
+        $display = $ragione !== '' ? $ragione : ($nome !== '' ? $nome : 'Gentile utente');
+        $testo = $display . ",\n\nContratto #" . $contrattoId . " completato.\nLogin: " . $login . "\nPassword: " . $plain;
+        if ($portal !== '') {
+            $testo .= "\nArea: " . $portal;
+        }
+        $inner = '<p>' . htmlspecialchars($display, ENT_QUOTES, 'UTF-8') . ',</p>'
+            . '<p>Contratto <strong>#' . $contrattoId . '</strong> completato.</p>'
+            . '<p><strong>Login:</strong> ' . htmlspecialchars($login, ENT_QUOTES, 'UTF-8') . '<br>'
+            . '<strong>Password temporanea:</strong> ' . htmlspecialchars($plain, ENT_QUOTES, 'UTF-8') . '</p>';
+        if ($portal !== '') {
+            $inner .= '<p><a href="' . htmlspecialchars($portal, ENT_QUOTES, 'UTF-8') . '">Area riservata</a></p>';
+        }
+        if (wh_send_mail($email, $titolo, $testo, wh_mail_layout($titolo, $inner))) {
+            wh_log('mail credenziali OK to=' . $email);
+        } else {
+            wh_log('mail credenziali FAIL to=' . $email);
+        }
+    }
+}
+
+if (!function_exists('wh_json_out')) {
+    function wh_json_out(array $payload, $code = 200)
+    {
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        header('Content-Type: application/json; charset=utf-8');
+        http_response_code((int)$code);
+        echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+}
+
+// --- 5. Elaborazione webhook (logica core) ---
+$mailCommittente = null;
+$contrattoId     = 0;
+$workflowId      = '';
+$signerId        = '';
+$statoNome       = null;
+$tipo            = '';
+$status          = '';
+
+try {
+    $json = (string)$GLOBALS['wh_raw_body'];
+    $cb   = json_decode($json, true);
+    if (!is_array($cb)) {
+        wh_log('invalid_json len=' . strlen($json));
+        wh_sc_log_insert('SUMMARY invalid_json');
+        wh_json_out(array('ok' => true, 'note' => 'invalid_json', 'log_file' => $WH_LOG_FILE));
+    }
+
+    $tipo   = strtolower(trim((string)($cb['type'] ?? '')));
+    $status = strtolower(trim((string)($cb['status'] ?? '')));
+    $signerId    = '';
+    $workflowId  = '';
+    $lookupWf    = '';
+
+    if ($tipo === 'member' || $tipo === 'signer') {
+        $signerId = trim((string)($cb['id'] ?? ''));
+    } elseif ($tipo === 'procedure' || $tipo === 'workflow') {
+        $workflowId = trim((string)($cb['id'] ?? ''));
+        $lookupWf   = $workflowId;
+    }
+
+    wh_log('HIT type=' . $tipo . ' status=' . $status . ' signer_id=' . $signerId . ' workflow_id=' . $workflowId);
+    $contrattoId = wh_find_contratto($lookupWf, $signerId);
+    if ($contrattoId > 0 && $workflowId === '') {
+        $workflowId = wh_workflow_id($contrattoId);
+    }
+    $statoNome = wh_resolve_stato($tipo, $status);
+
+    if ($contrattoId <= 0) {
+        wh_log('contratto non trovato signer=' . $signerId . ' wf=' . $workflowId);
+    } elseif ($tipo === 'member' || $tipo === 'signer') {
+        if ($statoNome === 'Rifiutato') {
+            $sid = wh_stato_id('Rifiutato');
+            if ($sid > 0) {
+                sc_exec_sql("UPDATE contratti SET stato_contratto_id = $sid WHERE id = $contrattoId");
+                wh_commit();
+            }
+            wh_log('member rifiutato contratto_id=' . $contrattoId);
+        } elseif (wh_is_done($status)) {
+            $role = wh_signer_role($contrattoId, $signerId);
+            if ($role === 'committente') {
+                wh_log('evento 2/3 committente firmato contratto_id=' . $contrattoId);
+            } else {
+                wh_log('evento 1/3 vettore firmato contratto_id=' . $contrattoId . ' role=' . $role);
+                $now = wh_sql(date('Y-m-d H:i:s'));
+                sc_exec_sql("UPDATE contratti SET firmato_il = '$now' WHERE id = $contrattoId");
+                wh_commit();
+                if ($role === 'firmatario' || $role === 'unknown') {
+                    $mailCommittente = wh_send_committente_mail($contrattoId);
+                }
+            }
+        } else {
+            wh_log('member status=' . $status . ' ignorato');
+        }
+    } elseif ($tipo === 'procedure' || $tipo === 'workflow') {
+        if ($statoNome === 'Completato') {
+            $sidCompletato = wh_stato_id('Completato');
+            if ($sidCompletato > 0) {
+                sc_lookup(rsWas, "SELECT stato_contratto_id, data_inizio_contratto FROM contratti WHERE id = $contrattoId LIMIT 1");
+                $giaCompletato = !empty({rsWas[0][0]}) && (int){rsWas[0][0]} === $sidCompletato;
+                $now = wh_sql(date('Y-m-d H:i:s'));
+                $extra = (!$giaCompletato && empty({rsWas[0][1]})) ? ", data_inizio_contratto = '$now'" : '';
+                sc_exec_sql("UPDATE contratti SET stato_contratto_id = $sidCompletato$extra WHERE id = $contrattoId");
+                wh_commit();
+                wh_log('evento 3/3 procedura completata contratto_id=' . $contrattoId);
+                if (!$giaCompletato) {
+                    wh_activate_subvettore($contrattoId);
+                }
+            }
+        } elseif ($statoNome === 'Rifiutato') {
+            $sid = wh_stato_id('Rifiutato');
+            if ($sid > 0) {
+                sc_exec_sql("UPDATE contratti SET stato_contratto_id = $sid WHERE id = $contrattoId");
+                wh_commit();
+            }
+            wh_log('procedure rifiutata contratto_id=' . $contrattoId);
+        } else {
+            wh_log('procedure status=' . $status . ' ignorato (es. activated)');
+        }
+    }
+
+    wh_commit();
+    $mailJson = $mailCommittente !== null ? json_encode($mailCommittente, JSON_UNESCAPED_UNICODE) : 'null';
+    if ($mailJson === false) {
+        $mailJson = 'null';
+    }
+    wh_sc_log_insert(
+        'SUMMARY type=' . $tipo . ' status=' . $status
+        . ' contratto_id=' . (int)$contrattoId
+        . ' workflow_id=' . $workflowId
+        . ' signer_id=' . $signerId
+        . ' mail_committente=' . $mailJson
+    );
+
+    wh_json_out(array(
+        'ok'               => true,
+        'contratto_id'     => (int)$contrattoId,
+        'workflow_id'      => (string)$workflowId,
+        'signer_id'        => (string)$signerId,
+        'stato'            => $statoNome,
+        'mail_committente' => $mailCommittente,
+        'log_file'         => $WH_LOG_FILE,
+    ));
+} catch (Throwable $e) {
+    wh_log('EXCEPTION ' . $e->getMessage());
+    wh_sc_log_insert('SUMMARY EXCEPTION ' . $e->getMessage());
+    wh_json_out(array('ok' => false, 'error' => $e->getMessage(), 'log_file' => $WH_LOG_FILE), 500);
+}

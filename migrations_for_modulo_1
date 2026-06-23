@@ -1,0 +1,257 @@
+-- =============================================================================
+-- migrations_for_modulo_1
+-- Database: pigliacelli (MySQL / MariaDB)
+-- Scopo: allineare DEV -> UAT -> PROD per Modulo 1 (fatture passive)
+--
+-- Ordine esecuzione consigliato:
+--   1) Sezione A (societa)
+--   2) Sezione B (fornitori)
+--   3) Sezione C (sec_settings chiavi modulo 1)
+--   4) Sezione D (fatture_passive + allegati) — quando si attiva get_invoices
+--   5) Sezione E (utenti <-> societa) — segregazione dati
+--
+-- Note:
+--   - Usare CREATE TABLE IF NOT EXISTS dove possibile (idempotente).
+--   - Gli ALTER in fondo sezione servono solo se le tabelle esistono gia'
+--     con nomi colonna diversi (es. partita_iva vs piva).
+--   - Dopo le migration: lanciare blank upsert_societa_and_fornitori per popolare dati.
+--   - Charset allineato a subvettori esistente: utf8mb3
+-- =============================================================================
+
+
+-- =============================================================================
+-- A) SOCIETA  (mappatura BaSocieta + Zucchetti Digitale)
+-- =============================================================================
+-- Campi previsti dal Modulo 1:
+--   codice_sga      -> BaSocieta.CODICE
+--   codice_zucchetti-> mappatura manuale verso Zucchetti (non sovrascritta da upsert)
+--   piva            -> BaSocieta.PARTITA_IVA / match fatture
+--   ragione_sociale -> BaSocieta.RAGIONE_SOCIALE
+--   cod_fiscale     -> BaSocieta.CODICE_FISCALE
+
+CREATE TABLE IF NOT EXISTS societa (
+    id INT(11) NOT NULL AUTO_INCREMENT,
+    codice_sga VARCHAR(50) NOT NULL COMMENT 'Codice societa su SGA (BaSocieta.CODICE)',
+    ragione_sociale VARCHAR(255) DEFAULT NULL,
+    piva VARCHAR(50) DEFAULT NULL COMMENT 'Partita IVA',
+    cod_fiscale VARCHAR(50) DEFAULT NULL,
+    codice_zucchetti VARCHAR(50) DEFAULT NULL COMMENT 'Codice/cessionario Zucchetti Digitale - compilazione manuale',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_societa_codice_sga (codice_sga),
+    KEY idx_societa_piva (piva),
+    KEY idx_societa_codice_zucchetti (codice_zucchetti)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COMMENT='Societa del gruppo (SGA + mappatura Zucchetti)';
+
+
+-- =============================================================================
+-- B) FORNITORI  (sottoinsieme BaCliFor, modello subvettori)
+-- =============================================================================
+-- Differenza rispetto a subvettori:
+--   - chiave composta (societa_sga, codice_sga) perche' lo stesso CODICE fornitore
+--     puo' esistere su piu' societa' SGA
+--   - email dedicata (in subvettori e' login_subvettore)
+--
+-- Sorgente upsert: BaCliFor WHERE CLIENTE_FORNITORE='F' AND ATTIVO='S'
+
+CREATE TABLE IF NOT EXISTS fornitori (
+    id INT(11) NOT NULL AUTO_INCREMENT,
+    societa_sga INT(11) NOT NULL COMMENT 'BaCliFor.SOCIETA',
+    codice_sga VARCHAR(255) NOT NULL COMMENT 'BaCliFor.CODICE',
+    ragione_sociale VARCHAR(255) DEFAULT NULL,
+    cod_fiscale VARCHAR(50) DEFAULT NULL,
+    piva VARCHAR(50) DEFAULT NULL,
+    phone VARCHAR(50) DEFAULT NULL,
+    cellphone VARCHAR(50) DEFAULT NULL,
+    email VARCHAR(255) DEFAULT NULL COMMENT 'BaCliFor.E_MAIL',
+    indirizzo VARCHAR(255) DEFAULT NULL,
+    civico VARCHAR(50) DEFAULT NULL,
+    sede_citta VARCHAR(255) DEFAULT NULL,
+    sede_prov VARCHAR(50) DEFAULT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_fornitori_soc_cod (societa_sga, codice_sga),
+    KEY idx_fornitori_piva (piva),
+    KEY idx_fornitori_cf (cod_fiscale),
+    KEY idx_fornitori_email (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COMMENT='Fornitori attivi da SGA (tutte le societa)';
+
+
+-- =============================================================================
+-- C) sec_settings — chiavi Modulo 1 / Zucchetti
+-- =============================================================================
+-- Valori placeholder: aggiornare per ambiente (DEV / UAT / PROD).
+-- Richiede UNIQUE su sec_settings.set_name (standard ScriptCase).
+
+INSERT INTO sec_settings (set_name, set_value) VALUES
+    ('zuc_endp', 'https://ENDPOINT_ZUCCHETTI_SOAP'),
+    ('zuc_login', ''),
+    ('zuc_pswd', ''),
+    ('zuc_comp', ''),
+    ('zuc_sync', '20260101000000')
+ON DUPLICATE KEY UPDATE set_name = set_name;
+
+-- Opzionale: data iniziale sync fatture (formato YmdHis usato da get_invoices)
+
+
+
+-- Allegati manuali operatore (contratti, cedolini, ricevute, ecc.)
+CREATE TABLE IF NOT EXISTS fatture_passive_allegati (
+    id INT(11) NOT NULL AUTO_INCREMENT,
+    fattura_passiva_id INT(11) NOT NULL,
+    tipo_documento_id INT(11) DEFAULT NULL COMMENT 'FK verso tipi_documento_fattura',
+    tipo_documento_altro VARCHAR(255) DEFAULT NULL COMMENT 'Se tipo = Altro',
+    nome_file VARCHAR(255) NOT NULL,
+    percorso_file VARCHAR(500) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_allegati_fattura (fattura_passiva_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COMMENT='Allegati manuali su fattura prima approvazione';
+
+
+-- Tipologie documento per menu a tendina (Contratto, Cedolino, Ricevuta, Altro, ...)
+CREATE TABLE IF NOT EXISTS tipi_documento_fattura (
+    id INT(11) NOT NULL AUTO_INCREMENT,
+    codice VARCHAR(50) NOT NULL,
+    descrizione VARCHAR(255) NOT NULL,
+    attivo TINYINT(1) NOT NULL DEFAULT 1,
+    ordine INT(11) NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_tipi_doc_codice (codice)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+INSERT INTO tipi_documento_fattura (codice, descrizione, ordine) VALUES
+    ('CONTRATTO', 'Contratto', 10),
+    ('CEDOLINO', 'Cedolino', 20),
+    ('RICEVUTA_FISCALE', 'Ricevuta fiscale', 30),
+    ('SCONTRINO', 'Scontrino', 40),
+    ('ALTRO', 'Altro', 99)
+ON DUPLICATE KEY UPDATE descrizione = VALUES(descrizione), ordine = VALUES(ordine);
+
+
+-- =============================================================================
+-- E) SEGREGAZIONE UTENTI PER SOCIETA
+-- =============================================================================
+-- Ogni utente ScriptCase vede solo le fatture delle societa' assegnate.
+-- login = sec_users.login
+
+CREATE TABLE IF NOT EXISTS utenti_societa (
+    id INT(11) NOT NULL AUTO_INCREMENT,
+    login VARCHAR(255) NOT NULL COMMENT 'sec_users.login',
+    societa_id INT(11) NOT NULL COMMENT 'societa.id',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_utenti_societa (login, societa_id),
+    KEY idx_utenti_societa_login (login),
+    KEY idx_utenti_societa_soc (societa_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COMMENT='Assegnazione utente -> societa visibili';
+
+
+-- =============================================================================
+-- F) FLUSSI CONTROLLO FATTURA (sottoconto -> tipo controllo)
+-- =============================================================================
+-- Da popolare quando il cliente fornisce la mappatura sottoconto -> flusso.
+-- Sorgente SGA futura: BaCliForInfoContabili + BaPianoConti
+
+CREATE TABLE IF NOT EXISTS flussi_controllo_fattura (
+    id INT(11) NOT NULL AUTO_INCREMENT,
+    codice VARCHAR(50) NOT NULL COMMENT 'Es. ORDINE_DDT_FATTURA, SOLO_APPROVAZIONE, CONTRATTO_COSTO, ...',
+    descrizione VARCHAR(255) NOT NULL,
+    richiede_ordine TINYINT(1) NOT NULL DEFAULT 0,
+    richiede_ddt TINYINT(1) NOT NULL DEFAULT 0,
+    richiede_confronto_prezzo TINYINT(1) NOT NULL DEFAULT 0,
+    richiede_confronto_quantita TINYINT(1) NOT NULL DEFAULT 0,
+    richiede_allegati TINYINT(1) NOT NULL DEFAULT 0,
+    attivo TINYINT(1) NOT NULL DEFAULT 1,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_flussi_codice (codice)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+INSERT INTO flussi_controllo_fattura
+    (codice, descrizione, richiede_ordine, richiede_ddt, richiede_confronto_prezzo, richiede_confronto_quantita, richiede_allegati)
+VALUES
+    ('ORDINE_DDT_FATTURA', 'Ordine + DDT + Fattura (merce, carburante)', 1, 1, 1, 1, 0),
+    ('SOLO_APPROVAZIONE', 'Solo approvazione (vettori, affitti, canoni)', 0, 0, 0, 0, 0),
+    ('CONTRATTO_COSTO', 'Contratto / centro di costo fisso', 0, 0, 0, 0, 1),
+    ('DDT_FATTURA_LAVAGGI', 'DDT + Fattura lavaggi (controllo targhe automezzi)', 0, 1, 0, 1, 0),
+    ('APPROVAZIONE_ALLEGATI', 'Approvazione con allegati obbligatori (autoscuola, immatricolazioni)', 0, 0, 0, 0, 1)
+ON DUPLICATE KEY UPDATE descrizione = VALUES(descrizione);
+
+
+-- Mappatura sottoconto contabile (SGA) -> flusso
+-- conto_gruppo / conto / sottoconto da BaCliForInfoContabili
+CREATE TABLE IF NOT EXISTS sottoconti_flusso (
+    id INT(11) NOT NULL AUTO_INCREMENT,
+    societa_sga INT(11) NOT NULL DEFAULT 1,
+    conto_gruppo VARCHAR(20) NOT NULL,
+    conto VARCHAR(20) NOT NULL,
+    sottoconto VARCHAR(20) NOT NULL,
+    flusso_controllo_id INT(11) NOT NULL,
+    note VARCHAR(255) DEFAULT NULL,
+    attivo TINYINT(1) NOT NULL DEFAULT 1,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_sottoconti_flusso (societa_sga, conto_gruppo, conto, sottoconto),
+    KEY idx_sottoconti_flusso (flusso_controllo_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COMMENT='Mappatura sottoconto SGA -> flusso controllo fattura';
+
+
+-- =============================================================================
+-- G) ALTER / ALLINEAMENTO (solo se tabelle create in precedenza con nomi diversi)
+-- =============================================================================
+-- Eseguire SOLO le righe necessarie all'ambiente corrente.
+-- Verificare prima con: SHOW COLUMNS FROM societa; SHOW COLUMNS FROM fornitori;
+
+-- Esempio: se societa ha partita_iva invece di piva
+-- ALTER TABLE societa CHANGE COLUMN partita_iva piva VARCHAR(50) DEFAULT NULL;
+
+-- Esempio: se societa ha codice_fiscale invece di cod_fiscale
+-- ALTER TABLE societa CHANGE COLUMN codice_fiscale cod_fiscale VARCHAR(50) DEFAULT NULL;
+
+-- Esempio: se fornitori ha partita_iva / codice_fiscale
+-- ALTER TABLE fornitori CHANGE COLUMN partita_iva piva VARCHAR(50) DEFAULT NULL;
+-- ALTER TABLE fornitori CHANGE COLUMN codice_fiscale cod_fiscale VARCHAR(50) DEFAULT NULL;
+
+-- Aggiunta colonne mancanti su fornitori (se tabella gia' esistente minimale)
+-- ALTER TABLE fornitori ADD COLUMN phone VARCHAR(50) DEFAULT NULL AFTER piva;
+-- ALTER TABLE fornitori ADD COLUMN cellphone VARCHAR(50) DEFAULT NULL AFTER phone;
+-- ALTER TABLE fornitori ADD COLUMN email VARCHAR(255) DEFAULT NULL AFTER cellphone;
+-- ALTER TABLE fornitori ADD COLUMN indirizzo VARCHAR(255) DEFAULT NULL AFTER email;
+-- ALTER TABLE fornitori ADD COLUMN civico VARCHAR(50) DEFAULT NULL AFTER indirizzo;
+-- ALTER TABLE fornitori ADD COLUMN sede_citta VARCHAR(255) DEFAULT NULL AFTER civico;
+-- ALTER TABLE fornitori ADD COLUMN sede_prov VARCHAR(50) DEFAULT NULL AFTER sede_citta;
+-- ALTER TABLE fornitori ADD COLUMN updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;
+
+-- Aggiunta codice_zucchetti su societa se mancante
+-- ALTER TABLE societa ADD COLUMN codice_zucchetti VARCHAR(50) DEFAULT NULL AFTER cod_fiscale;
+-- ALTER TABLE societa ADD KEY idx_societa_codice_zucchetti (codice_zucchetti);
+
+
+-- =============================================================================
+-- H) VERIFICHE POST-MIGRATION
+-- =============================================================================
+-- SELECT COUNT(*) FROM societa;
+-- SELECT COUNT(*) FROM fornitori;
+-- SELECT set_name, set_value FROM sec_settings WHERE set_name LIKE 'zuc_%';
+-- SHOW CREATE TABLE societa;
+-- SHOW CREATE TABLE fornitori;
+CREATE TABLE `sec_users_societa` (
+  `login` varchar(255) NOT NULL,
+  `societa_id` int(11) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;
+COMMIT;
+
+CREATE TABLE `pigliacelli`.`stato_fatture` (`id` INT(11) NOT NULL AUTO_INCREMENT , `nome` VARCHAR(255) NOT NULL , PRIMARY KEY (`id`)) ENGINE = InnoDB;
+INSERT INTO `stato_fatture` (`id`, `nome`) VALUES (NULL, 'Da revisionare'), (NULL, 'Validata'), (NULL, 'Rifiutata'), (NULL, 'Pagamento inviato');
+
+
+TRUNCATE TABLE subvettori_autisti
+
+ALTER TABLE `contratti` DROP FOREIGN KEY `contratti_sec_users_fk`; ALTER TABLE `contratti` ADD CONSTRAINT `contratti_sec_users_fk` FOREIGN KEY (`intestatario`) REFERENCES `sec_users`(`login`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `sec_users_groups` DROP FOREIGN KEY `sec_user_groups_sec_users_fk`; ALTER TABLE `sec_users_groups` ADD CONSTRAINT `sec_user_groups_sec_users_fk` FOREIGN KEY (`login`) REFERENCES `sec_users`(`login`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `documenti` DROP FOREIGN KEY `documenti_sec_users_fk`; ALTER TABLE `documenti` ADD CONSTRAINT `documenti_sec_users_fk` FOREIGN KEY (`login`) REFERENCES `sec_users`(`login`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+INSERT INTO `stati_contratti` (`id`, `nome`) VALUES (NULL, 'Da revisionare');

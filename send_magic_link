@@ -1,0 +1,283 @@
+/**
+ * Invio email al subvettore — link pubblico cifrato (senza login).
+ *
+ * Il link in mail punta al gateway (sett_magic_link_url) con ?t=<token>.
+ * Il gateway (magic_link_login_subvectors) apre la form con subvettore_contratto_id.
+ *
+ * Token: scId, contrattoId, subvettoreId, exp (AES-256-CBC + sett_cypher_key).
+ *
+ * sec_settings:
+ *   sett_cypher_key
+ *   sett_magic_link_url      → URL gateway (link in mail)
+ *   sett_magic_link_form_url → URL form .php (redirect gateway)
+ *   magic_link_ttl_days  (opzionale, default 30)
+ *   magic_link_mail_subject (opzionale)
+ *   mail_base_url — es. https://uat.workspace.pigliacelli.it (no /app_menu)
+ */
+
+if (!function_exists('magic_link_encryptData')) {
+    function magic_link_encryptData($data, $key)
+    {
+        $iv = openssl_random_pseudo_bytes(16);
+        $encrypted = openssl_encrypt((string)$data, 'AES-256-CBC', $key, 0, $iv);
+
+        return base64_encode($iv . $encrypted);
+    }
+}
+
+$sc_setting = function ($name, $default = '') {
+    $safeName = str_replace("'", "''", trim((string)$name));
+    sc_lookup(rsSet, "SELECT set_value FROM sec_settings WHERE set_name = '" . $safeName . "' LIMIT 1");
+    if (isset({rsSet[0][0]})) {
+        return (string){rsSet[0][0]};
+    }
+    return $default;
+};
+
+if (!function_exists('pigliacelli_mail_logo_read_embed')) {
+    function pigliacelli_mail_logo_read_embed($anchorFile = null)
+    {
+        $rel = '_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png';
+        $dir = realpath(dirname($anchorFile ?: __FILE__));
+        for ($i = 0; $i < 12 && $dir; $i++) {
+            $try = $dir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel);
+            if (is_readable($try)) {
+                $bin = @file_get_contents($try);
+                if ($bin !== false && $bin !== '' && strlen($bin) < 500000) {
+                    return 'data:image/png;base64,' . base64_encode($bin);
+                }
+            }
+            $p = dirname($dir);
+            if ($p === $dir) {
+                break;
+            }
+            $dir = $p;
+        }
+        return '';
+    }
+}
+
+if (!function_exists('pigliacelli_mail_logo_src')) {
+    function pigliacelli_mail_logo_src($getSetting, $anchorFile = null)
+    {
+        $embed = pigliacelli_mail_logo_read_embed($anchorFile);
+        if ($embed !== '') {
+            return $embed;
+        }
+        $base = rtrim(trim((string)$getSetting('mail_base_url', '')), '/');
+        if ($base !== '' && preg_match('#^https?://#i', $base) === 1) {
+            return htmlspecialchars(
+                $base . '/_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png',
+                ENT_QUOTES,
+                'UTF-8'
+            );
+        }
+        return '';
+    }
+}
+
+if (!function_exists('pigliacelli_mail_layout')) {
+    function pigliacelli_mail_layout($title, $innerHtml, $mailLogoUrl)
+    {
+        $t = htmlspecialchars((string)$title, ENT_QUOTES, 'UTF-8');
+        $logoTd = '';
+        if ((string)$mailLogoUrl !== '') {
+            $logoTd = '<td align="right" valign="middle" style="width:148px;padding-left:16px;">'
+                . '<img src="' . (string)$mailLogoUrl . '" alt="Pigliacelli" width="140" '
+                . 'style="display:block;max-width:140px;width:140px;height:auto;border:0;" />'
+                . '</td>';
+        }
+        return '<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">'
+            . '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            . '<title>' . $t . '</title></head>'
+            . '<body style="margin:0;padding:0;background:#eef1f4;">'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef1f4;">'
+            . '<tr><td align="center" style="padding:32px 16px;">'
+            . '<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" '
+            . 'style="max-width:600px;width:100%;background:#fff;border-radius:12px;border:1px solid #dde1e6;">'
+            . '<tr><td style="padding:22px 28px 18px;border-bottom:1px solid #e8ebef;background:#fafbfc;">'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
+            . '<td valign="middle" style="font-family:Arial,Helvetica,sans-serif;font-size:19px;font-weight:bold;color:#1a3a5c;line-height:1.3;">' . $t . '</td>'
+            . $logoTd . '</tr></table></td></tr>'
+            . '<tr><td style="padding:26px 28px 22px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#2d3748;">'
+            . $innerHtml . '</td></tr>'
+            . '<tr><td style="padding:14px 28px;background:#f4f6f8;border-top:1px solid #e8ebef;'
+            . 'font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#718096;">'
+            . 'Messaggio automatico &mdash; non rispondere.</td></tr>'
+            . '</table></td></tr></table></body></html>';
+    }
+}
+
+$isAjaxCall = (isset({Is_Ajax}) && strtoupper((string){Is_Ajax}) === 'Y');
+
+$ajax_fail_msg = '';
+$ajax_fail = function ($msg) use (&$isAjaxCall, &$ajax_fail_msg) {
+    $ajax_fail_msg = $msg;
+    sc_log_add('MAGIC_LINK', 'FAIL: ' . $ajax_fail_msg);
+    if ($isAjaxCall) {
+        sc_ajax_message($ajax_fail_msg);
+    } else {
+        sc_error_message($ajax_fail_msg);
+        sc_error_exit();
+    }
+    exit;
+};
+
+$ajax_ok_msg = '';
+$ajax_ok = function ($msg) use (&$isAjaxCall, &$ajax_ok_msg) {
+    $ajax_ok_msg = $msg;
+    sc_log_add('MAGIC_LINK', 'OK: ' . $ajax_ok_msg);
+    if ($isAjaxCall) {
+        sc_ajax_message($ajax_ok_msg);
+    } else {
+        sc_alert($ajax_ok_msg);
+        sc_redir('grid_contratti');
+    }
+    exit;
+};
+
+$contrattoId = (int)[contrattoId];
+$subvettoreId = (int)[subvettoreId];
+
+if ($contrattoId <= 0) {
+    $contrattoId = isset($_GET['contrattoId']) ? (int)$_GET['contrattoId'] : 0;
+}
+if ($subvettoreId <= 0) {
+    $subvettoreId = isset($_GET['subvettoreId']) ? (int)$_GET['subvettoreId'] : 0;
+}
+
+if ($contrattoId <= 0 || $subvettoreId <= 0) {
+    $ajax_fail('Parametri mancanti: contrattoId e subvettoreId.');
+}
+
+$cypherKey = trim($sc_setting('sett_cypher_key', ''));
+$formBaseUrl = trim($sc_setting('sett_magic_link_url', ''));
+
+if ($cypherKey === '') {
+    $ajax_fail('Configurazione mancante: sett_cypher_key.');
+}
+if ($formBaseUrl === '' || preg_match('#^https?://#i', $formBaseUrl) !== 1) {
+    $ajax_fail('Configurazione mancante: sett_magic_link_url (URL della form pubblica).');
+}
+
+$ttlDays = (int)$sc_setting('magic_link_ttl_days', '30');
+if ($ttlDays <= 0) {
+    $ttlDays = 30;
+}
+
+sc_lookup(rsSc, "
+    SELECT
+        id,
+        email_rappresentante,
+        nome_rappresentante,
+        cognome_rappresentante
+    FROM subvettori_contratti
+    WHERE contratto_id = " . (int)$contrattoId . "
+      AND subvettore_id = " . (int)$subvettoreId . "
+    LIMIT 1
+");
+
+if (!isset({rsSc[0][0]})) {
+    $ajax_fail('Nessun record subvettori_contratti per questo contratto/subvettore.');
+}
+
+$scId = (int){rsSc[0][0]};
+$toEmail = trim((string){rsSc[0][1]});
+$nomeR = trim((string){rsSc[0][2]});
+$cognomeR = trim((string){rsSc[0][3]});
+
+$displayName = trim($nomeR . ' ' . $cognomeR);
+if ($displayName === '') {
+    $displayName = 'Gentile subvettore';
+}
+
+if ($toEmail === '' || filter_var($toEmail, FILTER_VALIDATE_EMAIL) === false) {
+    $ajax_fail('Email rappresentante mancante o non valida (email_rappresentante).');
+}
+
+$payload = json_encode(array(
+    'scId'         => $scId,
+    'contrattoId'  => (int)$contrattoId,
+    'subvettoreId' => (int)$subvettoreId,
+    'exp'          => time() + ($ttlDays * 86400),
+), JSON_UNESCAPED_UNICODE);
+
+$token = magic_link_encryptData($payload, $cypherKey);
+
+$base = rtrim($formBaseUrl, '?&');
+$join = (strpos($base, '?') !== false) ? '&' : '?';
+$magicUrl = $base . $join . 't=' . rawurlencode($token);
+
+// --- SMTP ---
+sc_lookup(rs_smtp, 'SELECT set_name, set_value FROM sec_settings');
+if (isset({rs_smtp[0][0]})) {
+    foreach ({rs_smtp} as $f) {
+        $_SESSION['sett_' . $f[0]] = $f[1];
+    }
+}
+
+$sett_smtp = array();
+if (isset($_SESSION['sett_smtp_api']) && $_SESSION['sett_smtp_api'] === 'custom') {
+    $sett_smtp = array(
+        'settings' => array(
+            'gateway'       => 'smtp',
+            'smtp_server'   => $_SESSION['sett_smtp_server'],
+            'smtp_protocol' => $_SESSION['sett_smtp_security'],
+            'smtp_port'     => $_SESSION['sett_smtp_port'],
+            'smtp_user'     => $_SESSION['sett_smtp_user'],
+            'smtp_password' => $_SESSION['sett_smtp_pass'],
+            'from_email'    => $_SESSION['sett_smtp_from_email'],
+            'from_name'     => $_SESSION['sett_smtp_from_name'],
+        ),
+    );
+} else {
+    $sett_smtp = array('profile' => isset($_SESSION['sett_smtp_api']) ? $_SESSION['sett_smtp_api'] : '');
+}
+
+if (!function_exists('sc_send_mail_api')) {
+    $ajax_fail('Invio email non disponibile (sc_send_mail_api).');
+}
+
+$subjectTpl = trim($sc_setting('magic_link_mail_subject', ''));
+$titolo = ($subjectTpl !== '')
+    ? str_replace(['{contrattoId}', '{subvettoreId}'], [(string)$contrattoId, (string)$subvettoreId], $subjectTpl)
+    : 'Compilazione dati contratto #' . (int)$contrattoId;
+
+$safeUrl = htmlspecialchars($magicUrl, ENT_QUOTES, 'UTF-8');
+$safeNome = htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8');
+
+$messaggioTesto = $displayName . ",\n\n"
+    . "Per compilare i dati del contratto #" . (int)$contrattoId . " apra il link seguente:\n\n"
+    . $magicUrl . "\n\n"
+    . "Il link è personale, cifrato e scade tra " . (int)$ttlDays . " giorni.\n\n"
+    . "Messaggio automatico — non rispondere.";
+
+$mailBase = rtrim(trim($sc_setting('mail_base_url', '')), '/');
+$mailLogoUrl = pigliacelli_mail_logo_src($sc_setting, __FILE__);
+$mailLogoLog = (strpos($mailLogoUrl, 'data:image/') === 0)
+    ? 'embed bytes=' . (strlen($mailLogoUrl) - 22)
+    : 'url src=[' . $mailLogoUrl . ']';
+sc_log_add('MAGIC_LINK', 'mail_logo ' . $mailLogoLog . ' mail_base_url=[' . $mailBase . ']');
+
+$mailInner = '<p style="margin:0 0 16px;">' . $safeNome . ',</p>'
+    . '<p style="margin:0 0 24px;">Le chiediamo di compilare i dati per il contratto <strong>#' . (int)$contrattoId . '</strong>.</p>'
+    . '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;"><tr>'
+    . '<td align="center" bgcolor="#5b2d8e" style="border-radius:8px;background-color:#5b2d8e;">'
+    . '<a href="' . $safeUrl . '" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:bold;'
+    . 'color:#ffffff;text-decoration:none;font-family:Arial,Helvetica,sans-serif;">Apri il modulo</a>'
+    . '</td></tr></table>'
+    . '<p style="margin:0 0 8px;font-size:13px;color:#718096;">Oppure copi questo indirizzo nel browser:</p>'
+    . '<p style="margin:0;word-break:break-all;font-size:13px;">'
+    . '<a href="' . $safeUrl . '" style="color:#5b2d8e;">' . $safeUrl . '</a></p>';
+$htmlContent = pigliacelli_mail_layout($titolo, $mailInner, $mailLogoUrl);
+
+sc_send_mail_api(array_merge($sett_smtp, array(
+    'message' => array(
+        'html'    => $htmlContent,
+        'text'    => $messaggioTesto,
+        'to'      => $toEmail,
+        'subject' => $titolo,
+    ),
+)));
+
+$ajax_ok('Link inviato a ' . $toEmail);

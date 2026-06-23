@@ -1,0 +1,30 @@
+// Scriptcase — app_menu → Programming → onLoad
+// IMPORTANTE: in onLoad NON usare "return" (causa pagina bianca).
+// Imposta hasLoggedFirst = 1 al primo accesso al menu.
+
+$usrLogin = trim((string)[usr_login]);
+
+if ($usrLogin !== '' && strcasecmp($usrLogin, 'Guest') !== 0) {
+    try {
+        $loginSql = str_replace("'", "''", $usrLogin);
+
+        sc_lookup(rsHasLogged, "
+            SELECT COALESCE(hasLoggedFirst, 0)
+            FROM sec_users
+            WHERE login = '$loginSql'
+            LIMIT 1
+        ");
+
+        if (isset({rsHasLogged[0][0]}) && (int){rsHasLogged[0][0]} === 0) {
+            sc_exec_sql("
+                UPDATE sec_users
+                SET hasLoggedFirst = 1
+                WHERE login = '$loginSql'
+                  AND COALESCE(hasLoggedFirst, 0) = 0
+            ");
+            sc_log_add('FIRST_LOGIN', "hasLoggedFirst=1 login=$usrLogin (app_menu onLoad)");
+        }
+    } catch (Throwable $e) {
+        sc_log_add('FIRST_LOGIN', "ERRORE onLoad login=$usrLogin — " . $e->getMessage());
+    }
+}

@@ -1,0 +1,5 @@
+/**
+ * OPZIONALE — molte form Scriptcase non hanno l'evento onLoadRecord.
+ * La logica data nascita è in onLoad (blocco rsScLegal / rsReviewScLegal).
+ * Non incollare questo file se l'evento non esiste nella tua form.
+ */

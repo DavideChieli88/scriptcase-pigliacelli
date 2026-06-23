@@ -1,0 +1,121 @@
+function sql_quote($v)
+{
+    if ($v === null) {
+        return "NULL";
+    }
+    $v = (string)$v;
+    return "'" . str_replace("'", "''", $v) . "'";
+}
+
+function connetti_pdo_sga($settings)
+{
+    $set_names = ['sgam_user', 'sgam_pswd', 'sgam_db', 'sgam_server'];
+
+    foreach ($set_names as $set_name) {
+        if (!array_key_exists($set_name, $settings) || trim((string)$settings[$set_name]) === '') {
+            sc_error_message("Parametro '" . $set_name . "' non trovato o vuoto in sec_settings.");
+            return null;
+        }
+    }
+
+    try {
+        $dsn_sga = "sqlsrv:Server=" . $settings['sgam_server'] .
+                   ";Database=" . $settings['sgam_db'] .
+                   ";Encrypt=1" .
+                   ";TrustServerCertificate=1";
+
+        return new PDO(
+            $dsn_sga,
+            $settings['sgam_user'],
+            $settings['sgam_pswd'],
+            [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_NUM,
+            ]
+        );
+    } catch (PDOException $e) {
+        sc_error_message("Errore connessione PDO SGA: " . $e->getMessage());
+        return null;
+    }
+}
+
+// --- pigliacelli: credenziali SGA da sec_settings ---
+sc_lookup(settingsRows, "
+    SELECT set_name, set_value
+    FROM sec_settings
+    WHERE set_name IN ('sgam_user', 'sgam_pswd', 'sgam_db', 'sgam_server')
+", "pigliacelli");
+
+$settings = [];
+if (!empty({settingsRows})) {
+    foreach ({settingsRows} as $settingRow) {
+        $settings[$settingRow[0]] = $settingRow[1];
+    }
+}
+
+$pdo_sga = connetti_pdo_sga($settings);
+if ($pdo_sga === null) {
+    return;
+}
+
+// --- pigliacelli: codici gia' importati (evita N sc_lookup nel loop) ---
+$codici_esistenti = [];
+sc_lookup(subEsistentiRows, "SELECT codice_sga FROM subvettori WHERE codice_sga IS NOT NULL", "pigliacelli");
+if (!empty({subEsistentiRows})) {
+    foreach ({subEsistentiRows} as $subRow) {
+        $codici_esistenti[(string)$subRow[0]] = true;
+    }
+}
+
+// --- SGA: lettura fornitori-vettore ---
+$sql = "
+  SELECT CODICE, RAGIONE_SOCIALE, INDIRIZZO, LOCALITA, PROVINCIA,
+         TELEFONO, CELLULARE, E_MAIL, PARTITA_IVA, CODICE_FISCALE
+  FROM BaCliFor
+  WHERE CLIENTE_FORNITORE = 'F' AND ATTIVO = 'S' AND SOCIETA = 1
+  ORDER BY CODICE
+";
+
+try {
+    $stmt = $pdo_sga->query($sql);
+} catch (PDOException $e) {
+    sc_error_message("Errore select BaCliFor: " . $e->getMessage());
+    return;
+}
+
+$inseriti = 0;
+$saltati = 0;
+
+while (($row = $stmt->fetch(PDO::FETCH_NUM)) !== false) {
+    $codice_sga      = $row[0];
+    $ragione_sociale = $row[1];
+    $indirizzo       = $row[2];
+    $sede_citta      = $row[3];
+    $sede_prov       = $row[4];
+    $phone           = $row[5];
+    $cellphone       = $row[6];
+    $email           = $row[7];
+    $piva            = $row[8];
+    $cod_fiscale     = $row[9];
+
+    if (isset($codici_esistenti[(string)$codice_sga])) {
+        $saltati++;
+        continue;
+    }
+
+    $ins = "
+      INSERT INTO subvettori
+        (login_subvettore, ragione_sociale, cod_fiscale, piva, phone, cellphone,
+         indirizzo, sede_citta, sede_prov, codice_sga)
+      VALUES
+        (" . sql_quote($email) . ", " . sql_quote($ragione_sociale) . ", " . sql_quote($cod_fiscale) . ", " . sql_quote($piva) . ", " . sql_quote($phone) . ", " . sql_quote($cellphone) . ",
+         " . sql_quote($indirizzo) . ", " . sql_quote($sede_citta) . ", " . sql_quote($sede_prov) . ", " . sql_quote($codice_sga) . ")
+    ";
+
+    sc_exec_sql($ins, "pigliacelli");
+    $codici_esistenti[(string)$codice_sga] = true;
+    $inseriti++;
+}
+
+$stmt->closeCursor();
+sc_log_add("EXPORT_DATA", "Subvettori inseriti: " . $inseriti . ", gia' presenti: " . $saltati);

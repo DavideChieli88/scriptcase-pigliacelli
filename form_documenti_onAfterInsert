@@ -1,0 +1,246 @@
+// Recupero nome tipo documento
+sc_lookup(rsTipoDoc, "
+    SELECT nome
+    FROM tipi_documento
+    WHERE id = " . (int){tipo_documento_id} . "
+    LIMIT 1
+");
+$docNome = isset({rsTipoDoc[0][0]}) ? trim((string){rsTipoDoc[0][0]}) : 'Documento';
+
+$docId        = {id};
+$loginField   = trim((string){login});
+$destinatario = $loginField;
+
+$loginSql = str_replace("'", "''", $loginField);
+$userLogin        = '';
+$userActive       = '';
+$userDisplayName  = '';
+$userEmail        = '';
+$storedPassword   = '';
+$hasLoggedFirst   = 0;
+$plainPassword    = '';
+$sendCredentials  = false;
+
+sc_lookup(rsUserDoc, "
+    SELECT login, active, name, email, pswd, COALESCE(hasLoggedFirst, 0)
+    FROM sec_users
+    WHERE login = '$loginSql'
+    LIMIT 1
+");
+
+if (!isset({rsUserDoc[0][0]}) && filter_var($loginField, FILTER_VALIDATE_EMAIL) !== false) {
+    sc_lookup(rsUserDoc, "
+        SELECT login, active, name, email, pswd, COALESCE(hasLoggedFirst, 0)
+        FROM sec_users
+        WHERE email = '$loginSql'
+        LIMIT 1
+    ");
+}
+
+if (isset({rsUserDoc[0][0]})) {
+    $userLogin       = trim((string){rsUserDoc[0][0]});
+    $userActive      = trim((string){rsUserDoc[0][1]});
+    $userDisplayName = trim((string){rsUserDoc[0][2]});
+    $userEmail       = trim((string){rsUserDoc[0][3]});
+    $storedPassword  = trim((string){rsUserDoc[0][4]});
+    $hasLoggedFirst  = (int){rsUserDoc[0][5]};
+
+    if ($destinatario === '' || filter_var($destinatario, FILTER_VALIDATE_EMAIL) === false) {
+        if ($userEmail !== '' && filter_var($userEmail, FILTER_VALIDATE_EMAIL) !== false) {
+            $destinatario = $userEmail;
+        }
+    }
+
+    $activeNorm = strtoupper($userActive);
+    $isActive   = ($activeNorm === 'Y' || $activeNorm === '1' || $activeNorm === 'S' || $activeNorm === 'SI' || $activeNorm === 'YES');
+
+    if (!$isActive) {
+        $loginUpd = str_replace("'", "''", $userLogin);
+        sc_exec_sql("UPDATE sec_users SET active = 'Y' WHERE login = '$loginUpd'");
+        sc_log_add('MAIL_DOCS', "onAfterInsert doc=$docId — attivato sec_users login=$userLogin (era inactive)");
+    }
+
+    // Mai loggato: invia credenziali (pswd in DB è di solito hash MD5, non inviabile in chiaro)
+    if ($hasLoggedFirst === 0) {
+        $pswLooksMd5 = ($storedPassword !== '' && preg_match('/^[a-f0-9]{32}$/i', $storedPassword));
+
+        if ($storedPassword !== '' && !$pswLooksMd5) {
+            $plainPassword   = $storedPassword;
+            $sendCredentials = true;
+            sc_log_add('MAIL_DOCS', "onAfterInsert doc=$docId — credenziali da pswd in chiaro login=$userLogin");
+        } else {
+            $chars    = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_!+-*';
+            $charsLen = strlen($chars);
+            for ($i = 0; $i < 12; $i++) {
+                $plainPassword .= $chars[random_int(0, $charsLen - 1)];
+            }
+
+            $pswHash  = str_replace("'", "''", md5($plainPassword));
+            $loginUpd = str_replace("'", "''", $userLogin);
+            sc_exec_sql("UPDATE sec_users SET pswd = '$pswHash' WHERE login = '$loginUpd'");
+            $sendCredentials = true;
+            sc_log_add('MAIL_DOCS', "onAfterInsert doc=$docId — nuova password temporanea login=$userLogin (hasLoggedFirst=0, pswd DB era hash)");
+        }
+    } else {
+        sc_log_add('MAIL_DOCS', "onAfterInsert doc=$docId — login=$userLogin già loggato (hasLoggedFirst=1), mail credenziali non inviata");
+    }
+}
+
+if ($destinatario === '' || filter_var($destinatario, FILTER_VALIDATE_EMAIL) === false) {
+    sc_log_add('MAIL_DOCS', "onAfterInsert doc=$docId — email non valida: login=[$loginField] dest=[$destinatario]");
+    return;
+}
+// SMTP + login_url dalla stessa query
+sc_lookup(rs_smtp, "SELECT set_name, set_value FROM sec_settings");
+$loginUrl = '';
+if (isset({rs_smtp[0][0]})) {
+    foreach ({rs_smtp} as $f) {
+        $_SESSION['sett_' . $f[0]] = $f[1];
+        if ($f[0] === 'login_url') {
+            $loginUrl = trim((string)$f[1]);
+        }
+    }
+}
+
+if (isset($_SESSION['sett_smtp_api']) && $_SESSION['sett_smtp_api'] == 'custom') {
+    $sett_smtp = array(
+        'settings' => array(
+            'gateway'       => 'smtp',
+            'smtp_server'   => $_SESSION['sett_smtp_server'],
+            'smtp_protocol' => $_SESSION['sett_smtp_security'],
+            'smtp_port'     => $_SESSION['sett_smtp_port'],
+            'smtp_user'     => $_SESSION['sett_smtp_user'],
+            'smtp_password' => $_SESSION['sett_smtp_pass'],
+            'from_email'    => $_SESSION['sett_smtp_from_email'],
+            'from_name'     => $_SESSION['sett_smtp_from_name'],
+        ),
+    );
+} else {
+    $sett_smtp = array(
+        'profile' => isset($_SESSION['sett_smtp_api']) ? $_SESSION['sett_smtp_api'] : ''
+    );
+}
+
+$soggetto     = "Richiesta documento — " . $docNome . " (#$docId)";
+$safeDocNome  = htmlspecialchars($docNome, ENT_QUOTES, 'UTF-8');
+$safeDocId    = (int)$docId;
+$safeLoginUrl = htmlspecialchars($loginUrl, ENT_QUOTES, 'UTF-8');
+
+$credBlockPlain = '';
+$credBlockHtml  = '';
+if ($sendCredentials && $plainPassword !== '') {
+    $credDisplayName = $userDisplayName !== '' ? $userDisplayName : 'Gentile subvettore';
+    $safeCredName    = htmlspecialchars($credDisplayName, ENT_QUOTES, 'UTF-8');
+    $safeCredLogin   = htmlspecialchars($userLogin, ENT_QUOTES, 'UTF-8');
+    $safeCredPwd     = htmlspecialchars($plainPassword, ENT_QUOTES, 'UTF-8');
+
+    $soggetto = "Richiesta documento e credenziali — " . $docNome . " (#$docId)";
+
+    $credBlockPlain = "\n\nIl suo account è stato attivato. Credenziali area riservata (password temporanea):\n"
+        . "Login: $userLogin\n"
+        . "Password: $plainPassword\n";
+
+    $credBlockHtml = "
+    <div style='margin-top:22px;padding:14px 16px;background:#f8f9fb;border:1px solid #e2e6ea;border-radius:8px;font-size:14px;'>
+      <p style='margin:0 0 10px;'><strong>Account attivato</strong> — credenziali per l'area riservata (password temporanea):</p>
+      <strong>Login:</strong> $safeCredLogin<br>
+      <strong>Password:</strong> $safeCredPwd
+    </div>";
+}
+
+$testoPlain = "Gentile subvettore,\n\n"
+    . "è stato richiesto l'inserimento del seguente documento:\n\n"
+    . "Tipo documento: $docNome\n"
+    . "Riferimento: #$safeDocId\n\n"
+    . "Per procedere, acceda alla sua area riservata:\n" . $loginUrl
+    . $credBlockPlain
+    . "\n\nMessaggio automatico — non rispondere.";
+
+$testoHtml = "
+<html>
+<head>
+<style>
+  body { margin:0; font-family: Arial, sans-serif; background: #f4f4f4; padding: 20px; }
+  .box { background:#fff; border-radius: 8px; overflow: hidden; max-width: 560px; margin: 0 auto; }
+  .head { padding: 16px 18px; background: #dbeafe; color: #1e3a5f; font-weight: bold; font-size: 16px; }
+  .content { padding: 18px; color: #111827; line-height: 1.6; }
+  .detail-row { display: flex; gap: 8px; margin: 6px 0; font-size: 14px; }
+  .detail-label { color: #6b7280; min-width: 140px; }
+  .detail-value { color: #111827; font-weight: bold; }
+  .btn { display: inline-block; margin-top: 20px; padding: 10px 18px;
+         background: #111827; color: #fff; text-decoration: none;
+         border-radius: 8px; font-weight: bold; font-size: 14px; }
+  .footer { padding: 12px 18px; background: #f9fafb;
+            border-top: 1px solid #e5e7eb; font-size: 12px; color: #9ca3af; }
+</style>
+</head>
+<body>
+<div class='box'>
+  <div class='head'>Richiesta inserimento documento</div>
+  <div class='content'>
+    <p>Gentile subvettore,</p>
+    <p>è stato richiesto l'inserimento del seguente documento. La preghiamo di accedere alla sua <strong>area riservata</strong> per procedere con il caricamento.</p>
+    <div class='detail-row'>
+      <span class='detail-label'>Tipo documento:</span>
+      <span class='detail-value'>$safeDocNome</span>
+    </div>
+    <div class='detail-row'>
+      <span class='detail-label'>Riferimento:</span>
+      <span class='detail-value'>#$safeDocId</span>
+    </div>
+    $credBlockHtml
+    <a class='btn' href='$safeLoginUrl'>Accedi all'area riservata</a>
+  </div>
+  <div class='footer'>Messaggio automatico — non rispondere a questa email.</div>
+</div>
+</body>
+</html>";
+
+// Invio mail (unica: documento + eventuali credenziali nello stesso messaggio)
+sc_log_add(
+    'MAIL_DOCS',
+    "onAfterInsert doc=$docId — preparazione mail dest=$destinatario sendCredentials=" . ($sendCredentials ? '1' : '0')
+    . " hasLoggedFirst=$hasLoggedFirst oggetto=[$soggetto]"
+);
+
+try {
+    $mailOk = sc_send_mail_api(array_merge($sett_smtp, array(
+        'message' => array(
+            'to'      => $destinatario,
+            'subject' => $soggetto,
+            'html'    => $testoHtml,
+            'text'    => $testoPlain,
+        ),
+    )));
+
+    if ($mailOk === false || $mailOk === null) {
+        sc_log_add('MAIL_DOCS', "ERRORE onAfterInsert doc=$docId tipo='$docNome' — invio mail fallito (dest: $destinatario)");
+    } else {
+        $credNote = ($sendCredentials && $plainPassword !== '') ? ' con credenziali' : '';
+        sc_log_add('MAIL_DOCS', "onAfterInsert doc=$docId tipo='$docNome' — mail inviata a $destinatario$credNote");
+    }
+
+} catch (Exception $e) {
+    sc_log_add('MAIL_DOCS', "onAfterInsert doc=$docId — ERRORE mail a $destinatario: " . $e->getMessage());
+} catch (Throwable $e) {
+    sc_log_add('MAIL_DOCS', "onAfterInsert doc=$docId — ERRORE mail a $destinatario: " . $e->getMessage());
+}
+
+// Notifica interna
+try {
+    $notifyTitolo    = "Nuovo documento richiesto";
+    $notifyMessaggio = "È stato richiesto l'inserimento di: $docNome (#$docId)";
+
+    sc_send_notification(
+        {login},
+        $notifyTitolo,
+        $notifyMessaggio,
+        $safeLoginUrl,
+        'fa-file',
+        'blue'
+    );
+    sc_log_add('MAIL_DOCS', "onAfterInsert doc=$docId — notifica inviata a " . {login});
+
+} catch (Exception $e) {
+    sc_log_add('MAIL_DOCS', "onAfterInsert doc=$docId — ERRORE notifica a " . {login} . ": " . $e->getMessage());
+}

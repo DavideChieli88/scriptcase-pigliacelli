@@ -1,0 +1,506 @@
+/**
+ * form_subvettori_contratti_for_subvectors_magic_link_review
+ * → onAfterInsert E onAfterUpdate (stesso codice in entrambi)
+ *
+ * 1) Sync anagrafica + dati legali (come magic_link)
+ * 2) Imposta contratti.stato = Da revisionare
+ * 3) Mail ad admin/operatori (group 1 e 3)
+ * 4) Notifica SC (sc_send_notification) agli stessi operatori
+ * 5) Messaggio di conferma al subvettore (NO redirect EasyGN)
+ */
+
+// === SYNC ===
+if (!function_exists('magic_link_review_sql_quote')) {
+    function magic_link_review_sql_quote($v)
+    {
+        if ($v === null) {
+            return 'NULL';
+        }
+        return "'" . str_replace("'", "''", (string)$v) . "'";
+    }
+}
+
+if (!function_exists('magic_link_review_normalize_date_db')) {
+    function magic_link_review_normalize_date_db($value)
+    {
+        $value = trim((string)$value);
+        if ($value === '' || $value === '0000-00-00' || $value === '00/00/0000') {
+            return null;
+        }
+        if (preg_match('/^(\d{4})-(\d{2})-(\d{2})/', $value, $m) === 1) {
+            $year  = (int)$m[1];
+            $month = (int)$m[2];
+            $day   = (int)$m[3];
+            if ($year >= 1900 && checkdate($month, $day, $year)) {
+                return sprintf('%04d-%02d-%02d', $year, $month, $day);
+            }
+            return null;
+        }
+        if (preg_match('/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/', $value, $m) === 1) {
+            $day   = (int)$m[1];
+            $month = (int)$m[2];
+            $year  = (int)$m[3];
+            if (checkdate($month, $day, $year)) {
+                return sprintf('%04d-%02d-%02d', $year, $month, $day);
+            }
+            return null;
+        }
+        return null;
+    }
+}
+
+if (!function_exists('magic_link_review_prov_nascita_value')) {
+    function magic_link_review_prov_nascita_value()
+    {
+        if (isset({prov_luogo_nascita_rappresentante}) && trim((string){prov_luogo_nascita_rappresentante}) !== '') {
+            return trim((string){prov_luogo_nascita_rappresentante});
+        }
+        if (isset({prov_nascita_rappresentante}) && trim((string){prov_nascita_rappresentante}) !== '') {
+            return trim((string){prov_nascita_rappresentante});
+        }
+        return '';
+    }
+}
+
+if (!function_exists('magic_link_review_sync_after_save')) {
+    function magic_link_review_sync_after_save()
+    {
+        $scId = 0;
+        if (isset({id}) && (int){id} > 0) {
+            $scId = (int){id};
+        } elseif (isset([subvettore_contratto_id]) && (int)[subvettore_contratto_id] > 0) {
+            $scId = (int)[subvettore_contratto_id];
+        }
+
+        $subvettoreId = 0;
+        if (isset({subvettore_id}) && (int){subvettore_id} > 0) {
+            $subvettoreId = (int){subvettore_id};
+        }
+
+        if ($subvettoreId <= 0 && $scId > 0) {
+            sc_lookup(rsSubId, "
+                SELECT subvettore_id
+                FROM subvettori_contratti
+                WHERE id = " . (int)$scId . "
+                LIMIT 1
+            ");
+            if (!empty({rsSubId[0][0]})) {
+                $subvettoreId = (int){rsSubId[0][0]};
+            }
+        }
+
+        $ragione_sociale                  = isset({ragione_sociale})                  ? trim((string){ragione_sociale})                  : '';
+        $sede_citta                       = isset({sede_citta})                       ? trim((string){sede_citta})                       : '';
+        $sede_prov                        = isset({sede_prov})                        ? trim((string){sede_prov})                        : '';
+        $indirizzo                        = isset({indirizzo})                        ? trim((string){indirizzo})                        : '';
+        $civico                           = isset({civico})                           ? trim((string){civico})                           : '';
+        $cod_fiscale                      = isset({cod_fiscale})                      ? trim((string){cod_fiscale})                      : '';
+        $piva                             = isset({piva})                             ? trim((string){piva})                             : '';
+        $num_iscrizione_reg_imprese       = isset({num_iscrizione_reg_imprese})       ? trim((string){num_iscrizione_reg_imprese})       : '';
+        $locazione_iscrizione_reg_imprese = isset({locazione_iscrizione_reg_imprese}) ? trim((string){locazione_iscrizione_reg_imprese}) : '';
+        $rea                              = isset({rea})                              ? trim((string){rea})                              : '';
+        $cellphone                        = isset({phone})                            ? trim((string){phone})                            : '';
+
+        $hasAnagrafica = (
+            $ragione_sociale !== '' || $piva !== '' || $cod_fiscale !== ''
+            || $sede_citta !== '' || $indirizzo !== '' || $cellphone !== ''
+        );
+
+        if ($subvettoreId > 0 && $hasAnagrafica) {
+            sc_exec_sql("
+                UPDATE subvettori
+                SET
+                    ragione_sociale                  = " . magic_link_review_sql_quote($ragione_sociale) . ",
+                    sede_citta                       = " . magic_link_review_sql_quote($sede_citta) . ",
+                    sede_prov                        = " . magic_link_review_sql_quote($sede_prov) . ",
+                    indirizzo                        = " . magic_link_review_sql_quote($indirizzo) . ",
+                    civico                           = " . magic_link_review_sql_quote($civico) . ",
+                    cod_fiscale                      = " . magic_link_review_sql_quote($cod_fiscale) . ",
+                    piva                             = " . magic_link_review_sql_quote($piva) . ",
+                    num_iscrizione_reg_imprese       = " . magic_link_review_sql_quote($num_iscrizione_reg_imprese) . ",
+                    locazione_iscrizione_reg_imprese = " . magic_link_review_sql_quote($locazione_iscrizione_reg_imprese) . ",
+                    rea                              = " . magic_link_review_sql_quote($rea) . ",
+                    cellphone                        = " . magic_link_review_sql_quote($cellphone) . "
+                WHERE id = " . (int)$subvettoreId . "
+                LIMIT 1
+            ");
+            sc_log_add('MAGIC_LINK_REVIEW', 'subvettori aggiornato id=' . (int)$subvettoreId);
+        }
+
+        $num_iscrizione_albo          = isset({num_iscrizione_albo})          ? trim((string){num_iscrizione_albo})          : '';
+        $luogo_nascita_rappresentante = isset({luogo_nascita_rappresentante}) ? trim((string){luogo_nascita_rappresentante}) : '';
+        $prov_nascita                 = magic_link_review_prov_nascita_value();
+        $data_nascita_raw             = isset({data_nascita_rappresentante}) ? {data_nascita_rappresentante} : '';
+        $data_nascita_db              = magic_link_review_normalize_date_db($data_nascita_raw);
+
+        $hasLegali = (
+            $num_iscrizione_albo !== '' || $luogo_nascita_rappresentante !== ''
+            || $prov_nascita !== '' || trim((string)$data_nascita_raw) !== ''
+        );
+
+        if ($scId > 0 && $hasLegali) {
+            $data_nascita_sql = ($data_nascita_db !== null) ? magic_link_review_sql_quote($data_nascita_db) : 'NULL';
+            sc_exec_sql("
+                UPDATE subvettori_contratti
+                SET
+                    num_iscrizione_albo               = " . magic_link_review_sql_quote($num_iscrizione_albo) . ",
+                    luogo_nascita_rappresentante      = " . magic_link_review_sql_quote($luogo_nascita_rappresentante) . ",
+                    prov_luogo_nascita_rappresentante = " . magic_link_review_sql_quote($prov_nascita) . ",
+                    data_nascita_rappresentante       = $data_nascita_sql
+                WHERE id = " . (int)$scId . "
+                LIMIT 1
+            ");
+            sc_log_add('MAGIC_LINK_REVIEW', 'subvettori_contratti aggiornato id=' . (int)$scId);
+        }
+    }
+}
+
+magic_link_review_sync_after_save();
+
+// === Risoluzione metadati contratto ===
+$scId = 0;
+if (isset({id}) && (int){id} > 0) {
+    $scId = (int){id};
+} elseif (isset([subvettore_contratto_id]) && (int)[subvettore_contratto_id] > 0) {
+    $scId = (int)[subvettore_contratto_id];
+} elseif (isset([id]) && (int)[id] > 0) {
+    $scId = (int)[id];
+} elseif (isset($_GET['subvettore_contratto_id'])) {
+    $scId = (int)$_GET['subvettore_contratto_id'];
+}
+
+if ($scId <= 0) {
+    sc_log_add('MAGIC_LINK_REVIEW', 'scId non risolvibile in after-save');
+    return;
+}
+
+sc_lookup(rsScMeta, "
+    SELECT sc.contratto_id, sc.subvettore_id, s.ragione_sociale, c.tipo_contratto_id
+    FROM subvettori_contratti sc
+    INNER JOIN subvettori s ON s.id = sc.subvettore_id
+    INNER JOIN contratti c ON c.id = sc.contratto_id
+    WHERE sc.id = " . (int)$scId . "
+    LIMIT 1
+", "pigliacelli");
+
+if (empty({rsScMeta})) {
+    sc_log_add('MAGIC_LINK_REVIEW', "subvettori_contratti id=$scId non trovato");
+    return;
+}
+
+$contrattoId      = (int){rsScMeta[0][0]};
+$subvettoreId     = (int){rsScMeta[0][1]};
+$ragioneSociale   = trim((string){rsScMeta[0][2]});
+$tipoContrattoId  = (int){rsScMeta[0][3]};
+
+if ($contrattoId <= 0 || $subvettoreId <= 0) {
+    sc_log_add('MAGIC_LINK_REVIEW', "parametri non validi contratto=$contrattoId subvettore=$subvettoreId");
+    return;
+}
+
+sc_lookup(rsStatoRev, "
+    SELECT id
+    FROM stati_contratti
+    WHERE nome = 'Da revisionare'
+    LIMIT 1
+", "pigliacelli");
+if (empty({rsStatoRev[0][0]})) {
+    sc_log_add('MAGIC_LINK_REVIEW', "ERRORE: stato 'Da revisionare' assente in stati_contratti contratto=$contrattoId");
+} else {
+    $statoRevId = (int){rsStatoRev[0][0]};
+    sc_exec_sql("
+        UPDATE contratti
+        SET stato_contratto_id = " . (int)$statoRevId . "
+        WHERE id = " . (int)$contrattoId . "
+        LIMIT 1
+    ", "pigliacelli");
+}
+
+sc_log_add(
+    'MAGIC_LINK_REVIEW',
+    "dati completi scId=$scId contratto=$contrattoId subvettore=$subvettoreId"
+);
+
+// === Mail operatori / admin (group 1 e 3) ===
+if (!function_exists('magic_link_review_setting')) {
+    function magic_link_review_setting($name, $default = '')
+    {
+        $safeName = str_replace("'", "''", trim((string)$name));
+        sc_lookup(rsSetReview, "SELECT set_value FROM sec_settings WHERE set_name = '" . $safeName . "' LIMIT 1");
+        if (isset({rsSetReview[0][0]})) {
+            return (string){rsSetReview[0][0]};
+        }
+        return $default;
+    }
+}
+
+if (!function_exists('magic_link_review_mail_logo_read_embed')) {
+    function magic_link_review_mail_logo_read_embed()
+    {
+        $rel = '_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png';
+        $dir = realpath(dirname(__FILE__));
+        for ($i = 0; $i < 12 && $dir; $i++) {
+            $try = $dir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel);
+            if (is_readable($try)) {
+                $bin = @file_get_contents($try);
+                if ($bin !== false && $bin !== '' && strlen($bin) < 500000) {
+                    return 'data:image/png;base64,' . base64_encode($bin);
+                }
+            }
+            $p = dirname($dir);
+            if ($p === $dir) {
+                break;
+            }
+            $dir = $p;
+        }
+        return '';
+    }
+}
+
+if (!function_exists('magic_link_review_mail_logo_src')) {
+    function magic_link_review_mail_logo_src()
+    {
+        $embed = magic_link_review_mail_logo_read_embed();
+        if ($embed !== '') {
+            return $embed;
+        }
+        $base = rtrim(trim(magic_link_review_setting('mail_base_url', '')), '/');
+        if ($base !== '' && preg_match('#^https?://#i', $base) === 1) {
+            return htmlspecialchars(
+                $base . '/_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png',
+                ENT_QUOTES,
+                'UTF-8'
+            );
+        }
+        return '';
+    }
+}
+
+if (!function_exists('magic_link_review_mail_layout')) {
+    function magic_link_review_mail_layout($title, $innerHtml, $mailLogoUrl)
+    {
+        $t = htmlspecialchars((string)$title, ENT_QUOTES, 'UTF-8');
+        $logoTd = '';
+        if ((string)$mailLogoUrl !== '') {
+            $logoTd = '<td align="right" valign="middle" style="width:148px;padding-left:16px;">'
+                . '<img src="' . (string)$mailLogoUrl . '" alt="Pigliacelli" width="140" '
+                . 'style="display:block;max-width:140px;width:140px;height:auto;border:0;" />'
+                . '</td>';
+        }
+        return '<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">'
+            . '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            . '<title>' . $t . '</title></head>'
+            . '<body style="margin:0;padding:0;background:#eef1f4;">'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef1f4;">'
+            . '<tr><td align="center" style="padding:32px 16px;">'
+            . '<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" '
+            . 'style="max-width:600px;width:100%;background:#fff;border-radius:12px;border:1px solid #dde1e6;">'
+            . '<tr><td style="padding:22px 28px 18px;border-bottom:1px solid #e8ebef;background:#fafbfc;">'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
+            . '<td valign="middle" style="font-family:Arial,Helvetica,sans-serif;font-size:19px;font-weight:bold;color:#1a3a5c;line-height:1.3;">' . $t . '</td>'
+            . $logoTd . '</tr></table></td></tr>'
+            . '<tr><td style="padding:26px 28px 22px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#2d3748;">'
+            . $innerHtml . '</td></tr>'
+            . '<tr><td style="padding:14px 28px;background:#f4f6f8;border-top:1px solid #e8ebef;'
+            . 'font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#718096;">'
+            . 'Messaggio automatico &mdash; non rispondere.</td></tr>'
+            . '</table></td></tr></table></body></html>';
+    }
+}
+
+sc_lookup(rsOpsReview, "
+    SELECT DISTINCT su.login, su.email
+    FROM sec_users su
+    INNER JOIN sec_users_groups sug ON sug.login = su.login
+    WHERE su.active = 'Y'
+      AND su.login IS NOT NULL
+      AND TRIM(su.login) <> ''
+      AND su.email IS NOT NULL
+      AND TRIM(su.email) <> ''
+      AND sug.group_id IN (1, 3)
+", "pigliacelli");
+
+$emailPlaceholder = array('admin@admin.com', 'admin@localhost', 'admin@example.com');
+$destinatari = array();
+$operatorLogins = array();
+$emailScartate = array();
+
+if (isset({rsOpsReview[0][0]})) {
+    foreach ({rsOpsReview} as $row) {
+        $loginOp = trim((string)$row[0]);
+        $email = strtolower(trim((string)$row[1]));
+        if ($loginOp === '' || strcasecmp($loginOp, 'Guest') === 0) {
+            continue;
+        }
+        if ($email === '') {
+            continue;
+        }
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $emailScartate[] = $email . ' (formato non valido)';
+            continue;
+        }
+        if (in_array($email, $emailPlaceholder, true)) {
+            $emailScartate[] = $email . ' (email predefinita)';
+            continue;
+        }
+        $destinatari[] = $email;
+        $operatorLogins[] = $loginOp;
+    }
+}
+$destinatari = array_values(array_unique($destinatari));
+$operatorLogins = array_values(array_unique($operatorLogins));
+
+if (!empty($emailScartate)) {
+    sc_log_add('MAGIC_LINK_REVIEW', 'email operatori scartate: ' . implode('; ', $emailScartate));
+}
+
+$loginUrl = rtrim(trim(magic_link_review_setting('login_url', '')), '/');
+$gridUrl = $loginUrl !== '' ? $loginUrl . '/grid_contratti/' : '';
+
+sc_lookup(rs_smtp_review, "SELECT set_name, set_value FROM sec_settings");
+if (isset({rs_smtp_review[0][0]})) {
+    foreach ({rs_smtp_review} as $f) {
+        $_SESSION['sett_' . $f[0]] = $f[1];
+    }
+}
+
+$sett_smtp = array();
+if (isset($_SESSION['sett_smtp_api']) && $_SESSION['sett_smtp_api'] === 'custom') {
+    $sett_smtp = array(
+        'settings' => array(
+            'gateway'       => 'smtp',
+            'smtp_server'   => $_SESSION['sett_smtp_server'],
+            'smtp_protocol' => $_SESSION['sett_smtp_security'],
+            'smtp_port'     => $_SESSION['sett_smtp_port'],
+            'smtp_user'     => $_SESSION['sett_smtp_user'],
+            'smtp_password' => $_SESSION['sett_smtp_pass'],
+            'from_email'    => $_SESSION['sett_smtp_from_email'],
+            'from_name'     => $_SESSION['sett_smtp_from_name'],
+        ),
+    );
+} else {
+    $sett_smtp = array('profile' => isset($_SESSION['sett_smtp_api']) ? $_SESSION['sett_smtp_api'] : '');
+}
+
+if (!empty($destinatari) && function_exists('sc_send_mail_api')) {
+    $safeRagione = htmlspecialchars($ragioneSociale !== '' ? $ragioneSociale : 'Subvettore', ENT_QUOTES, 'UTF-8');
+    $safeContratto = (int)$contrattoId;
+    $safeGrid = htmlspecialchars($gridUrl, ENT_QUOTES, 'UTF-8');
+    $mailLogoUrl = magic_link_review_mail_logo_src();
+
+    $soggetto = 'Contratto #' . $safeContratto . ' — dati subvettore da revisionare';
+
+    $testoPlain = "Gentile operatore,\n\n"
+        . "il subvettore $ragioneSociale ha completato l'inserimento dei dati contratto.\n\n"
+        . "Contratto: #$safeContratto\n"
+        . "Subvettore: $ragioneSociale\n\n"
+        . "Verifichi i dati inseriti; se tutto è corretto, avvii la firma digitale dalla griglia contratti "
+        . "(pulsante \"Avvia firma dopo revisione\").\n\n"
+        . ($gridUrl !== '' ? "Area gestione: $gridUrl\n\n" : '')
+        . "Messaggio automatico — non rispondere.";
+
+    $btnHtml = '';
+    if ($gridUrl !== '') {
+        $btnHtml = '<p style="margin:24px 0 8px;text-align:center;">'
+            . '<a href="' . $safeGrid . '" style="display:inline-block;padding:12px 26px;'
+            . 'background:#1a3a5c;color:#ffffff;text-decoration:none;border-radius:8px;'
+            . 'font-weight:bold;font-size:15px;">Apri griglia contratti</a></p>';
+    }
+
+    $infoBox = '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+        . 'style="margin:16px 0;background:#f7f9fb;border:1px solid #e2e8f0;border-radius:8px;">'
+        . '<tr><td style="padding:14px 18px;font-size:14px;line-height:1.6;">'
+        . '<strong style="color:#1a3a5c;">Contratto:</strong> #' . $safeContratto . '<br>'
+        . '<strong style="color:#1a3a5c;">Subvettore:</strong> ' . $safeRagione
+        . '</td></tr></table>';
+
+    $innerHtml = '<p style="margin:0 0 12px;">Gentile operatore,</p>'
+        . '<p style="margin:0 0 12px;">il subvettore <strong>' . $safeRagione . '</strong> ha completato '
+        . 'l\'inserimento dei dati contratto.</p>'
+        . $infoBox
+        . '<p style="margin:0 0 12px;">Verifichi i dati inseriti; se tutto è corretto, avvii la firma digitale '
+        . 'dalla griglia contratti (pulsante <em>Avvia firma dopo revisione</em>).</p>'
+        . $btnHtml;
+
+    $testoHtml = magic_link_review_mail_layout('Dati contratto da revisionare', $innerHtml, $mailLogoUrl);
+
+    foreach ($destinatari as $dest) {
+        try {
+            $ok = sc_send_mail_api(array_merge($sett_smtp, array(
+                'message' => array(
+                    'to'      => $dest,
+                    'subject' => $soggetto,
+                    'html'    => $testoHtml,
+                    'text'    => $testoPlain,
+                ),
+            )));
+            if ($ok === false || $ok === null) {
+                sc_log_add('MAGIC_LINK_REVIEW', "mail operatore FAIL dest=$dest scId=$scId");
+            } else {
+                sc_log_add('MAGIC_LINK_REVIEW', "mail operatore OK dest=$dest scId=$scId");
+            }
+        } catch (Throwable $e) {
+            sc_log_add('MAGIC_LINK_REVIEW', "mail operatore ERRORE dest=$dest: " . $e->getMessage());
+        }
+    }
+} else {
+    sc_log_add('MAGIC_LINK_REVIEW', "nessun operatore con email valida scId=$scId");
+}
+
+// === Notifica Scriptcase (operatori gruppi 1 e 3) ===
+$notifyProfile = trim(magic_link_review_setting('notification_profile', 'Pigliacelli_Notifications'));
+if ($notifyProfile === '') {
+    $notifyProfile = 'Pigliacelli_Notifications';
+}
+
+if (!empty($operatorLogins) && function_exists('sc_send_notification')) {
+    $notifyTitle = 'Contratto #' . (int)$contrattoId . ' da revisionare';
+    $notifyRagione = $ragioneSociale !== '' ? $ragioneSociale : 'Subvettore';
+    $notifyMessage = 'Il subvettore ' . $notifyRagione
+        . ' ha completato l\'inserimento dei dati. Verificare in griglia contratti '
+        . 'e avviare la firma (Avvia firma dopo revisione).';
+    $notifyLink = 'grid_contratti';
+    $notifyExpire = date('Y-m-d H:i:s', strtotime('+30 days'));
+
+    try {
+        sc_send_notification(array(
+            'title'        => $notifyTitle,
+            'message'      => $notifyMessage,
+            'destiny_type' => 'user',
+            'to'           => implode(';', $operatorLogins),
+            'from'         => '',
+            'link'         => $notifyLink,
+            'dtexpire'     => $notifyExpire,
+            'profile'      => $notifyProfile,
+        ));
+        sc_log_add(
+            'MAGIC_LINK_REVIEW',
+            'notifica SC OK profilo=' . $notifyProfile . ' dest=' . implode(';', $operatorLogins) . ' scId=' . (int)$scId
+        );
+    } catch (Throwable $e) {
+        sc_log_add('MAGIC_LINK_REVIEW', 'notifica SC ERRORE: ' . $e->getMessage());
+    }
+} elseif (empty($operatorLogins)) {
+    sc_log_add('MAGIC_LINK_REVIEW', "nessun login operatore per notifica SC scId=$scId");
+}
+
+// === Conferma al subvettore (nessun redirect EasyGN) ===
+$msgSub = "Grazie. I dati sono stati registrati correttamente.\n\n"
+    . "Il nostro team verificherà le informazioni inserite e procederà con l'invio "
+    . "della firma digitale del contratto.";
+
+if (function_exists('sc_ajax_message')) {
+    sc_ajax_message(
+        $msgSub,
+        'Dati inviati',
+        'confirm',
+        'Y',
+        0,
+        'OK',
+        'Y',
+        '420',
+        'auto'
+    );
+} elseif (function_exists('sc_alert')) {
+    sc_alert($msgSub);
+}
