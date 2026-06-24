@@ -8,7 +8,7 @@
  *
  * Grid: Defined application method → start_contract_firma_after_review
  *       contrattoId={contratto_id};subvettoreId={subvettore_id}
- *       Visibilità: stato_contratto = 'Da revisionare'
+ *       Visibilità: stato_contratto = 'Compilato dal subvettore'
  *       Gruppi: 1, 3
  */
 $contrattoId = 0;
@@ -57,12 +57,12 @@ $scId = (int){rsScReview[0][0]};
 sc_lookup(rsStatoRevId, "
     SELECT id
     FROM stati_contratti
-    WHERE nome = 'Da revisionare'
+    WHERE nome = 'Compilato dal subvettore'
     LIMIT 1
 ", "pigliacelli");
 
 if (empty({rsStatoRevId[0][0]})) {
-    $fail("Stato 'Da revisionare' non configurato in stati_contratti.");
+    $fail("Stato 'Compilato dal subvettore' non configurato in stati_contratti.");
 }
 
 $statoRevId = (int){rsStatoRevId[0][0]};
@@ -89,7 +89,7 @@ if ($tipoContrattoId <= 0) {
 
 if ($statoAttualeId !== $statoRevId) {
     $fail(
-        'Il contratto non è in stato "Da revisionare".'
+        'Il contratto non è in stato "Compilato dal subvettore".'
         . ($statoAttualeNome !== '' ? ' Stato attuale: ' . $statoAttualeNome . '.' : '')
         . ' Verificare i dati prima di avviare la firma.'
     );

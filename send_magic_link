@@ -280,4 +280,22 @@ sc_send_mail_api(array_merge($sett_smtp, array(
     ),
 )));
 
+sc_lookup(rsStInviato, "
+    SELECT id
+    FROM stati_contratti
+    WHERE nome = 'Inviato al subvettore'
+    LIMIT 1
+", "pigliacelli");
+if (!empty({rsStInviato[0][0]})) {
+    sc_exec_sql("
+        UPDATE contratti
+        SET stato_contratto_id = " . (int){rsStInviato[0][0]} . "
+        WHERE id = " . (int)$contrattoId . "
+        LIMIT 1
+    ", "pigliacelli");
+    sc_log_add('MAGIC_LINK', 'stato contratto=' . (int)$contrattoId . ' → Inviato al subvettore');
+} else {
+    sc_log_add('MAGIC_LINK', "WARN: stato 'Inviato al subvettore' assente in stati_contratti");
+}
+
 $ajax_ok('Link inviato a ' . $toEmail);

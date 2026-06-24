@@ -7,6 +7,25 @@
      * Blocco autisti: opzionale anche in designer per tipo 2/3.
      */
 
+    $reviewConfirmOk = false;
+    if (isset($_POST['review_confirm']) && trim((string)$_POST['review_confirm']) === '1') {
+        $reviewConfirmOk = true;
+    }
+    if (!$reviewConfirmOk && isset($_GET['review_confirm']) && trim((string)$_GET['review_confirm']) === '1') {
+        $reviewConfirmOk = true;
+    }
+    if (!$reviewConfirmOk) {
+        $msgConfirm = 'Confermare l\'invio dei dati tramite il popup prima di procedere.';
+        if (function_exists('sc_err_msg')) {
+            sc_err_msg($msgConfirm);
+        } else {
+            sc_error_message($msgConfirm);
+            if (function_exists('sc_error_exit')) {
+                sc_error_exit();
+            }
+        }
+    }
+
     if (!function_exists('magic_link_review_form_tipo_contratto_id')) {
         function magic_link_review_form_tipo_contratto_id()
         {

@@ -1,0 +1,55 @@
+$hasFile   = !empty({file}); // il file è stato caricato sul server
+$hasSigned = !empty({easygn_file_id}); // il pdf è stato generato da easygn
+$stato     = (int){stato_contratto_id};
+
+// stati_contratti (ID fissi):
+// 1 Da inviare al subvettore
+// 2 Inviato al subvettore
+// 3 Compilato dal subvettore
+// 4 In attesa della firma subvettore
+// 5 In attesa della firma committente
+// 6 Completato
+// 7 Rifiutato dal subvettore
+// 8 Rifiutato dal committente
+
+// select_new_contract, show_contract_signed, send_contract_to_sign, send_magic_link_to_subvector
+switch ($stato) {
+    case 6: // Completato
+        sc_actionbar_hide("select_new_contract");
+        sc_actionbar_show("show_contract_signed");
+        sc_actionbar_hide("send_contract_to_sign");
+        sc_actionbar_hide("send_magic_link_to_subvector");
+        break;
+
+    case 7: // Rifiutato dal subvettore
+    case 8: // Rifiutato dal committente
+        sc_actionbar_hide("select_new_contract");
+        sc_actionbar_hide("show_contract_signed");
+        sc_actionbar_hide("send_contract_to_sign");
+        sc_actionbar_hide("send_magic_link_to_subvector");
+        break;
+
+    case 3: // Compilato dal subvettore — revisione admin + avvio firma
+        sc_actionbar_show("select_new_contract");
+        sc_actionbar_hide("show_contract_signed");
+        sc_actionbar_show("send_contract_to_sign");
+        sc_actionbar_show("send_magic_link_to_subvector");
+        break;
+
+    case 4: // In attesa della firma subvettore
+    case 5: // In attesa della firma committente
+        sc_actionbar_hide("select_new_contract");
+        sc_actionbar_hide("show_contract_signed");
+        sc_actionbar_hide("send_contract_to_sign");
+        sc_actionbar_hide("send_magic_link_to_subvector");
+        break;
+
+    case 1: // Da inviare al subvettore
+    case 2: // Inviato al subvettore
+    default:
+        sc_actionbar_show("send_magic_link_to_subvector");
+        sc_actionbar_show("select_new_contract");
+        sc_actionbar_hide("show_contract_signed");
+        sc_actionbar_hide("send_contract_to_sign");
+        break;
+}

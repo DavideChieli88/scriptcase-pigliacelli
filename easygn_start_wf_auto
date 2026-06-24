@@ -1351,11 +1351,11 @@ if ($fileId !== '') $log("parsed fileId=$fileId");
 $wfSql = str_replace("'", "''", $wfId);
 $linkSql = $sign_links_pair_sql($sign_links_for_db($signLinks, $tipoContrattoId));
 [$fileSql, $signerSql] = $easygn_sql_file_signer_columns($fileId, $signerIdsMap);
-sc_lookup(rsStAtt, "SELECT id FROM stati_contratti WHERE nome = 'In attesa' LIMIT 1");
+sc_lookup(rsStAtt, "SELECT id FROM stati_contratti WHERE nome = 'In attesa della firma subvettore' LIMIT 1");
 $statoAttesaId = !empty({rsStAtt[0][0]}) ? (int){rsStAtt[0][0]} : 0;
 $statoSql = $statoAttesaId > 0 ? ", stato_contratto_id = $statoAttesaId" : '';
 sc_exec_sql("UPDATE contratti SET easygn_workflow_id = '$wfSql', easygn_sign_link = $linkSql, easygn_file_id = $fileSql, easygn_signer_ids = $signerSql$statoSql WHERE id = $contrattoId");
-$log("db updated (workflow + link + file + signer_ids" . ($statoAttesaId > 0 ? ", stato=In attesa" : '') . ")");
+$log("db updated (workflow + link + file + signer_ids" . ($statoAttesaId > 0 ? ", stato=In attesa della firma subvettore" : '') . ")");
 
 // Avvio workflow: PUT /workflows/start/{workflow_id}
 [$ok2, $err2, $http2, $resp2] = $easygn_request('PUT', $easygnBaseUrl . '/workflows/start/' . rawurlencode($wfId), $bearer, '{}');

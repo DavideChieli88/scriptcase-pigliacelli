@@ -2,7 +2,7 @@
   * Scriptcase app: finalize_contract_subvector
   *
   * Orchestratore: genera PDF in iframe, poll status, avvia EasyGN.
-  * mode=admin / sendMailOnly=1 / stato "Da revisionare" (operatore):
+  * mode=admin / sendMailOnly=1 / stato "Compilato dal subvettore" (operatore):
   *   fetch easygn_start_wf silent=1 → mail al subvettore, nessun redirect browser.
   * mode=subvettore: redirect a easygn_start_wf_auto per la firma.
   * Parametri: [contrattoId], [subvettoreId], [tipoContrattoId] (GET o globali SC).
@@ -74,9 +74,9 @@
           WHERE c.id = " . (int)$contrattoId . "
           LIMIT 1
       ", "pigliacelli");
-      if (!empty({rsStatoFinAdmin[0][0]}) && trim((string){rsStatoFinAdmin[0][0]}) === 'Da revisionare') {
+      if (!empty({rsStatoFinAdmin[0][0]}) && trim((string){rsStatoFinAdmin[0][0]}) === 'Compilato dal subvettore') {
           $isAdminFlow = true;
-          $adminFlowReason = 'stato_da_revisionare';
+          $adminFlowReason = 'stato_compilato_subvettore';
       }
   }
 

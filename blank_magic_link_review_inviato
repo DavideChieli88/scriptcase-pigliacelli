@@ -1,0 +1,58 @@
+/**
+ * Scriptcase blank: blank_magic_link_review_inviato
+ *
+ * Pagina di conferma per il subvettore dopo invio dati in revisione
+ * (redirect da magic_link_review onAfterSave, o onLoad se già compilato).
+ *
+ * Parametri opzionali GET: contrattoId, scId
+ */
+
+$contrattoId = 0;
+if (isset($_GET['contrattoId']) && (int)$_GET['contrattoId'] > 0) {
+    $contrattoId = (int)$_GET['contrattoId'];
+} elseif (isset([contrattoId]) && (int)[contrattoId] > 0) {
+    $contrattoId = (int)[contrattoId];
+}
+
+$scId = 0;
+if (isset($_GET['scId']) && (int)$_GET['scId'] > 0) {
+    $scId = (int)$_GET['scId'];
+} elseif (isset([scId]) && (int)[scId] > 0) {
+    $scId = (int)[scId];
+}
+
+$safeContratto = $contrattoId > 0 ? (int)$contrattoId : 0;
+
+header('Content-Type: text/html; charset=UTF-8');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+
+echo '<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">'
+    . '<meta name="viewport" content="width=device-width,initial-scale=1">'
+    . '<title>Dati contratto inviati</title>'
+    . '<style>'
+    . 'body{margin:0;padding:0;background:#eef1f4;font-family:Arial,Helvetica,sans-serif;color:#2d3748;}'
+    . '.wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;}'
+    . '.card{max-width:560px;width:100%;background:#fff;border:1px solid #dde1e6;border-radius:12px;'
+    . 'box-shadow:0 8px 24px rgba(26,58,92,.08);overflow:hidden;}'
+    . '.head{padding:22px 28px;background:#fafbfc;border-bottom:1px solid #e8ebef;}'
+    . '.head h1{margin:0;font-size:22px;line-height:1.35;color:#1a3a5c;}'
+    . '.body{padding:28px;font-size:16px;line-height:1.6;}'
+    . '.badge{display:inline-block;margin:0 0 16px;padding:6px 12px;border-radius:999px;'
+    . 'background:#edf7ed;color:#1b5e20;font-size:13px;font-weight:bold;}'
+    . '.note{margin-top:20px;padding:14px 16px;background:#f7f9fb;border:1px solid #e2e8f0;border-radius:8px;'
+    . 'font-size:14px;color:#4a5568;}'
+    . '</style></head><body><div class="wrap"><div class="card">'
+    . '<div class="head"><h1>Dati registrati correttamente</h1></div>'
+    . '<div class="body">'
+    . '<span class="badge">In attesa di verifica</span>'
+    . '<p>I dati del contratto sono stati salvati e saranno verificati dal nostro team.</p>'
+    . '<p>Procederemo con l\'invio della firma digitale del contratto dopo la revisione.</p>';
+
+if ($safeContratto > 0) {
+    echo '<p class="note"><strong>Contratto:</strong> #' . $safeContratto . '</p>';
+}
+
+echo '<p class="note">Può chiudere questa pagina. Non è necessario inviare nuovamente il modulo.</p>'
+    . '</div></div></div></body></html>';
+
+exit;

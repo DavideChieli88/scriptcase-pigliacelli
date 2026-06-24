@@ -216,6 +216,21 @@ sc_log_add(
     "redirect orchestratore contratto=$contrattoId subvettore=$subvettoreId tipo=$tipoContrattoId"
 );
 
+sc_lookup(rsStatoCompMl, "
+    SELECT id
+    FROM stati_contratti
+    WHERE nome = 'Compilato dal subvettore'
+    LIMIT 1
+", "pigliacelli");
+if (!empty({rsStatoCompMl[0][0]})) {
+    sc_exec_sql("
+        UPDATE contratti
+        SET stato_contratto_id = " . (int){rsStatoCompMl[0][0]} . "
+        WHERE id = " . (int)$contrattoId . "
+        LIMIT 1
+    ", "pigliacelli");
+}
+
 // 4) Avvio orchestratore (loader → PDF → EasyGN → firma).
 $redirParams = 'contrattoId=' . (int)$contrattoId
     . '&subvettoreId=' . (int)$subvettoreId

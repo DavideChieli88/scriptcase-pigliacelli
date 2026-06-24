@@ -122,9 +122,10 @@ function viaggio_piu_recente($nuovo, $corrente) {
 function crea_contratto($tipo_contratto_id, $intestatario) {
     sc_exec_sql("
         INSERT INTO contratti
-          (tipo_contratto_id, intestatario)
+          (tipo_contratto_id, intestatario, stato_contratto_id)
         VALUES
-          (" . sql_num($tipo_contratto_id) . ", " . sql_quote($intestatario) . ")
+          (" . sql_num($tipo_contratto_id) . ", " . sql_quote($intestatario) . ",
+           (SELECT id FROM stati_contratti WHERE nome = 'Da inviare al subvettore' LIMIT 1))
     ", "pigliacelli");
 
     sc_lookup(lastContrattoId, "SELECT LAST_INSERT_ID()", "pigliacelli");

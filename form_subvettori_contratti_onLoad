@@ -10,7 +10,7 @@
  * 2) Visibilità blocco autisti per tipoContrattoId (tipo 2/3 nascosto)
  * 3) Precaricamento anagrafica subvettore (campi virtuali → tabella subvettori)
  * 4) Precaricamento dati legale rappresentante da subvettori_contratti
- *    (email/telefono rappresentante: fallback da subvettori se vuoti sul contratto)
+ *    (email/telefono rappresentante: fallback da subvettori.login_subvettore / cellphone se vuoti sul contratto)
  * 5) Campi *_firmatario nascosti
  */
 
@@ -120,8 +120,7 @@ if ($subvettoreId > 0) {
             locazione_iscrizione_reg_imprese,
             rea,
             cellphone,
-            email_rappresentante,
-            telefono_rappresentante
+            login_subvettore
         FROM subvettori
         WHERE id = " . (int)$subvettoreId . "
         LIMIT 1
@@ -139,8 +138,12 @@ if ($subvettoreId > 0) {
         {locazione_iscrizione_reg_imprese} = (string){rsSub[0][8]};
         {rea}                              = (string){rsSub[0][9]};
         {phone}                            = (string){rsSub[0][10]};
-        $emailRappSub                      = isset({rsSub[0][11]}) ? trim((string){rsSub[0][11]}) : '';
-        $telRappSub                        = isset({rsSub[0][12]}) ? trim((string){rsSub[0][12]}) : '';
+        $loginSubEmail                     = isset({rsSub[0][11]}) ? trim((string){rsSub[0][11]}) : '';
+        $emailRappSub                      = '';
+        if ($loginSubEmail !== '' && filter_var($loginSubEmail, FILTER_VALIDATE_EMAIL) !== false) {
+            $emailRappSub = $loginSubEmail;
+        }
+        $telRappSub                        = trim((string){rsSub[0][10]});
     }
 }
 

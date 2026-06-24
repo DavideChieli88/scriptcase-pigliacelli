@@ -2,9 +2,10 @@
  * Webhook EasyGN / Yousign (callback POST).
  *
  * Flusso atteso (tipo 1, firma ordinata) — 3 chiamate HTTP:
- *   1) type=member, status=done  → vettore firmato → firmato_il, email committente, In attesa
- *   2) type=member, status=done  → committente firmato → nessuna email, In attesa
+ *   1) type=member, status=done  → vettore firmato → firmato_il, email committente, In attesa firma committente
+ *   2) type=member, status=done  → committente firmato → nessuna email (in attesa chiusura procedura)
  *   3) type=procedure, status=done → Completato, data_inizio_contratto, attiva utente + mail credenziali
+ *   Rifiuti member/procedure → Rifiutato dal subvettore / Rifiutato dal committente
  *
  * File: web_hook_firma/api_logs/GG-MM-AAAA.txt | Log: sc_log_add('WEBHOOK_FIRMA', …)
  */
@@ -760,13 +761,41 @@ function webhook_signer_role($contrattoId, $memberId)
     return 'unknown';
 }
 
+function webhook_rifiuto_stato_nome($contrattoId, $memberId = '')
+{
+    if ($memberId !== '') {
+        $role = webhook_signer_role($contrattoId, $memberId);
+        if ($role === 'committente') {
+            return 'Rifiutato dal committente';
+        }
+        if ($role === 'firmatario') {
+            return 'Rifiutato dal subvettore';
+        }
+    }
+    $contrattoId = (int)$contrattoId;
+    if ($contrattoId > 0) {
+        sc_lookup(rsWhFirm, "
+            SELECT firmato_il
+            FROM contratti
+            WHERE id = " . $contrattoId . "
+            LIMIT 1
+        ");
+        $firmatoIl = !empty({rsWhFirm[0][0]}) ? trim((string){rsWhFirm[0][0]}) : '';
+        if ($firmatoIl !== '' && $firmatoIl !== '0000-00-00 00:00:00') {
+            return 'Rifiutato dal committente';
+        }
+    }
+    return 'Rifiutato dal subvettore';
+}
+
 /** Chiamata 1 o 2: member done / refused */
 function webhook_handle_member_callback($contrattoId, $memberId, $status, $statoNome)
 {
     $status = strtolower(trim((string)$status));
     if ($statoNome === 'Rifiutato') {
-        webhook_sc_log('member rifiuto → Rifiutato contratto_id=' . $contrattoId);
-        webhook_set_stato_contratto($contrattoId, $statoNome, 'member', $status);
+        $rifiutoNome = webhook_rifiuto_stato_nome($contrattoId, $memberId);
+        webhook_sc_log('member rifiuto → ' . $rifiutoNome . ' contratto_id=' . $contrattoId);
+        webhook_set_stato_contratto($contrattoId, $rifiutoNome, 'member', $status);
         return;
     }
     if ($status !== 'done') {
@@ -780,6 +809,7 @@ function webhook_handle_member_callback($contrattoId, $memberId, $status, $stato
     }
     webhook_sc_log('evento 1/3: vettore firmato contratto_id=' . $contrattoId . ' role=' . $role);
     webhook_update_contratto_firmato_il($contrattoId);
+    webhook_set_stato_contratto($contrattoId, 'In attesa della firma committente', 'member', $status);
     try {
         webhook_maybe_send_committente_mail($contrattoId, $memberId);
     } catch (Throwable $e) {
@@ -793,6 +823,9 @@ function webhook_handle_procedure_callback($contrattoId, $status, $statoNome, $t
     if ($statoNome === null) {
         webhook_sc_log('procedure status=' . $status . ' ignorato contratto_id=' . $contrattoId);
         return;
+    }
+    if ($statoNome === 'Rifiutato') {
+        $statoNome = webhook_rifiuto_stato_nome($contrattoId);
     }
     webhook_sc_log('evento 3/3: procedura ' . $status . ' → ' . $statoNome . ' contratto_id=' . $contrattoId);
     webhook_set_stato_contratto($contrattoId, $statoNome, $tipo, $status);
@@ -837,9 +870,10 @@ function webhook_maybe_send_committente_mail($contrattoId, $memberId)
  * Webhook EasyGN / Yousign (callback POST).
  *
  * Flusso atteso (tipo 1, firma ordinata) — 3 chiamate HTTP:
- *   1) type=member, status=done  → vettore firmato → firmato_il, email committente, In attesa
- *   2) type=member, status=done  → committente firmato → nessuna email, In attesa
+ *   1) type=member, status=done  → vettore firmato → firmato_il, email committente, In attesa firma committente
+ *   2) type=member, status=done  → committente firmato → nessuna email (in attesa chiusura procedura)
  *   3) type=procedure, status=done → Completato, data_inizio_contratto, attiva utente + mail credenziali
+ *   Rifiuti member/procedure → Rifiutato dal subvettore / Rifiutato dal committente
  *
  * File: web_hook_firma/api_logs/GG-MM-AAAA.txt | Log: sc_log_add('WEBHOOK_FIRMA', …)
  */
@@ -1645,13 +1679,41 @@ function webhook_signer_role($contrattoId, $memberId)
     return 'unknown';
 }
 
+function webhook_rifiuto_stato_nome($contrattoId, $memberId = '')
+{
+    if ($memberId !== '') {
+        $role = webhook_signer_role($contrattoId, $memberId);
+        if ($role === 'committente') {
+            return 'Rifiutato dal committente';
+        }
+        if ($role === 'firmatario') {
+            return 'Rifiutato dal subvettore';
+        }
+    }
+    $contrattoId = (int)$contrattoId;
+    if ($contrattoId > 0) {
+        sc_lookup(rsWhFirm, "
+            SELECT firmato_il
+            FROM contratti
+            WHERE id = " . $contrattoId . "
+            LIMIT 1
+        ");
+        $firmatoIl = !empty({rsWhFirm[0][0]}) ? trim((string){rsWhFirm[0][0]}) : '';
+        if ($firmatoIl !== '' && $firmatoIl !== '0000-00-00 00:00:00') {
+            return 'Rifiutato dal committente';
+        }
+    }
+    return 'Rifiutato dal subvettore';
+}
+
 /** Chiamata 1 o 2: member done / refused */
 function webhook_handle_member_callback($contrattoId, $memberId, $status, $statoNome)
 {
     $status = strtolower(trim((string)$status));
     if ($statoNome === 'Rifiutato') {
-        webhook_sc_log('member rifiuto → Rifiutato contratto_id=' . $contrattoId);
-        webhook_set_stato_contratto($contrattoId, $statoNome, 'member', $status);
+        $rifiutoNome = webhook_rifiuto_stato_nome($contrattoId, $memberId);
+        webhook_sc_log('member rifiuto → ' . $rifiutoNome . ' contratto_id=' . $contrattoId);
+        webhook_set_stato_contratto($contrattoId, $rifiutoNome, 'member', $status);
         return;
     }
     if ($status !== 'done') {
@@ -1665,6 +1727,7 @@ function webhook_handle_member_callback($contrattoId, $memberId, $status, $stato
     }
     webhook_sc_log('evento 1/3: vettore firmato contratto_id=' . $contrattoId . ' role=' . $role);
     webhook_update_contratto_firmato_il($contrattoId);
+    webhook_set_stato_contratto($contrattoId, 'In attesa della firma committente', 'member', $status);
     try {
         webhook_maybe_send_committente_mail($contrattoId, $memberId);
     } catch (Throwable $e) {
@@ -1678,6 +1741,9 @@ function webhook_handle_procedure_callback($contrattoId, $status, $statoNome, $t
     if ($statoNome === null) {
         webhook_sc_log('procedure status=' . $status . ' ignorato contratto_id=' . $contrattoId);
         return;
+    }
+    if ($statoNome === 'Rifiutato') {
+        $statoNome = webhook_rifiuto_stato_nome($contrattoId);
     }
     webhook_sc_log('evento 3/3: procedura ' . $status . ' → ' . $statoNome . ' contratto_id=' . $contrattoId);
     webhook_set_stato_contratto($contrattoId, $statoNome, $tipo, $status);

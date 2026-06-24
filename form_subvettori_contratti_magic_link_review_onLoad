@@ -8,12 +8,65 @@
  *    num_iscrizione_albo resta sempre visibile; obbligatorio solo tipo 1 in onValidate.
  * 3) Precaricamento anagrafica da subvettori (campi virtuali)
  * 4) Precaricamento dati legale rappresentante da subvettori_contratti
- *    (email/telefono rappresentante: fallback da subvettori se vuoti sul contratto)
+ *    (email/telefono rappresentante: fallback da subvettori.login_subvettore / cellphone se vuoti sul contratto)
  * 5) Campi *_firmatario nascosti (non più usati: firma/mail solo su rappresentante)
+ * 6) Se stato_contratto_id >= 3 (già compilato) → redirect blank_magic_link_review_inviato
+ * 7) Popup conferma invio revisione (Scriptcase JavaScript Methods):
+ *    a) Programming → JavaScript Methods → mlReviewConfirmInit
+ *       incollare form_subvettori_contratti_magic_link_review_confirm.js
+ *    b) Evento onScriptInit: form_subvettori_contratti_magic_link_review_onScriptInit
+ *       (senza onScriptInit il metodo JS non viene mai eseguito)
+ *    onValidate richiede review_confirm=1 (hidden field impostato dal popup).
  */
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     @session_start();
+}
+
+$scIdEarly = 0;
+if (isset({id}) && (int){id} > 0) {
+    $scIdEarly = (int){id};
+} elseif (isset([subvettore_contratto_id]) && (int)[subvettore_contratto_id] > 0) {
+    $scIdEarly = (int)[subvettore_contratto_id];
+} elseif (isset($_GET['subvettore_contratto_id']) && (int)$_GET['subvettore_contratto_id'] > 0) {
+    $scIdEarly = (int)$_GET['subvettore_contratto_id'];
+} elseif (isset($_GET['id']) && (int)$_GET['id'] > 0) {
+    $scIdEarly = (int)$_GET['id'];
+}
+
+$magicLinkReviewContrattoId = 0;
+$statoContrattoIdReview     = 0;
+
+if ($scIdEarly > 0) {
+    sc_lookup(rsReviewStatoContr, "
+        SELECT c.id, c.stato_contratto_id
+        FROM subvettori_contratti sc
+        INNER JOIN contratti c ON c.id = sc.contratto_id
+        WHERE sc.id = " . (int)$scIdEarly . "
+        LIMIT 1
+    ", "pigliacelli");
+
+    if (!empty({rsReviewStatoContr})) {
+        $magicLinkReviewContrattoId = (int){rsReviewStatoContr[0][0]};
+        $statoContrattoIdReview     = (int){rsReviewStatoContr[0][1]};
+    }
+}
+
+if ($statoContrattoIdReview >= 3) {
+    $redirReviewDone = '';
+    if ($magicLinkReviewContrattoId > 0) {
+        $redirReviewDone = 'contrattoId=' . (int)$magicLinkReviewContrattoId;
+    }
+    if ($scIdEarly > 0) {
+        $redirReviewDone .= ($redirReviewDone !== '' ? '&' : '') . 'scId=' . (int)$scIdEarly;
+    }
+    sc_log_add(
+        'MAGIC_LINK_REVIEW',
+        'onLoad redirect blank stato_contratto_id=' . (int)$statoContrattoIdReview
+        . ' scId=' . (int)$scIdEarly
+    );
+    sc_redir('blank_magic_link_review_inviato', $redirReviewDone);
+    exit;
 }
 
 if (!empty($_SESSION['easygn_error_modal'])) {
@@ -124,8 +177,7 @@ if ($subvettoreId > 0) {
             locazione_iscrizione_reg_imprese,
             rea,
             cellphone,
-            email_rappresentante,
-            telefono_rappresentante
+            login_subvettore
         FROM subvettori
         WHERE id = " . (int)$subvettoreId . "
         LIMIT 1
@@ -143,8 +195,12 @@ if ($subvettoreId > 0) {
         {locazione_iscrizione_reg_imprese} = (string){rsReviewSub[0][8]};
         {rea}                              = (string){rsReviewSub[0][9]};
         {phone}                            = (string){rsReviewSub[0][10]};
-        $emailRappSub                      = isset({rsReviewSub[0][11]}) ? trim((string){rsReviewSub[0][11]}) : '';
-        $telRappSub                        = isset({rsReviewSub[0][12]}) ? trim((string){rsReviewSub[0][12]}) : '';
+        $loginSubEmail                     = isset({rsReviewSub[0][11]}) ? trim((string){rsReviewSub[0][11]}) : '';
+        $emailRappSub                      = '';
+        if ($loginSubEmail !== '' && filter_var($loginSubEmail, FILTER_VALIDATE_EMAIL) !== false) {
+            $emailRappSub = $loginSubEmail;
+        }
+        $telRappSub                        = trim((string){rsReviewSub[0][10]});
     }
 }
 
@@ -192,3 +248,5 @@ if (!function_exists('pigliacelli_hide_campi_firmatario_form')) {
     }
 }
 pigliacelli_hide_campi_firmatario_form();
+
+// Popup: confirm.js in mlReviewConfirmInit + onScriptInit (vedi header).
