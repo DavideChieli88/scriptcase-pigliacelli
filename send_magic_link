@@ -1,6 +1,9 @@
 /**
  * Invio email al subvettore — link pubblico cifrato (senza login).
  *
+ * Destinatario: subvettori.login_subvettore (email anagrafica), NON email_rappresentante.
+ * Se mancante/non valida: errore con invito ad aggiornare l'anagrafica subvettore.
+ *
  * Il link in mail punta al gateway (sett_magic_link_url) con ?t=<token>.
  * Il gateway (magic_link_login_subvectors) apre la form con subvettore_contratto_id.
  *
@@ -14,6 +17,23 @@
  *   magic_link_mail_subject (opzionale)
  *   mail_base_url — es. https://uat.workspace.pigliacelli.it (no /app_menu)
  */
+
+if (!function_exists('send_magic_link_email_valida')) {
+    function send_magic_link_email_valida($email)
+    {
+        $email = trim((string)$email);
+
+        if ($email === '') {
+            return false;
+        }
+
+        if (strpos($email, ';') !== false || strpos($email, ',') !== false || strpos($email, ' ') !== false) {
+            return false;
+        }
+
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+}
 
 if (!function_exists('magic_link_encryptData')) {
     function magic_link_encryptData($data, $key)
@@ -167,32 +187,48 @@ if ($ttlDays <= 0) {
 
 sc_lookup(rsSc, "
     SELECT
-        id,
-        email_rappresentante,
-        nome_rappresentante,
-        cognome_rappresentante
-    FROM subvettori_contratti
-    WHERE contratto_id = " . (int)$contrattoId . "
-      AND subvettore_id = " . (int)$subvettoreId . "
+        sc.id,
+        sc.nome_rappresentante,
+        sc.cognome_rappresentante,
+        s.login_subvettore,
+        s.ragione_sociale
+    FROM subvettori_contratti sc
+    INNER JOIN subvettori s ON s.id = sc.subvettore_id
+    WHERE sc.contratto_id = " . (int)$contrattoId . "
+      AND sc.subvettore_id = " . (int)$subvettoreId . "
     LIMIT 1
-");
+", "pigliacelli");
 
 if (!isset({rsSc[0][0]})) {
     $ajax_fail('Nessun record subvettori_contratti per questo contratto/subvettore.');
 }
 
 $scId = (int){rsSc[0][0]};
-$toEmail = trim((string){rsSc[0][1]});
-$nomeR = trim((string){rsSc[0][2]});
-$cognomeR = trim((string){rsSc[0][3]});
+$nomeR = trim((string){rsSc[0][1]});
+$cognomeR = trim((string){rsSc[0][2]});
+$emailSubvettore = trim((string){rsSc[0][3]});
+$ragioneSociale = trim((string){rsSc[0][4]});
+
+$toEmail = $emailSubvettore;
 
 $displayName = trim($nomeR . ' ' . $cognomeR);
+if ($displayName === '') {
+    $displayName = $ragioneSociale;
+}
 if ($displayName === '') {
     $displayName = 'Gentile subvettore';
 }
 
-if ($toEmail === '' || filter_var($toEmail, FILTER_VALIDATE_EMAIL) === false) {
-    $ajax_fail('Email rappresentante mancante o non valida (email_rappresentante).');
+if (!send_magic_link_email_valida($toEmail)) {
+    sc_log_add(
+        'MAGIC_LINK',
+        'FAIL email subvettore mancante/non valida subvettore_id=' . (int)$subvettoreId
+        . ' login_subvettore=[' . $emailSubvettore . ']'
+    );
+    $ajax_fail(
+        'Email del subvettore mancante o non valida in anagrafica (campo Email / login_subvettore). '
+        . 'Aggiornare il subvettore da Anagrafica subvettori prima di inviare il magic link.'
+    );
 }
 
 $payload = json_encode(array(
@@ -257,7 +293,7 @@ $mailLogoUrl = pigliacelli_mail_logo_src($sc_setting, __FILE__);
 $mailLogoLog = (strpos($mailLogoUrl, 'data:image/') === 0)
     ? 'embed bytes=' . (strlen($mailLogoUrl) - 22)
     : 'url src=[' . $mailLogoUrl . ']';
-sc_log_add('MAGIC_LINK', 'mail_logo ' . $mailLogoLog . ' mail_base_url=[' . $mailBase . ']');
+sc_log_add('MAGIC_LINK', 'mail_logo ' . $mailLogoLog . ' mail_base_url=[' . $mailBase . '] to=' . $toEmail);
 
 $mailInner = '<p style="margin:0 0 16px;">' . $safeNome . ',</p>'
     . '<p style="margin:0 0 24px;">Le chiediamo di compilare i dati per il contratto <strong>#' . (int)$contrattoId . '</strong>.</p>'

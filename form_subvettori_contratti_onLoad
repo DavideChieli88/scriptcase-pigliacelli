@@ -12,12 +12,23 @@
  * 4) Precaricamento dati legale rappresentante da subvettori_contratti
  *    (email/telefono rappresentante: fallback da subvettori.login_subvettore / cellphone se vuoti sul contratto)
  * 5) Campi *_firmatario nascosti
- * 6) stato_contratto_id da 3 in su: campi master sola lettura con sc_field_readonly (onLoad)
+ * 6) stato_contratto_id da 3 in su: campi master sola lettura; pulsante save_and_send_magic_link nascosto
  *    Detail tratte/autisti: onScriptInit (sc_apl_conf + sc_lookup pigliacelli)
  */
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     @session_start();
+}
+
+// Fallback redirect send_magic_link dopo save Ajax (sc_redir in onAfterUpdate spesso non naviga)
+if (!empty($_SESSION['pigliacelli_redir_send_magic_link'])) {
+    $redirMlParams = (string)$_SESSION['pigliacelli_redir_send_magic_link'];
+    unset($_SESSION['pigliacelli_redir_send_magic_link']);
+    if ($redirMlParams !== '' && function_exists('sc_redir')) {
+        sc_log_add('SAVE_SEND_ML', 'onLoad fallback sc_redir ' . $redirMlParams);
+        sc_redir('send_magic_link', $redirMlParams);
+        exit;
+    }
 }
 
 if (!empty($_SESSION['easygn_error_modal'])) {
@@ -206,6 +217,21 @@ if ($scId > 0) {
     if (!empty({rsStatoContrFormOp[0][0]})) {
         $statoContrattoForm = (int){rsStatoContrFormOp[0][0]};
     }
+}
+
+// save_and_send_magic_link: solo stato 1–2 (Da inviare / Inviato al subvettore)
+$displaySaveSendMagicLink = ($statoContrattoForm > 2) ? 'off' : 'on';
+sc_btn_display('save_and_send_magic_link', $displaySaveSendMagicLink);
+
+if ($displaySaveSendMagicLink === 'off' && function_exists('sc_ajax_javascript')) {
+    sc_ajax_javascript(
+        "(function(){"
+        . "var i,el,ids=['sc_b_save_and_send_magic_link_t','sc_b_save_and_send_magic_link_b'];"
+        . "for(i=0;i<ids.length;i++){el=document.getElementById(ids[i]);if(el){el.style.display='none';}}"
+        . "var nodes=document.querySelectorAll('a[id*=\"save_and_send_magic_link\"]');"
+        . "for(i=0;i<nodes.length;i++){nodes[i].style.display='none';}"
+        . "})();"
+    );
 }
 
 if ($statoContrattoForm > 2) {

@@ -3,6 +3,123 @@ $hasSigned = !empty({easygn_file_id}); // il pdf è stato generato da easygn
 $stato     = (int){stato_contratto_id};
 $firmatoIl = isset({firmato_il}) ? trim((string){firmato_il}) : '';
 
+// change_subvector_email: nascosto di default, mostrato solo se subvettore senza email valida
+sc_actionbar_hide('change_subvector_email');
+
+if (!function_exists('grid_contratti_login_is_tecnico')) {
+    function grid_contratti_login_is_tecnico($login)
+    {
+        $login = trim((string)$login);
+        return $login !== '' && strncmp($login, 'SUBVETTORE_', 11) === 0;
+    }
+}
+
+if (!function_exists('grid_contratti_email_valida')) {
+    function grid_contratti_email_valida($email)
+    {
+        $email = trim((string)$email);
+
+        if ($email === '') {
+            return false;
+        }
+
+        if (strpos($email, ';') !== false || strpos($email, ',') !== false || strpos($email, ' ') !== false) {
+            return false;
+        }
+
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+}
+
+if (!function_exists('grid_contratti_subvettore_senza_email_valida')) {
+    function grid_contratti_subvettore_senza_email_valida($subvettore_id, $login_subvettore, $intestatario)
+    {
+        if (grid_contratti_email_valida($login_subvettore)) {
+            if ((int)$subvettore_id > 0) {
+                sc_lookup(rsGridSubUserLogin, "
+                    SELECT login
+                    FROM sec_users
+                    WHERE subvettore_id = " . (int)$subvettore_id . "
+                    LIMIT 1
+                ", "pigliacelli");
+
+                if (!empty({rsGridSubUserLogin[0][0]})) {
+                    $userLogin = trim((string){rsGridSubUserLogin[0][0]});
+                    if (!grid_contratti_login_is_tecnico($userLogin)) {
+                        return false;
+                    }
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if (grid_contratti_login_is_tecnico($intestatario)) {
+            return true;
+        }
+
+        if (!grid_contratti_email_valida($login_subvettore)) {
+            return true;
+        }
+
+        if ((int)$subvettore_id > 0) {
+            sc_lookup(rsGridSubUserLogin2, "
+                SELECT login
+                FROM sec_users
+                WHERE subvettore_id = " . (int)$subvettore_id . "
+                LIMIT 1
+            ", "pigliacelli");
+
+            if (!empty({rsGridSubUserLogin2[0][0]})) {
+                return grid_contratti_login_is_tecnico(trim((string){rsGridSubUserLogin2[0][0]}));
+            }
+        }
+
+        return true;
+    }
+}
+
+$contrattoIdGrid = isset({id}) ? (int){id} : 0;
+$subvettoreIdGrid = 0;
+$mostraChangeSubvectorEmail = false;
+
+if ($contrattoIdGrid > 0) {
+    sc_lookup(rsGridSubEmail, "
+        SELECT
+            sc.subvettore_id,
+            COALESCE(s.login_subvettore, '') AS login_subvettore,
+            COALESCE(c.intestatario, '') AS intestatario
+        FROM subvettori_contratti sc
+        INNER JOIN subvettori s ON s.id = sc.subvettore_id
+        INNER JOIN contratti c ON c.id = sc.contratto_id
+        WHERE sc.contratto_id = " . (int)$contrattoIdGrid . "
+        ORDER BY sc.id ASC
+        LIMIT 1
+    ", "pigliacelli");
+
+    if (!empty({rsGridSubEmail[0][0]})) {
+        $subvettoreIdGrid = (int){rsGridSubEmail[0][0]};
+        $loginSubGrid = trim((string){rsGridSubEmail[0][1]});
+        $intestatarioGrid = trim((string){rsGridSubEmail[0][2]});
+
+        $mostraChangeSubvectorEmail = grid_contratti_subvettore_senza_email_valida(
+            $subvettoreIdGrid,
+            $loginSubGrid,
+            $intestatarioGrid
+        );
+    }
+}
+
+// Per link SC form_subvettori: aggiungere colonna virtuale subvettore_id in grid (nascosta)
+// e parametro link id={subvettore_id}
+if ($subvettoreIdGrid > 0 && isset({subvettore_id})) {
+    {subvettore_id} = $subvettoreIdGrid;
+}
+
+if ($mostraChangeSubvectorEmail) {
+    sc_actionbar_show('change_subvector_email');
+}
+
 // Subvettore già firmato ma stato ancora 4 (webhook legacy): allinea DB + lookup colonna stato
 if (
     $stato === 4
@@ -46,7 +163,7 @@ if (
 // 7 Rifiutato dal subvettore
 // 8 Rifiutato dal committente
 
-// select_new_contract, show_contract_signed, send_contract_to_sign, send_magic_link_to_subvector
+// select_new_contract, show_contract_signed, send_contract_to_sign, send_magic_link_to_subvector, change_subvector_email
 switch ($stato) {
     case 6: // Completato
         sc_actionbar_hide("select_new_contract");

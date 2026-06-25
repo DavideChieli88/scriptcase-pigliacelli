@@ -1,14 +1,19 @@
 // Scriptcase blank app: web_hook_simulate_check_new_trips
 //
 // Simula l'arrivo di un nuovo contratto subvettore SENZA passare da SGA.
-// Allineato a check_new_trips_nuovo_contratto_basevettori:
-// il contratto contiene SOLO le tratte del payload valide per la firma
+// Default: allineato a check_new_trips_nuovo_contratto_basevettori.
+// Con flag body: simula anche check_new_trips_nuovo_contratto_basevettori_credenziali.
+//
+// Flag opzionali (tipo 2/3, sub gia' in anagrafica):
+//   "simula_credenziali": true  |  "credenziali_import": true  |  "modalita": "credenziali"
+//
+// Il contratto contiene SOLO le tratte del payload valide per la firma
 // (PARTENZA_DATA_ORA e IMPORTO_UNITARIO presenti); le altre vengono loggate e saltate.
 //
 // Riceve in POST un JSON con subvettore + tratte e fa gli inserimenti a DB:
 //
 //   1) subvettori                  (find o insert per codice_sga)
-//   2) tratte + tratte_localita    (una per ogni elemento "tratte")
+//   2) tratte + tratte_localita    (insert o UPDATE se stesso carico/scarico, come il job)
 //   3) contratti                   (solo se almeno una tratta valida per contratto)
 //   4) subvettori_contratti
 //   5) contratti_tratte            (solo tratte valide del payload)
@@ -141,6 +146,388 @@ $wh_tratta_ammessa_per_contratto = function ($tr, &$motivo_skip) use ($wh_valore
     return true;
 };
 
+$wh_email_valida = function ($email) {
+    $email = trim((string)$email);
+    if ($email === '') {
+        return false;
+    }
+    if (strpos($email, ';') !== false || strpos($email, ',') !== false || strpos($email, ' ') !== false) {
+        return false;
+    }
+    return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+};
+
+$wh_user_active_yes = function ($active) {
+    $a = strtoupper(trim((string)$active));
+    return ($a === 'Y' || $a === '1' || $a === 'S' || $a === 'SI' || $a === 'YES');
+};
+
+$wh_login_tecnico = function ($login) {
+    $login = trim((string)$login);
+    return strncmp($login, 'SUBVETTORE_', 11) === 0;
+};
+
+$wh_mail_setting = function ($name, $default = '') use ($wh_sql_quote) {
+    sc_lookup(rsWhSimSet, "
+        SELECT set_value
+        FROM sec_settings
+        WHERE set_name = " . $wh_sql_quote(trim((string)$name)) . "
+        LIMIT 1
+    ", "pigliacelli");
+    if (!empty({rsWhSimSet[0][0]})) {
+        return trim((string){rsWhSimSet[0][0]});
+    }
+    return (string)$default;
+};
+
+$wh_mail_logo_src = function () use ($wh_mail_setting) {
+    if (function_exists('pigliacelli_mail_logo_src')) {
+        return pigliacelli_mail_logo_src($wh_mail_setting);
+    }
+    $rel = '_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png';
+    $dir = realpath(dirname(__FILE__));
+    for ($i = 0; $i < 12 && $dir; $i++) {
+        $try = $dir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel);
+        if (is_readable($try)) {
+            $bin = @file_get_contents($try);
+            if ($bin !== false && $bin !== '' && strlen($bin) < 500000) {
+                return 'data:image/png;base64,' . base64_encode($bin);
+            }
+        }
+        $p = dirname($dir);
+        if ($p === $dir) {
+            break;
+        }
+        $dir = $p;
+    }
+    $mailBase = rtrim(trim($wh_mail_setting('mail_base_url', '')), '/');
+    if ($mailBase !== '' && (strpos($mailBase, 'http://') === 0 || strpos($mailBase, 'https://') === 0)) {
+        return htmlspecialchars(
+            $mailBase . '/_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png',
+            ENT_QUOTES,
+            'UTF-8'
+        );
+    }
+    return '';
+};
+
+$wh_get_smtp_config = function () {
+    sc_lookup(rsWhSimSmtp, "SELECT set_name, set_value FROM sec_settings", "pigliacelli");
+    if (!empty({rsWhSimSmtp})) {
+        foreach ({rsWhSimSmtp} as $f) {
+            $_SESSION['sett_' . $f[0]] = $f[1];
+        }
+    }
+    $smtpApi = isset($_SESSION['sett_smtp_api']) ? (string)$_SESSION['sett_smtp_api'] : '';
+    if ($smtpApi === 'custom') {
+        return array(
+            'settings' => array(
+                'gateway'       => 'smtp',
+                'smtp_server'   => isset($_SESSION['sett_smtp_server']) ? (string)$_SESSION['sett_smtp_server'] : '',
+                'smtp_protocol' => isset($_SESSION['sett_smtp_security']) ? (string)$_SESSION['sett_smtp_security'] : '',
+                'smtp_port'     => isset($_SESSION['sett_smtp_port']) ? (string)$_SESSION['sett_smtp_port'] : '',
+                'smtp_user'     => isset($_SESSION['sett_smtp_user']) ? (string)$_SESSION['sett_smtp_user'] : '',
+                'smtp_password' => isset($_SESSION['sett_smtp_pass']) ? (string)$_SESSION['sett_smtp_pass'] : '',
+                'from_email'    => isset($_SESSION['sett_smtp_from_email']) ? (string)$_SESSION['sett_smtp_from_email'] : '',
+                'from_name'     => isset($_SESSION['sett_smtp_from_name']) ? (string)$_SESSION['sett_smtp_from_name'] : '',
+            ),
+        );
+    }
+    return array('profile' => $smtpApi);
+};
+
+$wh_mail_layout = function ($title, $innerHtml, $mailLogoUrl) {
+    $t = htmlspecialchars((string)$title, ENT_QUOTES, 'UTF-8');
+    $logoTd = '';
+    if ((string)$mailLogoUrl !== '') {
+        $logoTd = '<td align="right" valign="middle" style="width:148px;padding-left:16px;">'
+            . '<img src="' . (string)$mailLogoUrl . '" alt="Pigliacelli" width="140" '
+            . 'style="display:block;max-width:140px;width:140px;height:auto;border:0;" />'
+            . '</td>';
+    }
+    return '<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">'
+        . '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        . '<title>' . $t . '</title></head>'
+        . '<body style="margin:0;padding:0;background:#eef1f4;">'
+        . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef1f4;">'
+        . '<tr><td align="center" style="padding:32px 16px;">'
+        . '<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" '
+        . 'style="max-width:600px;width:100%;background:#fff;border-radius:12px;border:1px solid #dde1e6;">'
+        . '<tr><td style="padding:22px 28px 18px;border-bottom:1px solid #e8ebef;background:#fafbfc;">'
+        . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
+        . '<td valign="middle" style="font-family:Arial,Helvetica,sans-serif;font-size:19px;font-weight:bold;color:#1a3a5c;line-height:1.3;">' . $t . '</td>'
+        . $logoTd . '</tr></table></td></tr>'
+        . '<tr><td style="padding:26px 28px 22px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#2d3748;">'
+        . $innerHtml . '</td></tr>'
+        . '<tr><td style="padding:14px 28px;background:#f4f6f8;border-top:1px solid #e8ebef;'
+        . 'font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#718096;">'
+        . 'Messaggio automatico &mdash; non rispondere.</td></tr>'
+        . '</table></td></tr></table></body></html>';
+};
+
+$wh_simula_notifica_credenziali = function (
+    $subvettore_id,
+    $contratto_id,
+    $subvettore_creato,
+    $tipo_contratto_id,
+    $simula_credenziali,
+    $email_fallback,
+    $ragione_sociale,
+    $phone
+) use (
+    $wh_sql_quote,
+    $wh_sql_num,
+    $wh_email_valida,
+    $wh_user_active_yes,
+    $wh_login_tecnico,
+    $wh_mail_setting,
+    $wh_mail_logo_src,
+    $wh_get_smtp_config,
+    $wh_mail_layout
+) {
+    $out = array(
+        'richiesta'     => (bool)$simula_credenziali,
+        'eseguita'      => false,
+        'esito'         => 'skip',
+        'motivo'        => '',
+        'login'         => '',
+        'plain_password'=> null,
+    );
+
+    if (!$simula_credenziali) {
+        $out['motivo'] = 'flag_disattivo';
+        return $out;
+    }
+    if ($subvettore_creato) {
+        $out['motivo'] = 'subvettore_nuovo_nel_payload';
+        return $out;
+    }
+    if (!in_array((int)$tipo_contratto_id, array(2, 3), true)) {
+        $out['motivo'] = 'tipo_contratto_non_2_o_3';
+        return $out;
+    }
+
+    sc_lookup(rsWhSubCred, "
+        SELECT login_subvettore, ragione_sociale,
+               COALESCE(NULLIF(TRIM(phone), ''), NULLIF(TRIM(cellphone), ''), '') AS phone_sub
+        FROM subvettori
+        WHERE id = " . $wh_sql_num($subvettore_id) . "
+        LIMIT 1
+    ", "pigliacelli");
+    if (empty({rsWhSubCred[0][0]})) {
+        $out['motivo'] = 'subvettore_assente';
+        return $out;
+    }
+
+    $loginSub = trim((string){rsWhSubCred[0][0]});
+    if ($loginSub === '' && $email_fallback !== null) {
+        $loginSub = trim((string)$email_fallback);
+    }
+    $ragioneDb = trim((string){rsWhSubCred[0][1]});
+    $phoneDb = trim((string){rsWhSubCred[0][2]});
+    if ($ragione_sociale !== null && trim((string)$ragione_sociale) !== '') {
+        $ragioneDb = trim((string)$ragione_sociale);
+    }
+    if ($phone !== null && trim((string)$phone) !== '') {
+        $phoneDb = trim((string)$phone);
+    }
+    if (!$wh_email_valida($loginSub)) {
+        $out['motivo'] = 'email_non_valida';
+        return $out;
+    }
+
+    sc_lookup(rsWhUserCred, "
+        SELECT login, active, email
+        FROM sec_users
+        WHERE subvettore_id = " . $wh_sql_num($subvettore_id) . "
+        LIMIT 1
+    ", "pigliacelli");
+
+    $userLogin = '';
+    $userActive = '';
+    $userEmail = '';
+    if (!empty({rsWhUserCred[0][0]})) {
+        $userLogin = trim((string){rsWhUserCred[0][0]});
+        $userActive = trim((string){rsWhUserCred[0][1]});
+        $userEmail = trim((string){rsWhUserCred[0][2]});
+    }
+
+    if ($userLogin !== '' && $wh_login_tecnico($userLogin)) {
+        $out['motivo'] = 'utenza_tecnica';
+        return $out;
+    }
+
+    if (!function_exists('sc_send_mail_api')) {
+        $out['motivo'] = 'sc_send_mail_api_assente';
+        $out['esito'] = 'errore';
+        return $out;
+    }
+
+    $toEmail = $wh_email_valida($userEmail) ? $userEmail : $loginSub;
+    $displayName = $ragioneDb !== '' ? $ragioneDb : 'Gentile subvettore';
+    $mailLogoUrl = $wh_mail_logo_src();
+    $portalUrl = rtrim(trim($wh_mail_setting('login_url', '')), '/');
+    if ($portalUrl === '') {
+        $portalUrl = rtrim(trim($wh_mail_setting('portal_url', '')), '/');
+    }
+    if ($portalUrl === '') {
+        $portalUrl = rtrim(trim($wh_mail_setting('app_url', '')), '/');
+    }
+    $smtpCfg = $wh_get_smtp_config();
+
+    $invia_credenziali = function ($login, $plainPassword) use (
+        $contratto_id, $toEmail, $displayName, $portalUrl, $smtpCfg, $wh_mail_layout, $mailLogoUrl
+    ) {
+        $titolo = 'Credenziali area riservata — contratto #' . (int)$contratto_id;
+        $testo = $displayName . ",\n\n"
+            . "E' stato registrato un nuovo contratto #" . (int)$contratto_id . ".\n"
+            . "Puoi accedere all'area riservata con le credenziali seguenti (password temporanea).\n\n"
+            . "Login: " . $login . "\n"
+            . "Password: " . $plainPassword . "\n";
+        if ($portalUrl !== '') {
+            $testo .= "\nArea riservata: " . $portalUrl . "\n";
+        }
+        $testo .= "\nMessaggio automatico — non rispondere.";
+        $safeLogin = htmlspecialchars($login, ENT_QUOTES, 'UTF-8');
+        $safePwd = htmlspecialchars($plainPassword, ENT_QUOTES, 'UTF-8');
+        $safeNome = htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8');
+        $inner = '<p style="margin:0 0 16px;">' . $safeNome . ',</p>'
+            . '<p style="margin:0 0 20px;">E\' stato registrato un nuovo contratto <strong>#' . (int)$contratto_id . '</strong>. '
+            . 'Ecco le credenziali per l\'area riservata (password temporanea).</p>'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+            . 'style="margin:0 0 20px;background:#f8f9fb;border:1px solid #e2e6ea;border-radius:8px;">'
+            . '<tr><td style="padding:16px 18px;font-size:14px;line-height:1.6;">'
+            . '<strong>Login:</strong> ' . $safeLogin . '<br><strong>Password:</strong> ' . $safePwd
+            . '</td></tr></table>';
+        if ($portalUrl !== '') {
+            $safePortal = htmlspecialchars($portalUrl, ENT_QUOTES, 'UTF-8');
+            $inner .= '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px;"><tr>'
+                . '<td align="center" bgcolor="#5b2d8e" style="border-radius:8px;background-color:#5b2d8e;">'
+                . '<a href="' . $safePortal . '" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:bold;'
+                . 'color:#ffffff;text-decoration:none;">Accedi all\'area riservata</a>'
+                . '</td></tr></table>';
+        }
+        $html = $wh_mail_layout($titolo, $inner, $mailLogoUrl);
+        sc_send_mail_api(array_merge($smtpCfg, array(
+            'message' => array(
+                'html'    => $html,
+                'text'    => $testo,
+                'to'      => $toEmail,
+                'subject' => $titolo,
+            ),
+        )));
+        return true;
+    };
+
+    $invia_area = function () use (
+        $contratto_id, $toEmail, $displayName, $wh_mail_setting, $smtpCfg, $wh_mail_layout, $mailLogoUrl
+    ) {
+        $loginUrl = rtrim(trim($wh_mail_setting('login_url', '')), '/');
+        if ($loginUrl === '') {
+            return false;
+        }
+        $titolo = 'Nuovo contratto — accedi all\'area riservata #' . (int)$contratto_id;
+        $testo = $displayName . ",\n\n"
+            . "E' stato registrato un nuovo contratto #" . (int)$contratto_id . ".\n"
+            . "Accedi alla tua area riservata con le credenziali gia' in tuo possesso:\n\n"
+            . $loginUrl . "\n\n"
+            . "Messaggio automatico — non rispondere.";
+        $safeNome = htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8');
+        $safeLoginUrl = htmlspecialchars($loginUrl, ENT_QUOTES, 'UTF-8');
+        $inner = '<p style="margin:0 0 16px;">' . $safeNome . ',</p>'
+            . '<p style="margin:0 0 20px;">E\' stato registrato un nuovo contratto <strong>#' . (int)$contratto_id . '</strong>. '
+            . 'Accedi alla tua <strong>area riservata</strong> con le credenziali gia\' in tuo possesso.</p>'
+            . '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px;"><tr>'
+            . '<td align="center" bgcolor="#5b2d8e" style="border-radius:8px;background-color:#5b2d8e;">'
+            . '<a href="' . $safeLoginUrl . '" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:bold;'
+            . 'color:#ffffff;text-decoration:none;">Accedi all\'area riservata</a>'
+            . '</td></tr></table>';
+        $html = $wh_mail_layout($titolo, $inner, $mailLogoUrl);
+        sc_send_mail_api(array_merge($smtpCfg, array(
+            'message' => array(
+                'html'    => $html,
+                'text'    => $testo,
+                'to'      => $toEmail,
+                'subject' => $titolo,
+            ),
+        )));
+        return true;
+    };
+
+    $genera_password = function () {
+        $chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=';
+        $len = strlen($chars);
+        $pwd = '';
+        for ($i = 0; $i < 12; $i++) {
+            $pwd .= $chars[random_int(0, $len - 1)];
+        }
+        return $pwd;
+    };
+
+    try {
+        if ($userLogin === '') {
+            $plainPassword = $genera_password();
+            sc_exec_sql("
+                INSERT INTO sec_users (login, pswd, name, email, phone, active, subvettore_id)
+                VALUES (
+                    " . $wh_sql_quote($loginSub) . ",
+                    " . $wh_sql_quote(md5($plainPassword)) . ",
+                    " . $wh_sql_quote($ragioneDb) . ",
+                    " . $wh_sql_quote($loginSub) . ",
+                    " . $wh_sql_quote($phoneDb) . ",
+                    'Y',
+                    " . $wh_sql_num($subvettore_id) . "
+                )
+            ", "pigliacelli");
+            sc_exec_sql("
+                INSERT INTO sec_users_groups (login, group_id)
+                VALUES (" . $wh_sql_quote($loginSub) . ", 2)
+            ", "pigliacelli");
+            $invia_credenziali($loginSub, $plainPassword);
+            $out['eseguita'] = true;
+            $out['esito'] = 'credenziali';
+            $out['login'] = $loginSub;
+            $out['plain_password'] = $plainPassword;
+            return $out;
+        }
+
+        if ($wh_user_active_yes($userActive)) {
+            if ($invia_area()) {
+                $out['eseguita'] = true;
+                $out['esito'] = 'area_riservata';
+                $out['login'] = $userLogin;
+                return $out;
+            }
+            $out['esito'] = 'errore';
+            $out['motivo'] = 'login_url_assente';
+            return $out;
+        }
+
+        $plainPassword = $genera_password();
+        sc_exec_sql("
+            UPDATE sec_users
+            SET active = 'Y',
+                pswd = " . $wh_sql_quote(md5($plainPassword)) . ",
+                email = " . $wh_sql_quote($loginSub) . ",
+                name = " . $wh_sql_quote($ragioneDb) . ",
+                phone = " . $wh_sql_quote($phoneDb) . "
+            WHERE subvettore_id = " . $wh_sql_num($subvettore_id) . "
+              AND login = " . $wh_sql_quote($userLogin) . "
+        ", "pigliacelli");
+        $loginInvio = $userLogin !== '' ? $userLogin : $loginSub;
+        $invia_credenziali($loginInvio, $plainPassword);
+        $out['eseguita'] = true;
+        $out['esito'] = 'credenziali';
+        $out['login'] = $loginInvio;
+        $out['plain_password'] = $plainPassword;
+        return $out;
+    } catch (Throwable $e) {
+        $out['esito'] = 'errore';
+        $out['motivo'] = $e->getMessage();
+        return $out;
+    }
+};
+
 // --- 1) Lettura payload JSON (più sorgenti per compatibilità ScriptCase/Apache) ---
 $rawBody = (string)@file_get_contents('php://input');
 
@@ -207,6 +594,20 @@ if ($tipo_contratto_id <= 0) {
     $tipo_contratto_id = 2;
 }
 
+$simula_credenziali = false;
+if (!empty($data['simula_credenziali'])) {
+    $simula_credenziali = filter_var($data['simula_credenziali'], FILTER_VALIDATE_BOOLEAN);
+}
+if (!$simula_credenziali && !empty($data['credenziali_import'])) {
+    $simula_credenziali = filter_var($data['credenziali_import'], FILTER_VALIDATE_BOOLEAN);
+}
+if (!$simula_credenziali) {
+    $modalita = strtolower(trim((string)$wh_valore($data, 'modalita', '')));
+    if ($modalita === 'credenziali' || $modalita === 'credenziali_import') {
+        $simula_credenziali = true;
+    }
+}
+
 $tratte_in = $wh_valore($data, 'tratte', array());
 if (!is_array($tratte_in) || count($tratte_in) === 0) {
     $wh_respond(400, array(
@@ -216,7 +617,8 @@ if (!is_array($tratte_in) || count($tratte_in) === 0) {
 }
 
 sc_log_add('WEBHOOK_SIM', 'Avvio simulazione contratto codice_sga=' . $codice_sga
-    . ' tipo=' . $tipo_contratto_id . ' tratte=' . count($tratte_in));
+    . ' tipo=' . $tipo_contratto_id . ' tratte=' . count($tratte_in)
+    . ' simula_credenziali=' . ($simula_credenziali ? '1' : '0'));
 
 // --- 4) Subvettore: find o insert ---
 sc_lookup(rsSub, "SELECT id FROM subvettori WHERE codice_sga = " . $wh_sql_quote($codice_sga) . " LIMIT 1", "pigliacelli");
@@ -338,48 +740,120 @@ foreach ($tratte_in as $idx => $tr) {
     }
     $tipo_tariffa_sql = $tipo_tariffa_id === null ? "NULL" : $wh_sql_num($tipo_tariffa_id);
 
+    $tratta_id = 0;
+    $tratta_modificata = false;
+    $tratta_version = 1;
+
     // tratta (riusa se hash gia' presente per il subvettore)
     sc_lookup(rsHash, "
-        SELECT id FROM tratte
+        SELECT id, version FROM tratte
         WHERE hash = " . $wh_sql_quote($hash) . " AND subvettore_id = " . $wh_sql_num($subvettore_id) . "
         LIMIT 1
     ", "pigliacelli");
 
     if (!empty({rsHash})) {
         $tratta_id = (int){rsHash[0][0]};
+        $verHash = {rsHash[0][1]};
+        $tratta_version = ($verHash === null || $verHash === '') ? 1 : (int)$verHash;
     } else {
-        sc_exec_sql("
-            INSERT INTO tratte
-              (subvettore_id, merce, caricatore, proprietario_merce, tipo_tariffa_id, tariffa, extra, totale, hash, version)
-            VALUES
-              (" . $wh_sql_num($subvettore_id) . ", NULL, NULL, NULL, " . $tipo_tariffa_sql . ",
-               " . $wh_sql_num($importo_unitario) . ", " . $wh_sql_num($extra_totale) . ", " . $wh_sql_num($totale) . ",
-               " . $wh_sql_quote($hash) . ", 1)
-            ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)
+        // Stesso carico/scarico ma importo diverso: hash diverso → UPDATE (come check_new_trips).
+        sc_lookup(rsExist, "
+            SELECT t.id, t.tariffa, t.extra, t.totale, t.version
+            FROM tratte t
+            WHERE t.subvettore_id = " . $wh_sql_num($subvettore_id) . "
+              AND (
+                    SELECT GROUP_CONCAT(tl.localita ORDER BY tl.progressivo SEPARATOR ' + ')
+                    FROM tratte_localita tl
+                    WHERE tl.tratta_id = t.id AND tl.tipo_tratta = 'C'
+                  ) = " . $wh_sql_quote($carico_str) . "
+              AND (
+                    SELECT GROUP_CONCAT(tl.localita ORDER BY tl.progressivo SEPARATOR ' + ')
+                    FROM tratte_localita tl
+                    WHERE tl.tratta_id = t.id AND tl.tipo_tratta = 'S'
+                  ) = " . $wh_sql_quote($scarico_str) . "
+            LIMIT 1
         ", "pigliacelli");
 
-        sc_lookup(rsLastTr, "SELECT LAST_INSERT_ID()", "pigliacelli");
-        if (empty({rsLastTr}) || (int){rsLastTr[0][0]} <= 0) {
-            continue;
-        }
-        $tratta_id = (int){rsLastTr[0][0]};
+        if (!empty({rsExist})) {
+            $tratta_id = (int){rsExist[0][0]};
+            $importo_esistente = (float){rsExist[0][1]};
+            $extra_esistente   = (float){rsExist[0][2]};
+            $totale_esistente  = (float){rsExist[0][3]};
+            $version_esistente = {rsExist[0][4]};
 
-        $i = 1;
-        foreach ($wh_split_localita($carico_str) as $loc) {
+            $has_modifica_tratta = (
+                abs($importo_esistente - (float)$importo_unitario) > 0.0001 ||
+                abs($extra_esistente - (float)$extra_totale) > 0.0001 ||
+                abs($totale_esistente - (float)$totale) > 0.0001
+            );
+
+            if ($has_modifica_tratta) {
+                $tratta_modificata = true;
+                $tratta_version = ($version_esistente === null || $version_esistente === '')
+                    ? 2
+                    : ((int)$version_esistente + 1);
+
+                sc_exec_sql("
+                    UPDATE tratte
+                    SET tipo_tariffa_id = " . $tipo_tariffa_sql . ",
+                        tariffa = " . $wh_sql_num($importo_unitario) . ",
+                        extra = " . $wh_sql_num($extra_totale) . ",
+                        totale = " . $wh_sql_num($totale) . ",
+                        hash = " . $wh_sql_quote($hash) . ",
+                        version = " . $wh_sql_num($tratta_version) . "
+                    WHERE id = " . $wh_sql_num($tratta_id) . "
+                ", "pigliacelli");
+
+                sc_log_add(
+                    'WEBHOOK_SIM',
+                    'tratta_modificata id=' . $tratta_id .
+                    ' subvettore=' . $subvettore_id .
+                    ' tariffa ' . $importo_esistente . '->' . $importo_unitario .
+                    ' version=' . $tratta_version
+                );
+            } else {
+                $tratta_version = ($version_esistente === null || $version_esistente === '')
+                    ? 1
+                    : (int)$version_esistente;
+            }
+        } else {
             sc_exec_sql("
-                INSERT INTO tratte_localita (tratta_id, tipo_tratta, localita, progressivo)
-                VALUES (" . $wh_sql_num($tratta_id) . ", 'C', " . $wh_sql_quote($loc) . ", " . $wh_sql_num($i) . ")
+                INSERT INTO tratte
+                  (subvettore_id, merce, caricatore, proprietario_merce, tipo_tariffa_id, tariffa, extra, totale, hash, version)
+                VALUES
+                  (" . $wh_sql_num($subvettore_id) . ", NULL, NULL, NULL, " . $tipo_tariffa_sql . ",
+                   " . $wh_sql_num($importo_unitario) . ", " . $wh_sql_num($extra_totale) . ", " . $wh_sql_num($totale) . ",
+                   " . $wh_sql_quote($hash) . ", 1)
+                ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)
             ", "pigliacelli");
-            $i++;
+
+            sc_lookup(rsLastTr, "SELECT LAST_INSERT_ID()", "pigliacelli");
+            if (empty({rsLastTr}) || (int){rsLastTr[0][0]} <= 0) {
+                continue;
+            }
+            $tratta_id = (int){rsLastTr[0][0]};
+
+            $i = 1;
+            foreach ($wh_split_localita($carico_str) as $loc) {
+                sc_exec_sql("
+                    INSERT INTO tratte_localita (tratta_id, tipo_tratta, localita, progressivo)
+                    VALUES (" . $wh_sql_num($tratta_id) . ", 'C', " . $wh_sql_quote($loc) . ", " . $wh_sql_num($i) . ")
+                ", "pigliacelli");
+                $i++;
+            }
+            $i = 1;
+            foreach ($wh_split_localita($scarico_str) as $loc) {
+                sc_exec_sql("
+                    INSERT INTO tratte_localita (tratta_id, tipo_tratta, localita, progressivo)
+                    VALUES (" . $wh_sql_num($tratta_id) . ", 'S', " . $wh_sql_quote($loc) . ", " . $wh_sql_num($i) . ")
+                ", "pigliacelli");
+                $i++;
+            }
         }
-        $i = 1;
-        foreach ($wh_split_localita($scarico_str) as $loc) {
-            sc_exec_sql("
-                INSERT INTO tratte_localita (tratta_id, tipo_tratta, localita, progressivo)
-                VALUES (" . $wh_sql_num($tratta_id) . ", 'S', " . $wh_sql_quote($loc) . ", " . $wh_sql_num($i) . ")
-            ", "pigliacelli");
-            $i++;
-        }
+    }
+
+    if ($tratta_id <= 0) {
+        continue;
     }
 
     $tratta_info = array(
@@ -387,6 +861,8 @@ foreach ($tratte_in as $idx => $tr) {
         'carico'    => $carico_str,
         'scarico'   => $scarico_str,
         'totale'    => $totale,
+        'modificata'=> $tratta_modificata,
+        'version'   => $tratta_version,
         'in_contratto' => $ammessa_contratto,
     );
 
@@ -400,6 +876,7 @@ foreach ($tratte_in as $idx => $tr) {
             'extra_totale'     => $extra_totale,
             'totale'           => $totale,
             'hash'             => $hash,
+            'version'          => $tratta_version,
         );
     } else {
         sc_log_add(
@@ -465,12 +942,16 @@ foreach ($tratte_per_contratto as $tr_contr) {
     ", "pigliacelli");
 
     if (empty({rsCt})) {
+        $ct_version = isset($tr_contr['version']) ? (int)$tr_contr['version'] : 1;
+        if ($ct_version <= 0) {
+            $ct_version = 1;
+        }
         sc_exec_sql("
             INSERT INTO contratti_tratte
               (tratta_id, contratto_id, version, carico, scarico, merce, caricatore, proprietario_merce,
                tipo_tariffa_id, tariffa, extra, totale, hash)
             VALUES
-              (" . $wh_sql_num($tratta_id) . ", " . $wh_sql_num($contratto_id) . ", 1,
+              (" . $wh_sql_num($tratta_id) . ", " . $wh_sql_num($contratto_id) . ", " . $wh_sql_num($ct_version) . ",
                " . $wh_sql_quote($tr_contr['carico_str']) . ", " . $wh_sql_quote($tr_contr['scarico_str']) . ",
                NULL, NULL, NULL,
                " . $tipo_tariffa_sql . ", " . $wh_sql_num($tr_contr['importo_unitario']) . ",
@@ -478,6 +959,33 @@ foreach ($tratte_per_contratto as $tr_contr) {
                " . $wh_sql_quote($tr_contr['hash']) . ")
         ", "pigliacelli");
     }
+}
+
+// --- 9b) Notifica credenziali / area riservata (flag simula_credenziali) ---
+$notifica_credenziali = $wh_simula_notifica_credenziali(
+    $subvettore_id,
+    $contratto_id,
+    $subvettore_creato,
+    $tipo_contratto_id,
+    $simula_credenziali,
+    $email,
+    $ragione_sociale,
+    $phone
+);
+if ($notifica_credenziali['eseguita']) {
+    sc_log_add(
+        'WEBHOOK_SIM',
+        'notifica_credenziali esito=' . $notifica_credenziali['esito']
+        . ' contratto=' . $contratto_id
+        . ' subvettore=' . $subvettore_id
+        . ' login=' . (string)$notifica_credenziali['login']
+    );
+} elseif ($simula_credenziali && $notifica_credenziali['motivo'] !== '') {
+    sc_log_add(
+        'WEBHOOK_SIM',
+        'notifica_credenziali skip motivo=' . $notifica_credenziali['motivo']
+        . ' contratto=' . $contratto_id
+    );
 }
 
 // --- 10) URL di test (base da sec_settings.mail_base_url) ---
@@ -513,6 +1021,8 @@ $wh_respond(200, array(
     'tratte'                  => $tratte_create,
     'tratte_in_contratto'     => count($tratte_per_contratto),
     'tratte_skipped'          => $tratte_skipped,
+    'simula_credenziali'      => $simula_credenziali,
+    'notifica_credenziali'    => $notifica_credenziali,
     'test_urls'               => array(
         'finalize'         => $finalizeUrl,
         'easygn_diretto'   => $easygnUrl,

@@ -3,8 +3,12 @@
  * → onBeforeUpdate
  *
  * Blocca il salvataggio se stato_contratto_id da 3 in su (compilato / firma / completato / rifiutati).
- * La sincronizzazione anagrafica va fatta in onAfterUpdate.
+ * save_and_send_magic_link: flag da cookie (Ajax SC non invia hidden creati via JS).
  */
+
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    @session_start();
+}
 
 $scId = 0;
 if (isset({id}) && (int){id} > 0) {
@@ -32,3 +36,28 @@ if ($scId > 0 && $statoContrattoBeforeUpd > 2) {
     return;
 }
 
+$sendMagicLinkAfter = false;
+
+if (isset($_COOKIE['pigliacelli_send_ml']) && trim((string)$_COOKIE['pigliacelli_send_ml']) === '1') {
+    $sendMagicLinkAfter = true;
+    setcookie('pigliacelli_send_ml', '', time() - 3600, '/');
+}
+
+if (!$sendMagicLinkAfter && isset({send_magic_link_after}) && trim((string){send_magic_link_after}) === '1') {
+    $sendMagicLinkAfter = true;
+}
+
+if (!$sendMagicLinkAfter && isset($_POST['send_magic_link_after']) && trim((string)$_POST['send_magic_link_after']) === '1') {
+    $sendMagicLinkAfter = true;
+}
+
+if (!$sendMagicLinkAfter && isset($_REQUEST['send_magic_link_after']) && trim((string)$_REQUEST['send_magic_link_after']) === '1') {
+    $sendMagicLinkAfter = true;
+}
+
+if ($sendMagicLinkAfter) {
+    $_SESSION['pigliacelli_send_magic_link_after'] = 1;
+    sc_log_add('SAVE_SEND_ML', 'flag catturato onBeforeUpdate scId=' . (int)$scId);
+} else {
+    unset($_SESSION['pigliacelli_send_magic_link_after']);
+}

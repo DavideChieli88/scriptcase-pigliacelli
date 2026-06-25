@@ -5,7 +5,7 @@
  *   1) type=member, status=done  → vettore firmato → firmato_il, email committente, In attesa firma committente
  *   2) type=member, status=done  → committente firmato → nessuna email (in attesa chiusura procedura)
  *   3) type=procedure, status=done → Completato, data_inizio_contratto, attiva utente + mail credenziali (se active=N) o link login (se active=Y)
- *   Rifiuti member/procedure → Rifiutato dal subvettore / Rifiutato dal committente
+ *   Rifiuti member/procedure → Rifiutato dal subvettore / Rifiutato dal committente (+ motivo in contratti.notes da body.comments)
  *
  * File: web_hook_firma/api_logs/GG-MM-AAAA.txt | Log: sc_log_add('WEBHOOK_FIRMA', …)
  */
@@ -73,13 +73,13 @@ if ($contrattoId <= 0 && ($tipo === 'member' || $tipo === 'procedure' || $tipo =
     );
 } elseif ($tipo === 'member') {
     try {
-        webhook_handle_member_callback($contrattoId, $memberId, $status, $statoNome);
+        webhook_handle_member_callback($contrattoId, $memberId, $status, $statoNome, $callback);
     } catch (Throwable $e) {
         webhook_sc_log('member handler EXCEPTION: ' . $e->getMessage());
     }
 } elseif ($tipo === 'procedure' || $tipo === 'workflow') {
     try {
-        webhook_handle_procedure_callback($contrattoId, $status, $statoNome, $tipo);
+        webhook_handle_procedure_callback($contrattoId, $status, $statoNome, $tipo, $callback);
     } catch (Throwable $e) {
         webhook_sc_log('procedure handler EXCEPTION: ' . $e->getMessage());
     }
@@ -268,6 +268,20 @@ function webhook_stato_id_by_nome($nome)
  * @return string|null Nome stato in stati_contratti, o null se non va aggiornato il contratto
  */
 
+function webhook_refusal_status_list()
+{
+    return [
+        'refused', 'rejected', 'declined', 'canceled', 'cancelled',
+        'failed', 'failure', 'expired', 'aborted', 'error',
+    ];
+}
+
+function webhook_is_refusal_status($status)
+{
+    $status = strtolower(trim((string)$status));
+    return in_array($status, webhook_refusal_status_list(), true);
+}
+
 function webhook_resolve_stato_nome($tipo, $status)
 {
     $tipo = strtolower(trim((string)$tipo));
@@ -276,7 +290,7 @@ function webhook_resolve_stato_nome($tipo, $status)
         if (in_array($status, ['finished', 'completed', 'done', 'complete'], true)) {
             return 'Completato';
         }
-        if (in_array($status, ['refused', 'rejected', 'declined', 'canceled', 'cancelled', 'failed', 'failure', 'expired', 'aborted', 'error'], true)) {
+        if (webhook_is_refusal_status($status)) {
             return 'Rifiutato';
         }
         return null;
@@ -285,6 +299,9 @@ function webhook_resolve_stato_nome($tipo, $status)
         if ($status === 'done') {
             return null;
         }
+        if (webhook_is_refusal_status($status)) {
+            return 'Rifiutato';
+        }
         $inProgress = [
             '', 'pending', 'waiting', 'opened', 'started', 'in_progress', 'processing',
             'sent', 'notified', 'active', 'created', 'initiated',
@@ -292,7 +309,7 @@ function webhook_resolve_stato_nome($tipo, $status)
         if (in_array($status, $inProgress, true)) {
             return null;
         }
-        return 'Rifiutato';
+        return null;
     }
     return null;
 }
@@ -355,6 +372,55 @@ function webhook_setting($name, $default = '')
         return trim((string){rsSet[0][0]});
     }
     return (string)$default;
+}
+
+if (!function_exists('pigliacelli_mail_logo_read_embed')) {
+    function pigliacelli_mail_logo_read_embed($anchorFile = null)
+    {
+        $rel = '_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png';
+        $dir = realpath(dirname($anchorFile ?: __FILE__));
+        for ($i = 0; $i < 12 && $dir; $i++) {
+            $try = $dir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel);
+            if (is_readable($try)) {
+                $bin = @file_get_contents($try);
+                if ($bin !== false && $bin !== '' && strlen($bin) < 500000) {
+                    return 'data:image/png;base64,' . base64_encode($bin);
+                }
+            }
+            $p = dirname($dir);
+            if ($p === $dir) {
+                break;
+            }
+            $dir = $p;
+        }
+        return '';
+    }
+}
+
+if (!function_exists('pigliacelli_mail_logo_src')) {
+    function pigliacelli_mail_logo_src($getSetting, $anchorFile = null)
+    {
+        $embed = pigliacelli_mail_logo_read_embed($anchorFile);
+        if ($embed !== '') {
+            return $embed;
+        }
+        $base = rtrim(trim((string)$getSetting('mail_base_url', '')), '/');
+        if ($base !== '' && preg_match('#^https?://#i', $base) === 1) {
+            return htmlspecialchars(
+                $base . '/_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png',
+                ENT_QUOTES,
+                'UTF-8'
+            );
+        }
+        return '';
+    }
+}
+
+function webhook_mail_logo_src()
+{
+    return pigliacelli_mail_logo_src(function ($k, $d = '') {
+        return webhook_setting($k, $d);
+    });
 }
 
 if (!function_exists('pigliacelli_mail_layout')) {
@@ -563,10 +629,7 @@ function webhook_send_credenziali_subvettore_email($contrattoId, $to, $login, $p
     $safeLogin = htmlspecialchars($login, ENT_QUOTES, 'UTF-8');
     $safePwd = htmlspecialchars($plainPassword, ENT_QUOTES, 'UTF-8');
     $safeNome = htmlspecialchars($nome, ENT_QUOTES, 'UTF-8');
-    $mailBase = rtrim(trim(webhook_setting('mail_base_url', '')), '/');
-    $mailLogoUrl = ($mailBase !== '' && preg_match('#^https?://#i', $mailBase) === 1)
-        ? htmlspecialchars($mailBase . '/_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png', ENT_QUOTES, 'UTF-8')
-        : '';
+    $mailLogoUrl = webhook_mail_logo_src();
     $credInner = '<p style="margin:0 0 16px;">' . $safeNome . ',</p>'
         . '<p style="margin:0 0 20px;">Il contratto <strong>#' . (int)$contrattoId . '</strong> è stato completato. '
         . 'Ecco le credenziali per l\'area riservata (password temporanea).</p>'
@@ -631,10 +694,7 @@ function webhook_send_area_riservata_login_email($contrattoId, $to, $displayName
         . "Messaggio automatico — non rispondere.";
     $safeNome = htmlspecialchars($nome, ENT_QUOTES, 'UTF-8');
     $safeLoginUrl = htmlspecialchars($loginUrl, ENT_QUOTES, 'UTF-8');
-    $mailBase = rtrim(trim(webhook_setting('mail_base_url', '')), '/');
-    $mailLogoUrl = ($mailBase !== '' && preg_match('#^https?://#i', $mailBase) === 1)
-        ? htmlspecialchars($mailBase . '/_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png', ENT_QUOTES, 'UTF-8')
-        : '';
+    $mailLogoUrl = webhook_mail_logo_src();
     $inner = '<p style="margin:0 0 16px;">' . $safeNome . ',</p>'
         . '<p style="margin:0 0 20px;">Il contratto <strong>#' . (int)$contrattoId . '</strong> è stato completato. '
         . 'Puoi accedere all\'area riservata con le <strong>credenziali già in tuo possesso</strong>.</p>'
@@ -773,10 +833,7 @@ function webhook_send_sign_link_email($contrattoId, $to, $recipientName, $signUr
         . "Messaggio automatico — non rispondere.";
     $safeUrl = htmlspecialchars($signUrl, ENT_QUOTES, 'UTF-8');
     $safeNome = htmlspecialchars($nome, ENT_QUOTES, 'UTF-8');
-    $mailBase = rtrim(trim(webhook_setting('mail_base_url', '')), '/');
-    $mailLogoUrl = ($mailBase !== '' && preg_match('#^https?://#i', $mailBase) === 1)
-        ? htmlspecialchars($mailBase . '/_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png', ENT_QUOTES, 'UTF-8')
-        : '';
+    $mailLogoUrl = webhook_mail_logo_src();
     $commInner = '<p style="margin:0 0 16px;">' . $safeNome . ',</p>'
         . '<p style="margin:0 0 24px;">Il subvettore ha completato la firma. La preghiamo di firmare il contratto <strong>#'
         . (int)$contrattoId . '</strong>.</p>'
@@ -856,14 +913,107 @@ function webhook_rifiuto_stato_nome($contrattoId, $memberId = '')
     return 'Rifiutato dal subvettore';
 }
 
+function webhook_extract_member_id_from_callback(array $callback)
+{
+    foreach (['memberId', 'member_id', 'signerId', 'signer_id'] as $key) {
+        if (!empty($callback[$key])) {
+            return trim((string)$callback[$key]);
+        }
+    }
+    if (isset($callback['member']) && is_array($callback['member'])) {
+        if (!empty($callback['member']['id'])) {
+            return trim((string)$callback['member']['id']);
+        }
+    }
+    $tipoCb = strtolower(trim((string)($callback['type'] ?? '')));
+    if ($tipoCb === 'member' && !empty($callback['id'])) {
+        return trim((string)$callback['id']);
+    }
+    return '';
+}
+
+function webhook_extract_comments_from_callback(array $callback)
+{
+    $candidates = [];
+    if (isset($callback['comments'])) {
+        $candidates[] = $callback['comments'];
+    }
+    if (isset($callback['comment'])) {
+        $candidates[] = $callback['comment'];
+    }
+    if (isset($callback['data']) && is_array($callback['data'])) {
+        if (isset($callback['data']['comments'])) {
+            $candidates[] = $callback['data']['comments'];
+        }
+        if (isset($callback['data']['comment'])) {
+            $candidates[] = $callback['data']['comment'];
+        }
+    }
+    if (isset($callback['member']) && is_array($callback['member'])) {
+        if (isset($callback['member']['comments'])) {
+            $candidates[] = $callback['member']['comments'];
+        }
+        if (isset($callback['member']['comment'])) {
+            $candidates[] = $callback['member']['comment'];
+        }
+    }
+    foreach ($candidates as $value) {
+        if (is_array($value)) {
+            $value = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }
+        $text = trim((string)$value);
+        if ($text !== '') {
+            return $text;
+        }
+    }
+    return '';
+}
+
+function webhook_update_contratto_notes($contrattoId, $notes)
+{
+    $contrattoId = (int)$contrattoId;
+    $notes = trim((string)$notes);
+    if ($contrattoId <= 0 || $notes === '') {
+        return false;
+    }
+    $notesSql = webhook_sql_quote($notes);
+    sc_exec_sql("UPDATE contratti SET notes = '$notesSql' WHERE id = $contrattoId");
+    webhook_sc_log('UPDATE contratto_id=' . $contrattoId . ' notes salvate len=' . strlen($notes));
+    return true;
+}
+
+function webhook_handle_rifiuto_contratto($contrattoId, $memberId, $tipo, $status, array $callback)
+{
+    $contrattoId = (int)$contrattoId;
+    if ($contrattoId <= 0) {
+        return;
+    }
+    $memberId = trim((string)$memberId);
+    if ($memberId === '') {
+        $memberId = webhook_extract_member_id_from_callback($callback);
+    }
+    $rifiutoNome = webhook_rifiuto_stato_nome($contrattoId, $memberId);
+    $comments = webhook_extract_comments_from_callback($callback);
+    webhook_sc_log(
+        'rifiuto → ' . $rifiutoNome
+        . ' contratto_id=' . $contrattoId
+        . ' memberId=' . $memberId
+        . ' type=' . $tipo
+        . ' status=' . $status
+        . ($comments !== '' ? ' comments_len=' . strlen($comments) : '')
+    );
+    webhook_set_stato_contratto($contrattoId, $rifiutoNome, $tipo, $status);
+    if ($comments !== '') {
+        webhook_update_contratto_notes($contrattoId, $comments);
+    }
+}
+
 /** Chiamata 1 o 2: member done / refused */
-function webhook_handle_member_callback($contrattoId, $memberId, $status, $statoNome)
+function webhook_handle_member_callback($contrattoId, $memberId, $status, $statoNome, array $callback)
 {
     $status = strtolower(trim((string)$status));
     if ($statoNome === 'Rifiutato') {
-        $rifiutoNome = webhook_rifiuto_stato_nome($contrattoId, $memberId);
-        webhook_sc_log('member rifiuto → ' . $rifiutoNome . ' contratto_id=' . $contrattoId);
-        webhook_set_stato_contratto($contrattoId, $rifiutoNome, 'member', $status);
+        webhook_handle_rifiuto_contratto($contrattoId, $memberId, 'member', $status, $callback);
         return;
     }
     if ($status !== 'done') {
@@ -886,14 +1036,15 @@ function webhook_handle_member_callback($contrattoId, $memberId, $status, $stato
 }
 
 /** Chiamata 3: procedure done / finished */
-function webhook_handle_procedure_callback($contrattoId, $status, $statoNome, $tipo)
+function webhook_handle_procedure_callback($contrattoId, $status, $statoNome, $tipo, array $callback)
 {
     if ($statoNome === null) {
         webhook_sc_log('procedure status=' . $status . ' ignorato contratto_id=' . $contrattoId);
         return;
     }
     if ($statoNome === 'Rifiutato') {
-        $statoNome = webhook_rifiuto_stato_nome($contrattoId);
+        webhook_handle_rifiuto_contratto($contrattoId, '', $tipo, $status, $callback);
+        return;
     }
     webhook_sc_log('evento 3/3: procedura ' . $status . ' → ' . $statoNome . ' contratto_id=' . $contrattoId);
     webhook_set_stato_contratto($contrattoId, $statoNome, $tipo, $status);

@@ -16,44 +16,6 @@ if (!function_exists('form_subvettori_contratti_sql_quote')) {
     }
 }
 
-if (!function_exists('form_subvettori_contratti_normalize_date_db')) {
-    function form_subvettori_contratti_normalize_date_db($value)
-    {
-        $value = trim((string)$value);
-        if ($value === '' || $value === '0000-00-00' || $value === '00/00/0000') {
-            return null;
-        }
-        if (preg_match('/^(\d{4})-(\d{2})-(\d{2})/', $value, $m) === 1) {
-            $year  = (int)$m[1];
-            $month = (int)$m[2];
-            $day   = (int)$m[3];
-            if ($year >= 1900 && checkdate($month, $day, $year)) {
-                return sprintf('%04d-%02d-%02d', $year, $month, $day);
-            }
-            return null;
-        }
-        if (preg_match('/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/', $value, $m) === 1) {
-            $day   = (int)$m[1];
-            $month = (int)$m[2];
-            $year  = (int)$m[3];
-            if (checkdate($month, $day, $year)) {
-                return sprintf('%04d-%02d-%02d', $year, $month, $day);
-            }
-            return null;
-        }
-        if (preg_match('/^(\d{2})(\d{2})(\d{4})$/', $value, $m) === 1) {
-            $day   = (int)$m[1];
-            $month = (int)$m[2];
-            $year  = (int)$m[3];
-            if (checkdate($month, $day, $year)) {
-                return sprintf('%04d-%02d-%02d', $year, $month, $day);
-            }
-            return null;
-        }
-        return null;
-    }
-}
-
 $subvettoreId = 0;
 if (isset({subvettore_id}) && (int){subvettore_id} > 0) {
     $subvettoreId = (int){subvettore_id};
@@ -78,19 +40,19 @@ if ($subvettoreId <= 0 && $scId > 0) {
     }
 }
 
-$ragione_sociale                  = isset({ragione_sociale})                  ? trim((string){ragione_sociale})                  : '';
-$sede_citta                       = isset({sede_citta})                       ? trim((string){sede_citta})                       : '';
-$sede_prov                        = isset({sede_prov})                        ? trim((string){sede_prov})                        : '';
-$indirizzo                        = isset({indirizzo})                        ? trim((string){indirizzo})                        : '';
-$civico                           = isset({civico})                           ? trim((string){civico})                           : '';
-$cod_fiscale                      = isset({cod_fiscale})                      ? trim((string){cod_fiscale})                      : '';
-$piva                             = isset({piva})                             ? trim((string){piva})                             : '';
-$num_iscrizione_reg_imprese       = isset({num_iscrizione_reg_imprese})       ? trim((string){num_iscrizione_reg_imprese})       : '';
-$locazione_iscrizione_reg_imprese = isset({locazione_iscrizione_reg_imprese}) ? trim((string){locazione_iscrizione_reg_imprese}) : '';
-$rea                              = isset({rea})                              ? trim((string){rea})                              : '';
-$cellphone                        = isset({phone})                            ? trim((string){phone})                            : '';
-
 if ($subvettoreId > 0) {
+    $ragione_sociale                  = isset({ragione_sociale})                  ? trim((string){ragione_sociale})                  : '';
+    $sede_citta                       = isset({sede_citta})                       ? trim((string){sede_citta})                       : '';
+    $sede_prov                        = isset({sede_prov})                        ? trim((string){sede_prov})                        : '';
+    $indirizzo                        = isset({indirizzo})                        ? trim((string){indirizzo})                        : '';
+    $civico                           = isset({civico})                           ? trim((string){civico})                           : '';
+    $cod_fiscale                      = isset({cod_fiscale})                      ? trim((string){cod_fiscale})                      : '';
+    $piva                             = isset({piva})                             ? trim((string){piva})                             : '';
+    $num_iscrizione_reg_imprese       = isset({num_iscrizione_reg_imprese})       ? trim((string){num_iscrizione_reg_imprese})       : '';
+    $locazione_iscrizione_reg_imprese = isset({locazione_iscrizione_reg_imprese}) ? trim((string){locazione_iscrizione_reg_imprese}) : '';
+    $rea                              = isset({rea})                              ? trim((string){rea})                              : '';
+    $cellphone                        = isset({phone})                            ? trim((string){phone})                            : '';
+
     sc_exec_sql("
         UPDATE subvettori
         SET
@@ -108,34 +70,71 @@ if ($subvettoreId > 0) {
         WHERE id = " . (int)$subvettoreId . "
         LIMIT 1
     ");
+
     sc_log_add('SUB_SYNC', 'subvettori aggiornato id=' . (int)$subvettoreId);
 } else {
     sc_log_add('SUB_SYNC', 'subvettore_id non risolvibile, skip UPDATE subvettori');
 }
 
-if ($scId > 0) {
-    $data_nascita_raw     = isset({data_nascita_rappresentante}) ? trim((string){data_nascita_rappresentante}) : '';
-    $data_nascita_display = $data_nascita_raw;
-    $data_nascita_db      = form_subvettori_contratti_normalize_date_db($data_nascita_raw);
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    @session_start();
+}
 
-    if ($data_nascita_db === null && $data_nascita_raw !== '') {
-        {data_nascita_rappresentante} = sc_date_conv({data_nascita_rappresentante}, "sc_format_region", "db_format");
-        $data_nascita_db = form_subvettori_contratti_normalize_date_db({data_nascita_rappresentante});
-        if ($data_nascita_db === null) {
-            {data_nascita_rappresentante} = $data_nascita_display;
-            {data_nascita_rappresentante} = sc_date_conv({data_nascita_rappresentante}, "ddmmyyyy", "db_format");
-            $data_nascita_db = form_subvettori_contratti_normalize_date_db({data_nascita_rappresentante});
-        }
-        {data_nascita_rappresentante} = $data_nascita_display;
+// save_and_send_magic_link: sessione da onBeforeUpdate (cookie)
+if (!empty($_SESSION['pigliacelli_send_magic_link_after'])) {
+    unset($_SESSION['pigliacelli_send_magic_link_after']);
+
+    $contrattoIdMl = 0;
+    if (isset({contratto_id}) && (int){contratto_id} > 0) {
+        $contrattoIdMl = (int){contratto_id};
     }
 
-    if (trim((string)$data_nascita_raw) !== '' && $data_nascita_db !== null) {
-        sc_exec_sql("
-            UPDATE subvettori_contratti
-            SET data_nascita_rappresentante = " . form_subvettori_contratti_sql_quote($data_nascita_db) . "
+    $subvettoreIdMl = (int)$subvettoreId;
+    if ($subvettoreIdMl <= 0 && isset({subvettore_id}) && (int){subvettore_id} > 0) {
+        $subvettoreIdMl = (int){subvettore_id};
+    }
+
+    if (($contrattoIdMl <= 0 || $subvettoreIdMl <= 0) && $scId > 0) {
+        sc_lookup(rsMlRedir, "
+            SELECT contratto_id, subvettore_id
+            FROM subvettori_contratti
             WHERE id = " . (int)$scId . "
             LIMIT 1
-        ");
-        sc_log_add('SUB_SYNC', 'data_nascita_rappresentante normalizzata id=' . (int)$scId . ' val=' . $data_nascita_db);
+        ", "pigliacelli");
+        if (!empty({rsMlRedir[0][0]})) {
+            if ($contrattoIdMl <= 0) {
+                $contrattoIdMl = (int){rsMlRedir[0][0]};
+            }
+            if ($subvettoreIdMl <= 0) {
+                $subvettoreIdMl = (int){rsMlRedir[0][1]};
+            }
+        }
+    }
+
+    if ($contrattoIdMl > 0 && $subvettoreIdMl > 0) {
+        $redirParams = 'contrattoId=' . $contrattoIdMl . '&subvettoreId=' . $subvettoreIdMl;
+        sc_log_add(
+            'SAVE_SEND_ML',
+            'redirect send_magic_link scId=' . (int)$scId . ' ' . $redirParams
+        );
+
+        $isAjax = (isset({Is_Ajax}) && strtoupper((string){Is_Ajax}) === 'Y');
+        if ($isAjax) {
+            $_SESSION['pigliacelli_redir_send_magic_link'] = $redirParams;
+            if (function_exists('sc_ajax_javascript')) {
+                sc_ajax_javascript(
+                    "if (typeof nm_move === 'function') { nm_move('send_magic_link', '"
+                    . str_replace("'", "\\'", $redirParams) . "'); }"
+                );
+            }
+        } else {
+            sc_redir('send_magic_link', $redirParams);
+            exit;
+        }
+    } else {
+        sc_log_add(
+            'SAVE_SEND_ML',
+            'flag attivo ma contrattoId/subvettoreId mancanti scId=' . (int)$scId
+        );
     }
 }

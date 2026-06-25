@@ -5,7 +5,9 @@
 // Eseguire dopo insert_new_subvectors_basevettori (richiede subvettori gia' presenti).
 // Viaggi: da export_viaggi_anno (sec_settings, default 2023) fino all'ANNO corrente,
 // elaborati UN ANNO ALLA VOLTA (scaglionato in un'unica run, per limitare il picco di memoria).
-// Ottimizzazioni: niente N+1 (localita/extra/subvettori/tariffe/hash in bulk),
+// Tratte: una riga per sub+carico+scarico (come check_new_trips). Stesso hash+sub=skip;
+// stessa tratta tariffa diversa=UPDATE tariffa (version invariata; version++ solo in check_new_trips).
+// Ottimizzazioni: niente N+1 (localita/extra/subvettori/tariffe/indice tratte in bulk),
 // limiti di esecuzione alzati, lock anti doppio avvio, logging a step, sync_date aggiornato a fine run.
 
 function log_insert_trips($step, $msg = '')
@@ -101,11 +103,93 @@ function viaggio_piu_recente($nuovo, $corrente)
         return $nuovo_partenza > $corrente_partenza;
     }
 
+    $nuovo_sync = data_compare_value(isset($nuovo['sync_data_ora']) ? $nuovo['sync_data_ora'] : '');
+    $corrente_sync = data_compare_value(isset($corrente['sync_data_ora']) ? $corrente['sync_data_ora'] : '');
+
+    if ($nuovo_sync !== $corrente_sync) {
+        return $nuovo_sync > $corrente_sync;
+    }
+
     if ((int)$nuovo['ANNO'] !== (int)$corrente['ANNO']) {
         return (int)$nuovo['ANNO'] > (int)$corrente['ANNO'];
     }
 
     return (int)$nuovo['NUMERO'] > (int)$corrente['NUMERO'];
+}
+
+function carica_indice_tratte_pigliacelli()
+{
+    $tratte_route_map = array();
+    $hash_sub_map = array();
+
+    $loc_carico = array();
+    $loc_scarico = array();
+    sc_lookup(locRows, "
+        SELECT tratta_id, tipo_tratta, localita, progressivo
+        FROM tratte_localita
+        ORDER BY tratta_id, tipo_tratta, progressivo
+    ", "pigliacelli");
+    if (!empty({locRows})) {
+        foreach ({locRows} as $locRow) {
+            $tratta_id_loc = (int)$locRow[0];
+            $tipo_loc = (string)$locRow[1];
+            $localita_loc = (string)$locRow[2];
+            if ($tipo_loc === 'C') {
+                if (!isset($loc_carico[$tratta_id_loc])) {
+                    $loc_carico[$tratta_id_loc] = array();
+                }
+                $loc_carico[$tratta_id_loc][] = $localita_loc;
+            } elseif ($tipo_loc === 'S') {
+                if (!isset($loc_scarico[$tratta_id_loc])) {
+                    $loc_scarico[$tratta_id_loc] = array();
+                }
+                $loc_scarico[$tratta_id_loc][] = $localita_loc;
+            }
+        }
+    }
+
+    sc_lookup(tratteRows, "
+        SELECT id, subvettore_id, tariffa, extra, totale, version, hash
+        FROM tratte
+    ", "pigliacelli");
+    if (!empty({tratteRows})) {
+        foreach ({tratteRows} as $trattaRow) {
+            $tratta_id = (int)$trattaRow[0];
+            $subvettore_id = (int)$trattaRow[1];
+            if ($subvettore_id <= 0) {
+                continue;
+            }
+
+            $carico_str = isset($loc_carico[$tratta_id])
+                ? implode(' + ', $loc_carico[$tratta_id])
+                : '';
+            $scarico_str = isset($loc_scarico[$tratta_id])
+                ? implode(' + ', $loc_scarico[$tratta_id])
+                : '';
+            if ($carico_str === '' || $scarico_str === '') {
+                continue;
+            }
+
+            $hash_val = trim((string)$trattaRow[6]);
+            $entry = array(
+                'id' => $tratta_id,
+                'tariffa' => $trattaRow[2],
+                'extra' => $trattaRow[3],
+                'totale' => $trattaRow[4],
+                'version' => $trattaRow[5],
+                'hash' => $hash_val,
+            );
+
+            $route_key = $subvettore_id . '|' . $carico_str . '|' . $scarico_str;
+            $tratte_route_map[$route_key] = $entry;
+
+            if ($hash_val !== '') {
+                $hash_sub_map[$subvettore_id . '|' . $hash_val] = true;
+            }
+        }
+    }
+
+    return array($tratte_route_map, $hash_sub_map);
 }
 
 function carica_localita_bulk($pdo_sga, $societa, $anno)
@@ -306,7 +390,7 @@ $sql_viaggi_base = "
 ";
 
 // Precarico mappe MySQL una sola volta (valide per tutti gli anni): niente lookup per viaggio.
-log_insert_trips('009', 'Precarico mappe pigliacelli (subvettori, tariffe, hash)');
+log_insert_trips('009', 'Precarico mappe pigliacelli (subvettori, tariffe, indice tratte)');
 
 $subvettori_map = [];
 sc_lookup(subRows, "SELECT codice_sga, id FROM subvettori WHERE codice_sga IS NOT NULL", "pigliacelli");
@@ -324,24 +408,21 @@ if (!empty({tariffeRows})) {
     }
 }
 
-$hash_esistenti = [];
-sc_lookup(hashRows, "SELECT hash FROM tratte WHERE hash IS NOT NULL", "pigliacelli");
-if (!empty({hashRows})) {
-    foreach ({hashRows} as $r) {
-        $hash_esistenti[(string)$r[0]] = true;
-    }
-}
+list($tratte_route_map, $hash_sub_map) = carica_indice_tratte_pigliacelli();
 
 log_insert_trips(
     '009',
     'Mappe pronte | subvettori=' . count($subvettori_map) .
     ' | tariffe=' . count($tariffe_map) .
-    ' | hash_esistenti=' . count($hash_esistenti)
+    ' | tratte_route=' . count($tratte_route_map) .
+    ' | hash_sub=' . count($hash_sub_map)
 );
 
 // Contatori globali (cumulati su tutti gli anni).
 $tot_inseriti = 0;
+$tot_aggiornati = 0;
 $tot_saltati_hash = 0;
+$tot_saltati_invariati = 0;
 $tot_saltati_subvettore = 0;
 $subvettori_mancanti = [];
 $ultima_sync_data_ora = null;
@@ -432,6 +513,7 @@ for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
                 'importo_unitario' => $importo_unitario,
                 'extra_totale' => $extra_totale,
                 'partenza_data_ora' => $partenza_data_ora,
+                'sync_data_ora' => $sync_data_ora,
             ];
 
             if (!isset($viaggi_unici[$key]) || viaggio_piu_recente($viaggio, $viaggi_unici[$key])) {
@@ -464,18 +546,24 @@ for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
         return;
     }
 
-    // ---- Insert MySQL per l'anno ----
+    // ---- Insert/UPDATE MySQL per l'anno ----
     $inseriti = 0;
+    $aggiornati = 0;
     $saltati_hash = 0;
+    $saltati_invariati = 0;
     $saltati_subvettore = 0;
     $insert_elaborati = 0;
 
-    log_insert_trips('110', 'ANNO ' . $anno . ' | inizio insert MySQL | candidati=' . $candidati_insert);
+    log_insert_trips('110', 'ANNO ' . $anno . ' | inizio upsert MySQL | candidati=' . $candidati_insert);
 
     foreach ($viaggi_unici as $viaggio) {
         $insert_elaborati++;
         if ($insert_elaborati === 1 || $insert_elaborati % 500 === 0) {
-            log_insert_trips('110', 'ANNO ' . $anno . ' | insert ' . $insert_elaborati . '/' . $candidati_insert . ' | inseriti=' . $inseriti);
+            log_insert_trips(
+                '110',
+                'ANNO ' . $anno . ' | upsert ' . $insert_elaborati . '/' . $candidati_insert .
+                ' | inseriti=' . $inseriti . ' | aggiornati=' . $aggiornati
+            );
         }
         $codice_vettore   = $viaggio['codice_vettore'];
         $carico_str       = $viaggio['carico_str'];
@@ -483,13 +571,6 @@ for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
         $tariffa_sigla    = $viaggio['tariffa_sigla'];
         $importo_unitario = $viaggio['importo_unitario'];
         $extra_totale     = $viaggio['extra_totale'];
-
-        $hash = crea_hash_tratta($carico_str, $scarico_str, $codice_vettore, $importo_unitario);
-
-        if (isset($hash_esistenti[$hash])) {
-            $saltati_hash++;
-            continue;
-        }
 
         $codice_vettore_key = (string)$codice_vettore;
         if (!isset($subvettori_map[$codice_vettore_key])) {
@@ -501,7 +582,14 @@ for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
             continue;
         }
 
-        $subvettore_id = $subvettori_map[$codice_vettore_key];
+        $subvettore_id = (int)$subvettori_map[$codice_vettore_key];
+        $hash = crea_hash_tratta($carico_str, $scarico_str, $codice_vettore, $importo_unitario);
+        $hash_sub_key = $subvettore_id . '|' . $hash;
+
+        if (isset($hash_sub_map[$hash_sub_key])) {
+            $saltati_hash++;
+            continue;
+        }
 
         if ($tariffa_sigla === '') {
             $tariffa_sigla = null;
@@ -517,6 +605,52 @@ for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
         }
 
         $tipo_tariffa_sql = $tipo_tariffa_id === null ? "NULL" : sql_num($tipo_tariffa_id);
+
+        $route_key = $subvettore_id . '|' . $carico_str . '|' . $scarico_str;
+        if (isset($tratte_route_map[$route_key])) {
+            $exist = $tratte_route_map[$route_key];
+            $has_modifica_tratta = (
+                abs((float)$exist['tariffa'] - (float)$importo_unitario) > 0.0001 ||
+                abs((float)$exist['extra'] - (float)$extra_totale) > 0.0001 ||
+                abs((float)$exist['totale'] - (float)$totale) > 0.0001
+            );
+
+            if (!$has_modifica_tratta) {
+                $saltati_invariati++;
+                if ($exist['hash'] !== '') {
+                    $hash_sub_map[$subvettore_id . '|' . $exist['hash']] = true;
+                }
+                continue;
+            }
+
+            $tratta_id_esistente = (int)$exist['id'];
+            $old_hash = (string)$exist['hash'];
+
+            sc_exec_sql("
+                UPDATE tratte
+                SET tipo_tariffa_id = " . $tipo_tariffa_sql . ",
+                    tariffa = " . sql_num($importo_unitario) . ",
+                    extra = " . sql_num($extra_totale) . ",
+                    totale = " . sql_num($totale) . ",
+                    hash = " . sql_quote($hash) . "
+                WHERE id = " . sql_num($tratta_id_esistente) . "
+            ", "pigliacelli");
+
+            if ($old_hash !== '' && $old_hash !== $hash) {
+                unset($hash_sub_map[$subvettore_id . '|' . $old_hash]);
+            }
+            $hash_sub_map[$hash_sub_key] = true;
+            $tratte_route_map[$route_key] = array(
+                'id' => $tratta_id_esistente,
+                'tariffa' => $importo_unitario,
+                'extra' => $extra_totale,
+                'totale' => $totale,
+                'version' => $exist['version'],
+                'hash' => $hash,
+            );
+            $aggiornati++;
+            continue;
+        }
 
         $insTratta = "
           INSERT INTO tratte
@@ -539,8 +673,16 @@ for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
             continue;
         }
 
-        $tratta_id = {lastId[0][0]};
-        $hash_esistenti[$hash] = true;
+        $tratta_id = (int){lastId[0][0]};
+        $hash_sub_map[$hash_sub_key] = true;
+        $tratte_route_map[$route_key] = array(
+            'id' => $tratta_id,
+            'tariffa' => $importo_unitario,
+            'extra' => $extra_totale,
+            'totale' => $totale,
+            'version' => 1,
+            'hash' => $hash,
+        );
 
         $i = 1;
         foreach (split_localita($carico_str) as $loc) {
@@ -566,13 +708,17 @@ for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
     unset($viaggi_unici);
 
     $tot_inseriti += $inseriti;
+    $tot_aggiornati += $aggiornati;
     $tot_saltati_hash += $saltati_hash;
+    $tot_saltati_invariati += $saltati_invariati;
     $tot_saltati_subvettore += $saltati_subvettore;
 
     log_insert_trips(
         '112',
         'ANNO ' . $anno . ' | completato | inseriti=' . $inseriti .
+        ' | aggiornati=' . $aggiornati .
         ' | hash_skip=' . $saltati_hash .
+        ' | invariati=' . $saltati_invariati .
         ' | subvettore_skip=' . $saltati_subvettore
     );
 }
@@ -580,7 +726,9 @@ for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
 sc_log_add(
     "INSERT_TRIPS_OPT",
     "Totale tratte inserite: " . $tot_inseriti .
+    ", aggiornate: " . $tot_aggiornati .
     ", hash gia' presenti: " . $tot_saltati_hash .
+    ", invariate: " . $tot_saltati_invariati .
     ", subvettore mancante: " . $tot_saltati_subvettore .
     ", anni=" . $anno_da . ".." . $anno_a
 );
