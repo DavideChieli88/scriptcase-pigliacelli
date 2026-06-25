@@ -12,9 +12,11 @@
  * 4) Precaricamento dati legale rappresentante da subvettori_contratti
  *    (email/telefono rappresentante: fallback da subvettori.login_subvettore / cellphone se vuoti sul contratto)
  * 5) Campi *_firmatario nascosti
+ * 6) stato_contratto_id da 3 in su: campi master sola lettura con sc_field_readonly (onLoad)
+ *    Detail tratte/autisti: onScriptInit (sc_apl_conf + sc_lookup pigliacelli)
  */
 
- if (session_status() !== PHP_SESSION_ACTIVE) {
+if (session_status() !== PHP_SESSION_ACTIVE) {
     @session_start();
 }
 
@@ -191,3 +193,50 @@ if (!function_exists('pigliacelli_hide_campi_firmatario_form')) {
     }
 }
 pigliacelli_hide_campi_firmatario_form();
+
+$statoContrattoForm = 0;
+if ($scId > 0) {
+    sc_lookup(rsStatoContrFormOp, "
+        SELECT c.stato_contratto_id
+        FROM subvettori_contratti sc
+        INNER JOIN contratti c ON c.id = sc.contratto_id
+        WHERE sc.id = " . (int)$scId . "
+        LIMIT 1
+    ", "pigliacelli");
+    if (!empty({rsStatoContrFormOp[0][0]})) {
+        $statoContrattoForm = (int){rsStatoContrFormOp[0][0]};
+    }
+}
+
+if ($statoContrattoForm > 2) {
+    sc_field_readonly({subvettore_id}, 'on');
+    sc_field_readonly({contratto_id}, 'on');
+    sc_field_readonly({ragione_sociale}, 'on');
+    sc_field_readonly({sede_citta}, 'on');
+    sc_field_readonly({sede_prov}, 'on');
+    sc_field_readonly({indirizzo}, 'on');
+    sc_field_readonly({civico}, 'on');
+    sc_field_readonly({cod_fiscale}, 'on');
+    sc_field_readonly({piva}, 'on');
+    sc_field_readonly({num_iscrizione_reg_imprese}, 'on');
+    sc_field_readonly({locazione_iscrizione_reg_imprese}, 'on');
+    sc_field_readonly({rea}, 'on');
+    sc_field_readonly({phone}, 'on');
+    sc_field_readonly({num_iscrizione_albo}, 'on');
+    sc_field_readonly({nome_rappresentante}, 'on');
+    sc_field_readonly({cognome_rappresentante}, 'on');
+    sc_field_readonly({email_rappresentante}, 'on');
+    sc_field_readonly({telefono_rappresentante}, 'on');
+    sc_field_readonly({luogo_nascita_rappresentante}, 'on');
+    sc_field_readonly({prov_luogo_nascita_rappresentante}, 'on');
+    sc_field_readonly({prov_nascita_rappresentante}, 'on');
+    sc_field_readonly({data_nascita_rappresentante}, 'on');
+    sc_field_readonly({nome_firmatario}, 'on');
+    sc_field_readonly({cognome_firmatario}, 'on');
+    sc_field_readonly({email_firmatario}, 'on');
+    sc_field_readonly({telefono_firmatario}, 'on');
+
+    sc_btn_display('update', 'off');
+    sc_btn_display('delete', 'off');
+    sc_btn_display('new', 'off');
+}

@@ -1,0 +1,59 @@
+/**
+ * form_subvettori_contratti (operatore) → onScriptInit
+ *
+ * Detail embedded (sc_apl_conf valido qui, contesto apl + conectExtra):
+ * - form_contratti_tratte + subvettori_autisti: OFF se stato_contratto_id > 2
+ *   (da stato 3 in su: Compilato, firma, completato, rifiutati)
+ */
+
+$scIdInit = 0;
+if (isset({id}) && (int){id} > 0) {
+    $scIdInit = (int){id};
+} elseif (isset([subvettore_contratto_id]) && (int)[subvettore_contratto_id] > 0) {
+    $scIdInit = (int)[subvettore_contratto_id];
+} elseif (isset($_GET['subvettore_contratto_id']) && (int)$_GET['subvettore_contratto_id'] > 0) {
+    $scIdInit = (int)$_GET['subvettore_contratto_id'];
+} elseif (isset($_GET['id']) && (int)$_GET['id'] > 0) {
+    $scIdInit = (int)$_GET['id'];
+} elseif (isset($_GET['nmgp_arg']) && is_string($_GET['nmgp_arg'])) {
+    $nmgpParts = array();
+    parse_str((string)$_GET['nmgp_arg'], $nmgpParts);
+    if (!empty($nmgpParts['subvettore_contratto_id']) && (int)$nmgpParts['subvettore_contratto_id'] > 0) {
+        $scIdInit = (int)$nmgpParts['subvettore_contratto_id'];
+    } elseif (!empty($nmgpParts['id']) && (int)$nmgpParts['id'] > 0) {
+        $scIdInit = (int)$nmgpParts['id'];
+    }
+}
+
+$statoContrattoInit = 0;
+if ($scIdInit > 0) {
+    sc_lookup(rsStatoContrScript, "
+        SELECT c.stato_contratto_id
+        FROM subvettori_contratti sc
+        INNER JOIN contratti c ON c.id = sc.contratto_id
+        WHERE sc.id = " . (int)$scIdInit . "
+        LIMIT 1
+    ", "pigliacelli");
+    if (!empty({rsStatoContrScript[0][0]})) {
+        $statoContrattoInit = (int){rsStatoContrScript[0][0]};
+    }
+}
+
+$_SESSION['pigliacelli_form_sc_id']           = (int)$scIdInit;
+$_SESSION['pigliacelli_form_stato_contratto'] = (int)$statoContrattoInit;
+
+$detailBloccato = ($statoContrattoInit > 2);
+
+$statoDetail = 'on';
+if ($detailBloccato) {
+    $statoDetail = 'off';
+}
+
+sc_apl_conf('form_contratti_tratte', 'insert', $statoDetail);
+sc_apl_conf('form_contratti_tratte', 'update', $statoDetail);
+sc_apl_conf('form_contratti_tratte', 'delete', $statoDetail);
+
+sc_apl_conf('subvettori_autisti', 'insert', $statoDetail);
+sc_apl_conf('subvettori_autisti', 'update', $statoDetail);
+sc_apl_conf('subvettori_autisti', 'delete', $statoDetail);
+

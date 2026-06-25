@@ -1,6 +1,40 @@
 $hasFile   = !empty({file}); // il file è stato caricato sul server
 $hasSigned = !empty({easygn_file_id}); // il pdf è stato generato da easygn
 $stato     = (int){stato_contratto_id};
+$firmatoIl = isset({firmato_il}) ? trim((string){firmato_il}) : '';
+
+// Subvettore già firmato ma stato ancora 4 (webhook legacy): allinea DB + lookup colonna stato
+if (
+    $stato === 4
+    && $firmatoIl !== ''
+    && $firmatoIl !== '0000-00-00 00:00:00'
+) {
+    $statoIdComm = 0;
+    sc_lookup(rsStCommGrid, "
+        SELECT id
+        FROM stati_contratti
+        WHERE nome = 'In attesa della firma committente'
+        LIMIT 1
+    ");
+    if (!empty({rsStCommGrid[0][0]})) {
+        $statoIdComm = (int){rsStCommGrid[0][0]};
+    }
+    if ($statoIdComm <= 0) {
+        $statoIdComm = 5;
+    }
+    $contrattoIdGrid = isset({id}) ? (int){id} : 0;
+    if ($contrattoIdGrid > 0) {
+        sc_exec_sql("
+            UPDATE contratti
+            SET stato_contratto_id = " . $statoIdComm . "
+            WHERE id = " . $contrattoIdGrid . "
+              AND stato_contratto_id = 4
+            LIMIT 1
+        ");
+    }
+    $stato = $statoIdComm;
+    {stato_contratto_id} = $statoIdComm;
+}
 
 // stati_contratti (ID fissi):
 // 1 Da inviare al subvettore
@@ -39,7 +73,7 @@ switch ($stato) {
     case 4: // In attesa della firma subvettore
     case 5: // In attesa della firma committente
         sc_actionbar_hide("select_new_contract");
-        sc_actionbar_hide("show_contract_signed");
+        sc_actionbar_show("show_contract_signed");
         sc_actionbar_hide("send_contract_to_sign");
         sc_actionbar_hide("send_magic_link_to_subvector");
         break;

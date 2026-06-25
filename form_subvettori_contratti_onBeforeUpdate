@@ -2,9 +2,33 @@
  * form_subvettori_contratti
  * → onBeforeUpdate
  *
- * Lasciare vuoto: in onBefore Scriptcase ha già aperto la transazione del form.
- * Query manuali con sc_lookup/sc_exec_sql possono generare:
- * "There is already an active transaction".
- *
+ * Blocca il salvataggio se stato_contratto_id da 3 in su (compilato / firma / completato / rifiutati).
  * La sincronizzazione anagrafica va fatta in onAfterUpdate.
  */
+
+$scId = 0;
+if (isset({id}) && (int){id} > 0) {
+    $scId = (int){id};
+} elseif (isset([subvettore_contratto_id]) && (int)[subvettore_contratto_id] > 0) {
+    $scId = (int)[subvettore_contratto_id];
+}
+
+$statoContrattoBeforeUpd = 0;
+if ($scId > 0) {
+    sc_lookup(rsStatoContrBeforeUpd, "
+        SELECT c.stato_contratto_id
+        FROM subvettori_contratti sc
+        INNER JOIN contratti c ON c.id = sc.contratto_id
+        WHERE sc.id = " . (int)$scId . "
+        LIMIT 1
+    ", "pigliacelli");
+    if (!empty({rsStatoContrBeforeUpd[0][0]})) {
+        $statoContrattoBeforeUpd = (int){rsStatoContrBeforeUpd[0][0]};
+    }
+}
+
+if ($scId > 0 && $statoContrattoBeforeUpd > 2) {
+    sc_error_message('Il contratto non e piu modificabile in questo stato (compilato o oltre).');
+    return;
+}
+
