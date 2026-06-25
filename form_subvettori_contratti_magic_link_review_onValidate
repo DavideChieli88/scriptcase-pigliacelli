@@ -2,29 +2,10 @@
      * form_subvettori_contratti_for_subvectors_magic_link_review
      * → onValidate
      *
-     * Stessi controlli del magic_link standard, ma messaggio orientato alla revisione
-     * In Scriptcase: num_iscrizione_albo NON impostare "Obbligatorio" (solo tipo 1 in onValidate).
-     * Blocco autisti: opzionale anche in designer per tipo 2/3.
+     * Stessi controlli del magic_link standard, messaggio orientato alla revisione.
+     * NON controllare review_confirm qui: onValidate gira anche al cambio tab;
+     * la conferma popup è solo JS al click Salva (mlReviewConfirmInit).
      */
-
-    $reviewConfirmOk = false;
-    if (isset($_POST['review_confirm']) && trim((string)$_POST['review_confirm']) === '1') {
-        $reviewConfirmOk = true;
-    }
-    if (!$reviewConfirmOk && isset($_GET['review_confirm']) && trim((string)$_GET['review_confirm']) === '1') {
-        $reviewConfirmOk = true;
-    }
-    if (!$reviewConfirmOk) {
-        $msgConfirm = 'Confermare l\'invio dei dati tramite il popup prima di procedere.';
-        if (function_exists('sc_err_msg')) {
-            sc_err_msg($msgConfirm);
-        } else {
-            sc_error_message($msgConfirm);
-            if (function_exists('sc_error_exit')) {
-                sc_error_exit();
-            }
-        }
-    }
 
     if (!function_exists('magic_link_review_form_tipo_contratto_id')) {
         function magic_link_review_form_tipo_contratto_id()

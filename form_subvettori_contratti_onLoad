@@ -9,8 +9,9 @@
  * 1) Modale errore EasyGN (redirect con dati mancanti)
  * 2) Visibilità blocco autisti per tipoContrattoId (tipo 2/3 nascosto)
  * 3) Precaricamento anagrafica subvettore (campi virtuali → tabella subvettori)
- * 4) Precaricamento dati legale rappresentante da subvettori_contratti
- *    (email/telefono rappresentante: fallback da subvettori.login_subvettore / cellphone se vuoti sul contratto)
+ * 4) Precaricamento dati legale rappresentante da subvettori_contratti corrente;
+ *    email/telefono rappresentante: solo da un contratto precedente dello stesso subvettore_id
+ *    (mai da anagrafica subvettori); altrimenti vuoti
  * 5) Campi *_firmatario nascosti
  * 6) stato_contratto_id da 3 in su: campi master sola lettura; pulsante save_and_send_magic_link nascosto
  *    Detail tratte/autisti: onScriptInit (sc_apl_conf + sc_lookup pigliacelli)
@@ -92,8 +93,6 @@ if (!function_exists('magic_link_form_apply_tipo_contratto_visibility')) {
 }
 
 $subvettoreId = 0;
-$emailRappSub = '';
-$telRappSub   = '';
 if (isset({subvettore_id}) && (int){subvettore_id} > 0) {
     $subvettoreId = (int){subvettore_id};
 }
@@ -132,8 +131,7 @@ if ($subvettoreId > 0) {
             num_iscrizione_reg_imprese,
             locazione_iscrizione_reg_imprese,
             rea,
-            cellphone,
-            login_subvettore
+            cellphone
         FROM subvettori
         WHERE id = " . (int)$subvettoreId . "
         LIMIT 1
@@ -151,12 +149,6 @@ if ($subvettoreId > 0) {
         {locazione_iscrizione_reg_imprese} = (string){rsSub[0][8]};
         {rea}                              = (string){rsSub[0][9]};
         {phone}                            = (string){rsSub[0][10]};
-        $loginSubEmail                     = isset({rsSub[0][11]}) ? trim((string){rsSub[0][11]}) : '';
-        $emailRappSub                      = '';
-        if ($loginSubEmail !== '' && filter_var($loginSubEmail, FILTER_VALIDATE_EMAIL) !== false) {
-            $emailRappSub = $loginSubEmail;
-        }
-        $telRappSub                        = trim((string){rsSub[0][10]});
     }
 }
 
@@ -188,11 +180,33 @@ if ($scId > 0) {
     }
 }
 
-if ($emailRappSub !== '' && trim((string){email_rappresentante}) === '') {
-    {email_rappresentante} = $emailRappSub;
-}
-if ($telRappSub !== '' && trim((string){telefono_rappresentante}) === '') {
-    {telefono_rappresentante} = $telRappSub;
+if ($subvettoreId > 0
+    && (trim((string){email_rappresentante}) === '' || trim((string){telefono_rappresentante}) === '')
+) {
+    $sqlEscludiSc = ($scId > 0) ? (' AND sc.id <> ' . (int)$scId) : '';
+    sc_lookup(rsScRappPrev, "
+        SELECT
+            sc.email_rappresentante,
+            sc.telefono_rappresentante
+        FROM subvettori_contratti sc
+        WHERE sc.subvettore_id = " . (int)$subvettoreId . "
+          " . $sqlEscludiSc . "
+          AND (
+              TRIM(COALESCE(sc.email_rappresentante, '')) <> ''
+              OR TRIM(COALESCE(sc.telefono_rappresentante, '')) <> ''
+          )
+        ORDER BY sc.id DESC
+        LIMIT 1
+    ", "pigliacelli");
+
+    if (!empty({rsScRappPrev[0][0]}) || !empty({rsScRappPrev[0][1]})) {
+        if (trim((string){email_rappresentante}) === '') {
+            {email_rappresentante} = trim((string){rsScRappPrev[0][0]});
+        }
+        if (trim((string){telefono_rappresentante}) === '') {
+            {telefono_rappresentante} = trim((string){rsScRappPrev[0][1]});
+        }
+    }
 }
 
 if (!function_exists('pigliacelli_hide_campi_firmatario_form')) {
@@ -222,17 +236,6 @@ if ($scId > 0) {
 // save_and_send_magic_link: solo stato 1–2 (Da inviare / Inviato al subvettore)
 $displaySaveSendMagicLink = ($statoContrattoForm > 2) ? 'off' : 'on';
 sc_btn_display('save_and_send_magic_link', $displaySaveSendMagicLink);
-
-if ($displaySaveSendMagicLink === 'off' && function_exists('sc_ajax_javascript')) {
-    sc_ajax_javascript(
-        "(function(){"
-        . "var i,el,ids=['sc_b_save_and_send_magic_link_t','sc_b_save_and_send_magic_link_b'];"
-        . "for(i=0;i<ids.length;i++){el=document.getElementById(ids[i]);if(el){el.style.display='none';}}"
-        . "var nodes=document.querySelectorAll('a[id*=\"save_and_send_magic_link\"]');"
-        . "for(i=0;i<nodes.length;i++){nodes[i].style.display='none';}"
-        . "})();"
-    );
-}
 
 if ($statoContrattoForm > 2) {
     sc_field_readonly({subvettore_id}, 'on');

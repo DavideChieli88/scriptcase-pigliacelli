@@ -16,7 +16,7 @@
  *       incollare form_subvettori_contratti_magic_link_review_confirm.js
  *    b) Evento onScriptInit: form_subvettori_contratti_magic_link_review_onScriptInit
  *       (senza onScriptInit il metodo JS non viene mai eseguito)
- *    onValidate richiede review_confirm=1 (hidden field impostato dal popup).
+ *    Popup conferma solo al Salva (JS); onValidate non usa review_confirm (gira anche sui tab).
  */
 
 if (session_status() !== PHP_SESSION_ACTIVE) {

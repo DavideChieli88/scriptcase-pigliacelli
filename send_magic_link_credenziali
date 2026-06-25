@@ -1,0 +1,763 @@
+/**
+ * Invio magic link + eventuale mail credenziali/area riservata.
+ *
+ * MAGIC LINK (sempre, se anagrafica ok):
+ *   Destinatario: subvettori.login_subvettore (email in anagrafica).
+ *   Non dipende da sec_users: anche senza utenza valida, il link va all'email del subvettore.
+ *   Se login_subvettore mancante/non valido → errore, nessuna mail inviata.
+ *
+ * MAIL CREDENZIALI (solo contratti tipo 2 o 3, mai crea utenze — le crea il job import):
+ *   - utenza valida in sec_users + active=Y → mail “accedi con le tue credenziali”
+ *   - utenza valida + active=N → riattiva (UPDATE), nuova password + mail credenziali
+ *   - nessuna utenza / SUBVETTORE_* / tipo ≠ 2,3 → skip mail credenziali (magic link comunque)
+ *
+ * Test UAT credenziali (solo mail area riservata/credenziali, non il magic link):
+ *   ?mail_override=1 | ?mail_override=tua@email.it | ?mail_override=1&mail_to=altra@email.it
+ *   Override attivo solo con valore esplicito in URL; parametri SC vuoti/spuri ignorati.
+ */
+
+$SMLC_MAIL_OVERRIDE_DEFAULT = 'davide.chieli@digiwebuno.it';
+
+if (!function_exists('smlc_sql_quote')) {
+    function smlc_sql_quote($v)
+    {
+        if ($v === null) {
+            return 'NULL';
+        }
+        return "'" . str_replace("'", "''", (string)$v) . "'";
+    }
+}
+
+if (!function_exists('smlc_sql_num')) {
+    function smlc_sql_num($v)
+    {
+        if ($v === null || $v === '') {
+            return 'NULL';
+        }
+        return (string)(0 + $v);
+    }
+}
+
+if (!function_exists('smlc_email_valida')) {
+    function smlc_email_valida($email)
+    {
+        $email = trim((string)$email);
+
+        if ($email === '') {
+            return false;
+        }
+
+        if (strpos($email, ';') !== false || strpos($email, ',') !== false || strpos($email, ' ') !== false) {
+            return false;
+        }
+
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+}
+
+if (!function_exists('smlc_generate_temp_password')) {
+    function smlc_generate_temp_password()
+    {
+        $characters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=';
+        $charactersLength = strlen($characters);
+        $temporaryPassword = '';
+
+        for ($i = 0; $i < 12; $i++) {
+            $temporaryPassword .= $characters[random_int(0, $charactersLength - 1)];
+        }
+
+        return $temporaryPassword;
+    }
+}
+
+if (!function_exists('smlc_user_active_is_yes')) {
+    function smlc_user_active_is_yes($active)
+    {
+        $a = strtoupper(trim((string)$active));
+        return ($a === 'Y' || $a === '1' || $a === 'S' || $a === 'SI' || $a === 'YES');
+    }
+}
+
+if (!function_exists('smlc_login_is_tecnico')) {
+    function smlc_login_is_tecnico($login)
+    {
+        $login = trim((string)$login);
+        return strncmp($login, 'SUBVETTORE_', 11) === 0;
+    }
+}
+
+if (!function_exists('smlc_utenza_valida')) {
+    function smlc_utenza_valida($login, $email)
+    {
+        $login = trim((string)$login);
+        if ($login === '' || smlc_login_is_tecnico($login)) {
+            return false;
+        }
+        if (smlc_email_valida($email)) {
+            return true;
+        }
+        return smlc_email_valida($login);
+    }
+}
+
+if (!function_exists('magic_link_encryptData')) {
+    function magic_link_encryptData($data, $key)
+    {
+        $iv = openssl_random_pseudo_bytes(16);
+        $encrypted = openssl_encrypt((string)$data, 'AES-256-CBC', $key, 0, $iv);
+
+        return base64_encode($iv . $encrypted);
+    }
+}
+
+$sc_setting = function ($name, $default = '') {
+    $safeName = str_replace("'", "''", trim((string)$name));
+    sc_lookup(rsSet, "SELECT set_value FROM sec_settings WHERE set_name = '" . $safeName . "' LIMIT 1");
+    if (isset({rsSet[0][0]})) {
+        return (string){rsSet[0][0]};
+    }
+    return $default;
+};
+
+if (!function_exists('pigliacelli_mail_logo_read_embed')) {
+    function pigliacelli_mail_logo_read_embed($anchorFile = null)
+    {
+        $rel = '_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png';
+        $dir = realpath(dirname($anchorFile ?: __FILE__));
+        for ($i = 0; $i < 12 && $dir; $i++) {
+            $try = $dir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel);
+            if (is_readable($try)) {
+                $bin = @file_get_contents($try);
+                if ($bin !== false && $bin !== '' && strlen($bin) < 500000) {
+                    return 'data:image/png;base64,' . base64_encode($bin);
+                }
+            }
+            $p = dirname($dir);
+            if ($p === $dir) {
+                break;
+            }
+            $dir = $p;
+        }
+        return '';
+    }
+}
+
+if (!function_exists('pigliacelli_mail_logo_src')) {
+    function pigliacelli_mail_logo_src($getSetting, $anchorFile = null)
+    {
+        $embed = pigliacelli_mail_logo_read_embed($anchorFile);
+        if ($embed !== '') {
+            return $embed;
+        }
+        $base = rtrim(trim((string)$getSetting('mail_base_url', '')), '/');
+        if ($base !== '' && preg_match('#^https?://#i', $base) === 1) {
+            return htmlspecialchars(
+                $base . '/_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png',
+                ENT_QUOTES,
+                'UTF-8'
+            );
+        }
+        return '';
+    }
+}
+
+if (!function_exists('pigliacelli_mail_layout')) {
+    function pigliacelli_mail_layout($title, $innerHtml, $mailLogoUrl)
+    {
+        $t = htmlspecialchars((string)$title, ENT_QUOTES, 'UTF-8');
+        $logoTd = '';
+        if ((string)$mailLogoUrl !== '') {
+            $logoTd = '<td align="right" valign="middle" style="width:148px;padding-left:16px;">'
+                . '<img src="' . (string)$mailLogoUrl . '" alt="Pigliacelli" width="140" '
+                . 'style="display:block;max-width:140px;width:140px;height:auto;border:0;" />'
+                . '</td>';
+        }
+        return '<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">'
+            . '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            . '<title>' . $t . '</title></head>'
+            . '<body style="margin:0;padding:0;background:#eef1f4;">'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef1f4;">'
+            . '<tr><td align="center" style="padding:32px 16px;">'
+            . '<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" '
+            . 'style="max-width:600px;width:100%;background:#fff;border-radius:12px;border:1px solid #dde1e6;">'
+            . '<tr><td style="padding:22px 28px 18px;border-bottom:1px solid #e8ebef;background:#fafbfc;">'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
+            . '<td valign="middle" style="font-family:Arial,Helvetica,sans-serif;font-size:19px;font-weight:bold;color:#1a3a5c;line-height:1.3;">' . $t . '</td>'
+            . $logoTd . '</tr></table></td></tr>'
+            . '<tr><td style="padding:26px 28px 22px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#2d3748;">'
+            . $innerHtml . '</td></tr>'
+            . '<tr><td style="padding:14px 28px;background:#f4f6f8;border-top:1px solid #e8ebef;'
+            . 'font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#718096;">'
+            . 'Messaggio automatico &mdash; non rispondere.</td></tr>'
+            . '</table></td></tr></table></body></html>';
+    }
+}
+
+$smlc_get_smtp_config = function () {
+    sc_lookup(rsSmlcSmtp, 'SELECT set_name, set_value FROM sec_settings', 'pigliacelli');
+    if (!empty({rsSmlcSmtp})) {
+        foreach ({rsSmlcSmtp} as $f) {
+            $_SESSION['sett_' . $f[0]] = $f[1];
+        }
+    }
+    $smtpApi = isset($_SESSION['sett_smtp_api']) ? (string)$_SESSION['sett_smtp_api'] : '';
+    if ($smtpApi === 'custom') {
+        return array(
+            'settings' => array(
+                'gateway'       => 'smtp',
+                'smtp_server'   => (string)($_SESSION['sett_smtp_server'] ?? ''),
+                'smtp_protocol' => (string)($_SESSION['sett_smtp_security'] ?? ''),
+                'smtp_port'     => (string)($_SESSION['sett_smtp_port'] ?? ''),
+                'smtp_user'     => (string)($_SESSION['sett_smtp_user'] ?? ''),
+                'smtp_password' => (string)($_SESSION['sett_smtp_pass'] ?? ''),
+                'from_email'    => (string)($_SESSION['sett_smtp_from_email'] ?? ''),
+                'from_name'     => (string)($_SESSION['sett_smtp_from_name'] ?? ''),
+            ),
+        );
+    }
+    return array('profile' => $smtpApi);
+};
+
+$smlc_portal_url = function () use ($sc_setting) {
+    $loginUrl = rtrim(trim($sc_setting('login_url', '')), '/');
+    if ($loginUrl !== '') {
+        return $loginUrl;
+    }
+    $portalUrl = rtrim(trim($sc_setting('portal_url', '')), '/');
+    if ($portalUrl !== '') {
+        return $portalUrl;
+    }
+    return rtrim(trim($sc_setting('app_url', '')), '/');
+};
+
+$isAjaxCall = (isset({Is_Ajax}) && strtoupper((string){Is_Ajax}) === 'Y');
+
+$ajax_fail_msg = '';
+$ajax_fail = function ($msg) use (&$isAjaxCall, &$ajax_fail_msg) {
+    $ajax_fail_msg = $msg;
+    sc_log_add('MAGIC_LINK_CRED', 'FAIL: ' . $ajax_fail_msg);
+    if ($isAjaxCall) {
+        sc_ajax_message($ajax_fail_msg);
+    } else {
+        sc_error_message($ajax_fail_msg);
+        sc_error_exit();
+    }
+    exit;
+};
+
+$ajax_ok_msg = '';
+$ajax_ok = function ($msg) use (&$isAjaxCall, &$ajax_ok_msg) {
+    $ajax_ok_msg = $msg;
+    sc_log_add('MAGIC_LINK_CRED', 'OK: ' . $ajax_ok_msg);
+    if ($isAjaxCall) {
+        sc_ajax_message($ajax_ok_msg);
+    } else {
+        sc_alert($ajax_ok_msg);
+        sc_redir('grid_contratti');
+    }
+    exit;
+};
+
+$contrattoId = (int)[contrattoId];
+$subvettoreId = (int)[subvettoreId];
+
+if ($contrattoId <= 0) {
+    $contrattoId = isset($_GET['contrattoId']) ? (int)$_GET['contrattoId'] : 0;
+}
+if ($subvettoreId <= 0) {
+    $subvettoreId = isset($_GET['subvettoreId']) ? (int)$_GET['subvettoreId'] : 0;
+}
+
+if ($contrattoId <= 0 || $subvettoreId <= 0) {
+    $ajax_fail('Parametri mancanti: contrattoId e subvettoreId.');
+}
+
+// --- Mail override UAT (solo credenziali/area riservata; magic link sempre al subvettore reale) ---
+$smlc_mail_override_to = '';
+
+$smlc_override_raw_candidates = array();
+
+if (isset($_GET['mail_override'])) {
+    $smlc_override_raw_candidates[] = trim((string)$_GET['mail_override']);
+}
+if (isset($_REQUEST['mail_override'])) {
+    $smlc_override_raw_candidates[] = trim((string)$_REQUEST['mail_override']);
+}
+if (!empty($_SERVER['QUERY_STRING'])) {
+    $qsMo = array();
+    parse_str((string)$_SERVER['QUERY_STRING'], $qsMo);
+    if (isset($qsMo['mail_override'])) {
+        $smlc_override_raw_candidates[] = trim((string)$qsMo['mail_override']);
+    }
+    if (isset($qsMo['mail_to'])) {
+        $smlc_override_raw_candidates[] = trim((string)$qsMo['mail_to']);
+    }
+}
+if (!empty($_SERVER['REQUEST_URI'])) {
+    $qMo = parse_url((string)$_SERVER['REQUEST_URI'], PHP_URL_QUERY);
+    if (is_string($qMo) && $qMo !== '') {
+        $qsMo = array();
+        parse_str($qMo, $qsMo);
+        if (isset($qsMo['mail_override'])) {
+            $smlc_override_raw_candidates[] = trim((string)$qsMo['mail_override']);
+        }
+        if (isset($qsMo['mail_to'])) {
+            $smlc_override_raw_candidates[] = trim((string)$qsMo['mail_to']);
+        }
+    }
+}
+if (isset($_GET['nmgp_arg']) && is_string($_GET['nmgp_arg'])) {
+    $nmgpMo = array();
+    parse_str((string)$_GET['nmgp_arg'], $nmgpMo);
+    if (isset($nmgpMo['mail_override'])) {
+        $smlc_override_raw_candidates[] = trim((string)$nmgpMo['mail_override']);
+    }
+    if (isset($nmgpMo['mail_to'])) {
+        $smlc_override_raw_candidates[] = trim((string)$nmgpMo['mail_to']);
+    }
+}
+
+$rawMo = '';
+$mailToMo = '';
+foreach ($smlc_override_raw_candidates as $cand) {
+    $cand = trim((string)$cand);
+    if ($cand === '') {
+        continue;
+    }
+    if ($rawMo === '' && strpos($cand, '@') === false) {
+        $rawMo = $cand;
+    }
+    if ($mailToMo === '' && strpos($cand, '@') !== false && smlc_email_valida($cand)) {
+        $mailToMo = $cand;
+    }
+    if ($rawMo === '' && strpos($cand, '@') !== false) {
+        $rawMo = $cand;
+    }
+}
+
+// UAT esplicito: mail_override=1|true|yes oppure email in mail_override / mail_to
+if ($rawMo !== '' && $rawMo !== '0' && strcasecmp($rawMo, 'false') !== 0) {
+    if (strpos($rawMo, '@') !== false) {
+        $smlc_mail_override_to = $rawMo;
+    } elseif ($mailToMo !== '') {
+        $smlc_mail_override_to = $mailToMo;
+    } elseif ($rawMo === '1' || strcasecmp($rawMo, 'true') === 0 || strcasecmp($rawMo, 'yes') === 0) {
+        global $SMLC_MAIL_OVERRIDE_DEFAULT;
+        $smlc_mail_override_to = trim((string)$SMLC_MAIL_OVERRIDE_DEFAULT);
+    }
+}
+
+if ($smlc_mail_override_to !== '' && !smlc_email_valida($smlc_mail_override_to)) {
+    sc_log_add('MAGIC_LINK_CRED', 'MAIL_OVERRIDE parametro non valido ignorato: ' . $smlc_mail_override_to);
+    $smlc_mail_override_to = '';
+}
+
+if ($smlc_mail_override_to !== '') {
+    sc_log_add('MAGIC_LINK_CRED', 'MAIL_OVERRIDE attivo to=' . $smlc_mail_override_to);
+}
+
+$mailOverrideAttivo = $smlc_mail_override_to;
+
+$cypherKey = trim($sc_setting('sett_cypher_key', ''));
+$formBaseUrl = trim($sc_setting('sett_magic_link_url', ''));
+
+if ($cypherKey === '') {
+    $ajax_fail('Configurazione mancante: sett_cypher_key.');
+}
+if ($formBaseUrl === '' || preg_match('#^https?://#i', $formBaseUrl) !== 1) {
+    $ajax_fail('Configurazione mancante: sett_magic_link_url (URL della form pubblica).');
+}
+
+$ttlDays = (int)$sc_setting('magic_link_ttl_days', '30');
+if ($ttlDays <= 0) {
+    $ttlDays = 30;
+}
+
+sc_lookup(rsSc, "
+    SELECT
+        sc.id,
+        sc.nome_rappresentante,
+        sc.cognome_rappresentante,
+        s.login_subvettore,
+        s.ragione_sociale,
+        COALESCE(NULLIF(TRIM(s.phone), ''), NULLIF(TRIM(s.cellphone), ''), '') AS phone_sub
+    FROM subvettori_contratti sc
+    INNER JOIN subvettori s ON s.id = sc.subvettore_id
+    WHERE sc.contratto_id = " . (int)$contrattoId . "
+      AND sc.subvettore_id = " . (int)$subvettoreId . "
+    LIMIT 1
+", 'pigliacelli');
+
+if (!isset({rsSc[0][0]})) {
+    $ajax_fail('Nessun record subvettori_contratti per questo contratto/subvettore.');
+}
+
+$scId = (int){rsSc[0][0]};
+$nomeR = trim((string){rsSc[0][1]});
+$cognomeR = trim((string){rsSc[0][2]});
+$loginSub = trim((string){rsSc[0][3]});
+$ragioneSociale = trim((string){rsSc[0][4]});
+$phoneSub = trim((string){rsSc[0][5]});
+
+$toEmail = $loginSub;
+
+$displayNameMl = trim($nomeR . ' ' . $cognomeR);
+if ($displayNameMl === '') {
+    $displayNameMl = $ragioneSociale;
+}
+if ($displayNameMl === '') {
+    $displayNameMl = 'Gentile subvettore';
+}
+
+$displayNameCred = $ragioneSociale !== '' ? $ragioneSociale : 'Gentile subvettore';
+
+if (!smlc_email_valida($toEmail)) {
+    sc_log_add(
+        'MAGIC_LINK_CRED',
+        'FAIL email subvettore mancante/non valida subvettore_id=' . (int)$subvettoreId
+        . ' login_subvettore=[' . $loginSub . ']'
+    );
+    $ajax_fail(
+        'Email del subvettore mancante o non valida in anagrafica (campo Email / login_subvettore). '
+        . 'Aggiornare il subvettore da Anagrafica subvettori prima di inviare.'
+    );
+}
+
+if (!function_exists('sc_send_mail_api')) {
+    $ajax_fail('Invio email non disponibile (sc_send_mail_api).');
+}
+
+$mailLogoUrl = pigliacelli_mail_logo_src($sc_setting, __FILE__);
+
+// --- Mail credenziali / area riservata (stesso pattern del job _credenziali) ---
+$smlc_send_mail_credenziali = function ($contratto_id, $to, $login, $plainPassword, $displayName)
+    use ($mailOverrideAttivo, $smlc_get_smtp_config, $smlc_portal_url, $mailLogoUrl) {
+    $toOrig = trim((string)$to);
+    $to = ($mailOverrideAttivo !== '') ? $mailOverrideAttivo : $toOrig;
+    if ($mailOverrideAttivo !== '' && strcasecmp($to, $mailOverrideAttivo) !== 0) {
+        sc_log_add('MAGIC_LINK_CRED', 'MAIL_CRED BLOCCO sicurezza to!=override contratto=' . (int)$contratto_id);
+        return false;
+    }
+    $login = trim((string)$login);
+    if (!smlc_email_valida($to) || $login === '' || $plainPassword === '') {
+        return false;
+    }
+    $portalUrl = $smlc_portal_url();
+    $nome = trim((string)$displayName);
+    if ($nome === '') {
+        $nome = 'Gentile utente';
+    }
+    $titolo = 'Credenziali area riservata — contratto #' . (int)$contratto_id;
+    if ($mailOverrideAttivo !== '') {
+        $titolo = '(UAT) ' . $titolo;
+    }
+    $testo = $nome . ",\n\n"
+        . "E' stato registrato un nuovo contratto #" . (int)$contratto_id . ".\n"
+        . "Puoi accedere all'area riservata con le credenziali seguenti (password temporanea).\n\n"
+        . "Login: " . $login . "\n"
+        . "Password: " . $plainPassword . "\n";
+    if ($portalUrl !== '') {
+        $testo .= "\nArea riservata: " . $portalUrl . "\n";
+    }
+    $testo .= "\nMessaggio automatico — non rispondere.";
+    $safeLogin = htmlspecialchars($login, ENT_QUOTES, 'UTF-8');
+    $safePwd = htmlspecialchars($plainPassword, ENT_QUOTES, 'UTF-8');
+    $safeNome = htmlspecialchars($nome, ENT_QUOTES, 'UTF-8');
+    $inner = '<p style="margin:0 0 16px;">' . $safeNome . ',</p>'
+        . '<p style="margin:0 0 20px;">E\' stato registrato un nuovo contratto <strong>#' . (int)$contratto_id . '</strong>. '
+        . 'Ecco le credenziali per l\'area riservata (password temporanea).</p>'
+        . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+        . 'style="margin:0 0 20px;background:#f8f9fb;border:1px solid #e2e6ea;border-radius:8px;">'
+        . '<tr><td style="padding:16px 18px;font-size:14px;line-height:1.6;">'
+        . '<strong>Login:</strong> ' . $safeLogin . '<br><strong>Password:</strong> ' . $safePwd
+        . '</td></tr></table>';
+    if ($portalUrl !== '') {
+        $safePortal = htmlspecialchars($portalUrl, ENT_QUOTES, 'UTF-8');
+        $inner .= '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px;"><tr>'
+            . '<td align="center" bgcolor="#5b2d8e" style="border-radius:8px;background-color:#5b2d8e;">'
+            . '<a href="' . $safePortal . '" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:bold;'
+            . 'color:#ffffff;text-decoration:none;">Accedi all\'area riservata</a>'
+            . '</td></tr></table>';
+    }
+    $html = pigliacelli_mail_layout($titolo, $inner, $mailLogoUrl);
+    try {
+        sc_send_mail_api(array_merge($smlc_get_smtp_config(), array(
+            'message' => array(
+                'html'    => $html,
+                'text'    => $testo,
+                'to'      => $to,
+                'subject' => $titolo,
+            ),
+        )));
+    } catch (Throwable $e) {
+        sc_log_add('MAGIC_LINK_CRED', 'MAIL_CRED EXCEPTION contratto=' . (int)$contratto_id . ' msg=' . $e->getMessage());
+        return false;
+    }
+    sc_log_add('MAGIC_LINK_CRED', 'MAIL_CRED inviate credenziali contratto=' . (int)$contratto_id
+        . ' to=' . $to
+        . ($toOrig !== $to ? ' orig=' . $toOrig : '')
+        . ' login=' . $login);
+    return true;
+};
+
+$smlc_send_mail_area_riservata = function ($contratto_id, $to, $displayName)
+    use ($mailOverrideAttivo, $sc_setting, $smlc_get_smtp_config, $mailLogoUrl) {
+    $toOrig = trim((string)$to);
+    $to = ($mailOverrideAttivo !== '') ? $mailOverrideAttivo : $toOrig;
+    if ($mailOverrideAttivo !== '' && strcasecmp($to, $mailOverrideAttivo) !== 0) {
+        sc_log_add('MAGIC_LINK_CRED', 'MAIL_AREA BLOCCO sicurezza to!=override contratto=' . (int)$contratto_id);
+        return false;
+    }
+    if (!smlc_email_valida($to)) {
+        return false;
+    }
+    $loginUrl = rtrim(trim($sc_setting('login_url', '')), '/');
+    if ($loginUrl === '') {
+        sc_log_add('MAGIC_LINK_CRED', 'MAIL_AREA SKIP login_url assente contratto=' . (int)$contratto_id);
+        return false;
+    }
+    $nome = trim((string)$displayName);
+    if ($nome === '') {
+        $nome = 'Gentile utente';
+    }
+    $titolo = 'Nuovo contratto — accedi all\'area riservata #' . (int)$contratto_id;
+    if ($mailOverrideAttivo !== '') {
+        $titolo = '(UAT) ' . $titolo;
+    }
+    $testo = $nome . ",\n\n"
+        . "E' stato registrato un nuovo contratto #" . (int)$contratto_id . ".\n"
+        . "Accedi alla tua area riservata con le credenziali gia' in tuo possesso:\n\n"
+        . $loginUrl . "\n\n"
+        . "Messaggio automatico — non rispondere.";
+    $safeNome = htmlspecialchars($nome, ENT_QUOTES, 'UTF-8');
+    $safeLoginUrl = htmlspecialchars($loginUrl, ENT_QUOTES, 'UTF-8');
+    $inner = '<p style="margin:0 0 16px;">' . $safeNome . ',</p>'
+        . '<p style="margin:0 0 20px;">E\' stato registrato un nuovo contratto <strong>#' . (int)$contratto_id . '</strong>. '
+        . 'Accedi alla tua <strong>area riservata</strong> con le credenziali gia\' in tuo possesso.</p>'
+        . '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px;"><tr>'
+        . '<td align="center" bgcolor="#5b2d8e" style="border-radius:8px;background-color:#5b2d8e;">'
+        . '<a href="' . $safeLoginUrl . '" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:bold;'
+        . 'color:#ffffff;text-decoration:none;">Accedi all\'area riservata</a>'
+        . '</td></tr></table>';
+    $html = pigliacelli_mail_layout($titolo, $inner, $mailLogoUrl);
+    try {
+        sc_send_mail_api(array_merge($smlc_get_smtp_config(), array(
+            'message' => array(
+                'html'    => $html,
+                'text'    => $testo,
+                'to'      => $to,
+                'subject' => $titolo,
+            ),
+        )));
+    } catch (Throwable $e) {
+        sc_log_add('MAGIC_LINK_CRED', 'MAIL_AREA EXCEPTION contratto=' . (int)$contratto_id . ' msg=' . $e->getMessage());
+        return false;
+    }
+    sc_log_add('MAGIC_LINK_CRED', 'MAIL_AREA inviato link area riservata contratto=' . (int)$contratto_id
+        . ' to=' . $to
+        . ($toOrig !== $to ? ' orig=' . $toOrig : ''));
+    return true;
+};
+
+// --- Mail credenziali / area riservata (solo contratti tipo 2 o 3) ---
+$tipoContrattoId = 0;
+sc_lookup(rsTipoContr, "
+    SELECT tipo_contratto_id
+    FROM contratti
+    WHERE id = " . (int)$contrattoId . "
+    LIMIT 1
+", 'pigliacelli');
+if (!empty({rsTipoContr[0][0]})) {
+    $tipoContrattoId = (int){rsTipoContr[0][0]};
+}
+
+$esitoCred = 'skip';
+
+if (!in_array($tipoContrattoId, array(2, 3), true)) {
+    sc_log_add(
+        'MAGIC_LINK_CRED',
+        'MAIL_SUB skip tipo_contratto=' . $tipoContrattoId . ' (credenziali solo per tipo 2/3)'
+    );
+    $esitoCred = 'skip_tipo';
+} else {
+    $toEmailCred = smlc_email_valida($loginSub) ? $loginSub : '';
+
+    sc_lookup(rsUserCred, "
+        SELECT login, active, email
+        FROM sec_users
+        WHERE subvettore_id = " . smlc_sql_num($subvettoreId) . "
+        LIMIT 1
+    ", 'pigliacelli');
+
+    $userLogin = '';
+    $userActive = '';
+    $userEmail = '';
+    if (!empty({rsUserCred[0][0]})) {
+        $userLogin = trim((string){rsUserCred[0][0]});
+        $userActive = trim((string){rsUserCred[0][1]});
+        $userEmail = trim((string){rsUserCred[0][2]});
+    }
+
+    // Stessa email su altro subvettore_id: riusa login esistente senza INSERT
+    if ($userLogin === '' && smlc_email_valida($loginSub)) {
+        sc_lookup(rsUserByLogin, "
+            SELECT login, active, email, subvettore_id
+            FROM sec_users
+            WHERE login = " . smlc_sql_quote($loginSub) . "
+            LIMIT 1
+        ", 'pigliacelli');
+        if (!empty({rsUserByLogin[0][0]})) {
+            $userLogin = trim((string){rsUserByLogin[0][0]});
+            $userActive = trim((string){rsUserByLogin[0][1]});
+            $userEmail = trim((string){rsUserByLogin[0][2]});
+            sc_log_add(
+                'MAGIC_LINK_CRED',
+                'MAIL_SUB riuso login esistente login=' . $userLogin
+                . ' subvettore_utenza=' . (int){rsUserByLogin[0][3]}
+                . ' subvettore_richiesto=' . (int)$subvettoreId
+            );
+        }
+    }
+
+    if ($userLogin === '' || !smlc_utenza_valida($userLogin, $userEmail)) {
+        sc_log_add(
+            'MAGIC_LINK_CRED',
+            'MAIL_SUB skip nessuna utenza valida (utenza creata dal job import) subvettore='
+            . (int)$subvettoreId . ' login=[' . $userLogin . '] — magic link comunque a anagrafica'
+        );
+        $esitoCred = ($userLogin !== '' && smlc_login_is_tecnico($userLogin)) ? 'skip_tecnico' : 'skip_no_utenza';
+    } else {
+        $toEmailCred = smlc_email_valida($userEmail) ? $userEmail : $loginSub;
+
+        if (smlc_user_active_is_yes($userActive)) {
+            if ($smlc_send_mail_area_riservata($contrattoId, $toEmailCred, $displayNameCred)) {
+                $esitoCred = 'area_riservata';
+            } else {
+                $esitoCred = 'errore';
+            }
+        } else {
+            $plainPassword = smlc_generate_temp_password();
+            $pswHash = md5($plainPassword);
+            sc_exec_sql("
+                UPDATE sec_users
+                SET active = 'Y',
+                    pswd = " . smlc_sql_quote($pswHash) . ",
+                    email = " . smlc_sql_quote($loginSub) . ",
+                    name = " . smlc_sql_quote($ragioneSociale) . ",
+                    phone = " . smlc_sql_quote($phoneSub) . "
+                WHERE login = " . smlc_sql_quote($userLogin) . "
+            ", 'pigliacelli');
+            $loginInvio = $userLogin !== '' ? $userLogin : $loginSub;
+            if ($smlc_send_mail_credenziali($contrattoId, $toEmailCred, $loginInvio, $plainPassword, $displayNameCred)) {
+                $esitoCred = 'credenziali';
+            } else {
+                $esitoCred = 'errore';
+            }
+        }
+    }
+}
+
+sc_log_add(
+    'MAGIC_LINK_CRED',
+    'cred_esito=' . $esitoCred
+    . ' tipo_contratto=' . $tipoContrattoId
+    . ' subvettore=' . (int)$subvettoreId
+    . ' contratto=' . (int)$contrattoId
+);
+
+// --- Magic link (sempre al subvettore reale, non mail_override) ---
+$payload = json_encode(array(
+    'scId'         => $scId,
+    'contrattoId'  => (int)$contrattoId,
+    'subvettoreId' => (int)$subvettoreId,
+    'exp'          => time() + ($ttlDays * 86400),
+), JSON_UNESCAPED_UNICODE);
+
+$token = magic_link_encryptData($payload, $cypherKey);
+
+$base = rtrim($formBaseUrl, '?&');
+$join = (strpos($base, '?') !== false) ? '&' : '?';
+$magicUrl = $base . $join . 't=' . rawurlencode($token);
+
+$sett_smtp = $smlc_get_smtp_config();
+
+$subjectTpl = trim($sc_setting('magic_link_mail_subject', ''));
+$titolo = ($subjectTpl !== '')
+    ? str_replace(['{contrattoId}', '{subvettoreId}'], [(string)$contrattoId, (string)$subvettoreId], $subjectTpl)
+    : 'Compilazione dati contratto #' . (int)$contrattoId;
+
+$safeUrl = htmlspecialchars($magicUrl, ENT_QUOTES, 'UTF-8');
+$safeNome = htmlspecialchars($displayNameMl, ENT_QUOTES, 'UTF-8');
+
+$messaggioTesto = $displayNameMl . ",\n\n"
+    . "Per compilare i dati del contratto #" . (int)$contrattoId . " apra il link seguente:\n\n"
+    . $magicUrl . "\n\n"
+    . "Il link è personale, cifrato e scade tra " . (int)$ttlDays . " giorni.\n\n"
+    . "Messaggio automatico — non rispondere.";
+
+$mailBase = rtrim(trim($sc_setting('mail_base_url', '')), '/');
+$mailLogoLog = (strpos($mailLogoUrl, 'data:image/') === 0)
+    ? 'embed bytes=' . (strlen($mailLogoUrl) - 22)
+    : 'url src=[' . $mailLogoUrl . ']';
+sc_log_add('MAGIC_LINK_CRED', 'magic_link mail_logo ' . $mailLogoLog . ' mail_base_url=[' . $mailBase . '] to=' . $toEmail);
+
+$mailInner = '<p style="margin:0 0 16px;">' . $safeNome . ',</p>'
+    . '<p style="margin:0 0 24px;">Le chiediamo di compilare i dati per il contratto <strong>#' . (int)$contrattoId . '</strong>.</p>'
+    . '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;"><tr>'
+    . '<td align="center" bgcolor="#5b2d8e" style="border-radius:8px;background-color:#5b2d8e;">'
+    . '<a href="' . $safeUrl . '" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:bold;'
+    . 'color:#ffffff;text-decoration:none;font-family:Arial,Helvetica,sans-serif;">Apri il modulo</a>'
+    . '</td></tr></table>'
+    . '<p style="margin:0 0 8px;font-size:13px;color:#718096;">Oppure copi questo indirizzo nel browser:</p>'
+    . '<p style="margin:0;word-break:break-all;font-size:13px;">'
+    . '<a href="' . $safeUrl . '" style="color:#5b2d8e;">' . $safeUrl . '</a></p>';
+$htmlContent = pigliacelli_mail_layout($titolo, $mailInner, $mailLogoUrl);
+
+try {
+    sc_send_mail_api(array_merge($sett_smtp, array(
+        'message' => array(
+            'html'    => $htmlContent,
+            'text'    => $messaggioTesto,
+            'to'      => $toEmail,
+            'subject' => $titolo,
+        ),
+    )));
+} catch (Throwable $e) {
+    sc_log_add('MAGIC_LINK_CRED', 'MAGIC_LINK EXCEPTION msg=' . $e->getMessage());
+    $ajax_fail('Errore invio magic link: ' . $e->getMessage());
+}
+
+sc_lookup(rsStInviato, "
+    SELECT id
+    FROM stati_contratti
+    WHERE nome = 'Inviato al subvettore'
+    LIMIT 1
+", 'pigliacelli');
+if (!empty({rsStInviato[0][0]})) {
+    sc_exec_sql("
+        UPDATE contratti
+        SET stato_contratto_id = " . (int){rsStInviato[0][0]} . "
+        WHERE id = " . (int)$contrattoId . "
+        LIMIT 1
+    ", 'pigliacelli');
+    sc_log_add('MAGIC_LINK_CRED', 'stato contratto=' . (int)$contrattoId . ' → Inviato al subvettore');
+} else {
+    sc_log_add('MAGIC_LINK_CRED', "WARN: stato 'Inviato al subvettore' assente in stati_contratti");
+}
+
+$msgOk = 'Magic link inviato a ' . $toEmail . ' (email anagrafica subvettore)';
+if ($esitoCred === 'credenziali') {
+    $msgOk .= '; credenziali area riservata inviate (utenza riattivata)';
+} elseif ($esitoCred === 'area_riservata') {
+    $msgOk .= '; notifica area riservata inviata (usa le credenziali gia\' in tuo possesso)';
+} elseif ($esitoCred === 'skip_tipo') {
+    $msgOk .= '; mail credenziali non prevista per questo tipo contratto';
+} elseif ($esitoCred === 'skip_tecnico') {
+    $msgOk .= '; utenza tecnica — mail credenziali non inviata (creare utenza reale via import/anagrafica)';
+} elseif ($esitoCred === 'skip_no_utenza') {
+    $msgOk .= '; nessuna utenza in sec_users — mail credenziali non inviata (utenza creata dal job import)';
+} elseif ($esitoCred === 'errore') {
+    $msgOk .= '; attenzione: mail credenziali/area riservata non inviata (vedi log MAGIC_LINK_CRED)';
+}
+
+$ajax_ok($msgOk);
