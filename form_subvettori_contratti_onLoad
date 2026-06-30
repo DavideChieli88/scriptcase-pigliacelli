@@ -13,23 +13,13 @@
  *    email/telefono rappresentante: solo da un contratto precedente dello stesso subvettore_id
  *    (mai da anagrafica subvettori); altrimenti vuoti
  * 5) Campi *_firmatario nascosti
- * 6) stato_contratto_id da 3 in su: campi master sola lettura; pulsante save_and_send_magic_link nascosto
+ * 6) stato_contratto_id > 2: anagrafica master sola lettura; campi rappresentante sempre editabili;
+ *    save_and_send_magic_link solo stato 1–2; pulsante Salva attivo per aggiornare il rappresentante
  *    Detail tratte/autisti: onScriptInit (sc_apl_conf + sc_lookup pigliacelli)
  */
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     @session_start();
-}
-
-// Fallback redirect send_magic_link dopo save Ajax (sc_redir in onAfterUpdate spesso non naviga)
-if (!empty($_SESSION['pigliacelli_redir_send_magic_link'])) {
-    $redirMlParams = (string)$_SESSION['pigliacelli_redir_send_magic_link'];
-    unset($_SESSION['pigliacelli_redir_send_magic_link']);
-    if ($redirMlParams !== '' && function_exists('sc_redir')) {
-        sc_log_add('SAVE_SEND_ML', 'onLoad fallback sc_redir ' . $redirMlParams);
-        sc_redir('send_magic_link', $redirMlParams);
-        exit;
-    }
 }
 
 if (!empty($_SESSION['easygn_error_modal'])) {
@@ -252,20 +242,21 @@ if ($statoContrattoForm > 2) {
     sc_field_readonly({rea}, 'on');
     sc_field_readonly({phone}, 'on');
     sc_field_readonly({num_iscrizione_albo}, 'on');
-    sc_field_readonly({nome_rappresentante}, 'on');
-    sc_field_readonly({cognome_rappresentante}, 'on');
-    sc_field_readonly({email_rappresentante}, 'on');
-    sc_field_readonly({telefono_rappresentante}, 'on');
-    sc_field_readonly({luogo_nascita_rappresentante}, 'on');
-    sc_field_readonly({prov_luogo_nascita_rappresentante}, 'on');
-    sc_field_readonly({prov_nascita_rappresentante}, 'on');
-    sc_field_readonly({data_nascita_rappresentante}, 'on');
     sc_field_readonly({nome_firmatario}, 'on');
     sc_field_readonly({cognome_firmatario}, 'on');
     sc_field_readonly({email_firmatario}, 'on');
     sc_field_readonly({telefono_firmatario}, 'on');
 
-    sc_btn_display('update', 'off');
+    // Rappresentante: sempre editabile (nome, email, nascita, ecc.)
+    sc_field_readonly({nome_rappresentante}, 'off');
+    sc_field_readonly({cognome_rappresentante}, 'off');
+    sc_field_readonly({email_rappresentante}, 'off');
+    sc_field_readonly({telefono_rappresentante}, 'off');
+    sc_field_readonly({luogo_nascita_rappresentante}, 'off');
+    sc_field_readonly({prov_luogo_nascita_rappresentante}, 'off');
+    sc_field_readonly({prov_nascita_rappresentante}, 'off');
+    sc_field_readonly({data_nascita_rappresentante}, 'off');
+
     sc_btn_display('delete', 'off');
     sc_btn_display('new', 'off');
 }

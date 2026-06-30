@@ -1,3 +1,76 @@
+// Campo intestatario/login: lookup SC salva sec_users.login (non sempre un'email).
+// Lookup tipica: SELECT login, name FROM sec_users WHERE subvettore_id IS NOT NULL ORDER BY name
+
+if (!function_exists('form_docs_email_valida')) {
+    function form_docs_email_valida($email)
+    {
+        $email = trim((string)$email);
+        if ($email === '') {
+            return false;
+        }
+        if (strpos($email, ';') !== false || strpos($email, ',') !== false || strpos($email, ' ') !== false) {
+            return false;
+        }
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+}
+
+if (!function_exists('form_docs_resolve_destinatario')) {
+    /** Da sec_users.login (lookup form) → email valida per SMTP. */
+    function form_docs_resolve_destinatario($loginField)
+    {
+        $loginField = trim((string)$loginField);
+        if ($loginField === '') {
+            return '';
+        }
+        if (form_docs_email_valida($loginField)) {
+            return $loginField;
+        }
+
+        $loginSql = str_replace("'", "''", $loginField);
+        sc_lookup(rsFdUser, "
+            SELECT email, subvettore_id
+            FROM sec_users
+            WHERE login = '$loginSql'
+            LIMIT 1
+        ", 'pigliacelli');
+
+        if (!empty({rsFdUser[0][0]})) {
+            $emailUser = trim((string){rsFdUser[0][0]});
+            if (form_docs_email_valida($emailUser)) {
+                return $emailUser;
+            }
+            $subId = (int){rsFdUser[0][1]};
+            if ($subId > 0) {
+                sc_lookup(rsFdSub, "
+                    SELECT login_subvettore
+                    FROM subvettori
+                    WHERE id = $subId
+                    LIMIT 1
+                ", 'pigliacelli');
+                if (!empty({rsFdSub[0][0]})) {
+                    $emailSub = trim((string){rsFdSub[0][0]});
+                    if (form_docs_email_valida($emailSub)) {
+                        return $emailSub;
+                    }
+                }
+            }
+        }
+
+        sc_lookup(rsFdUserEmail, "
+            SELECT email
+            FROM sec_users
+            WHERE email = '$loginSql'
+            LIMIT 1
+        ", 'pigliacelli');
+        if (!empty({rsFdUserEmail[0][0]}) && form_docs_email_valida({rsFdUserEmail[0][0]})) {
+            return trim((string){rsFdUserEmail[0][0]});
+        }
+
+        return '';
+    }
+}
+
 // Recupero nome tipo documento
 sc_lookup(rsTipoDoc, "
     SELECT nome
@@ -28,7 +101,7 @@ sc_lookup(rsUserDoc, "
     LIMIT 1
 ");
 
-if (!isset({rsUserDoc[0][0]}) && filter_var($loginField, FILTER_VALIDATE_EMAIL) !== false) {
+if (!isset({rsUserDoc[0][0]}) && form_docs_email_valida($loginField)) {
     sc_lookup(rsUserDoc, "
         SELECT login, active, name, email, pswd, COALESCE(hasLoggedFirst, 0)
         FROM sec_users
@@ -45,23 +118,24 @@ if (isset({rsUserDoc[0][0]})) {
     $storedPassword  = trim((string){rsUserDoc[0][4]});
     $hasLoggedFirst  = (int){rsUserDoc[0][5]};
 
-    if ($destinatario === '' || filter_var($destinatario, FILTER_VALIDATE_EMAIL) === false) {
-        if ($userEmail !== '' && filter_var($userEmail, FILTER_VALIDATE_EMAIL) !== false) {
+    if ($destinatario === '' || !form_docs_email_valida($destinatario)) {
+        if ($userEmail !== '' && form_docs_email_valida($userEmail)) {
             $destinatario = $userEmail;
         }
     }
 
     $activeNorm = strtoupper($userActive);
     $isActive   = ($activeNorm === 'Y' || $activeNorm === '1' || $activeNorm === 'S' || $activeNorm === 'SI' || $activeNorm === 'YES');
+    $wasInactive = !$isActive;
 
-    if (!$isActive) {
+    if ($wasInactive) {
         $loginUpd = str_replace("'", "''", $userLogin);
         sc_exec_sql("UPDATE sec_users SET active = 'Y' WHERE login = '$loginUpd'");
         sc_log_add('MAIL_DOCS', "onAfterInsert doc=$docId — attivato sec_users login=$userLogin (era inactive)");
     }
 
-    // Mai loggato: invia credenziali (pswd in DB è di solito hash MD5, non inviabile in chiaro)
-    if ($hasLoggedFirst === 0) {
+    // Credenziali solo al primo invio con account ancora inactive (non se già active=Y)
+    if ($wasInactive && $hasLoggedFirst === 0) {
         $pswLooksMd5 = ($storedPassword !== '' && preg_match('/^[a-f0-9]{32}$/i', $storedPassword));
 
         if ($storedPassword !== '' && !$pswLooksMd5) {
@@ -81,13 +155,23 @@ if (isset({rsUserDoc[0][0]})) {
             $sendCredentials = true;
             sc_log_add('MAIL_DOCS', "onAfterInsert doc=$docId — nuova password temporanea login=$userLogin (hasLoggedFirst=0, pswd DB era hash)");
         }
+    } elseif ($isActive) {
+        sc_log_add('MAIL_DOCS', "onAfterInsert doc=$docId — login=$userLogin già attivo (active=Y), mail credenziali non inviata");
     } else {
         sc_log_add('MAIL_DOCS', "onAfterInsert doc=$docId — login=$userLogin già loggato (hasLoggedFirst=1), mail credenziali non inviata");
     }
 }
 
-if ($destinatario === '' || filter_var($destinatario, FILTER_VALIDATE_EMAIL) === false) {
-    sc_log_add('MAIL_DOCS', "onAfterInsert doc=$docId — email non valida: login=[$loginField] dest=[$destinatario]");
+if (!form_docs_email_valida($destinatario)) {
+    $destinatarioResolved = form_docs_resolve_destinatario($loginField);
+    if ($destinatarioResolved !== '') {
+        $destinatario = $destinatarioResolved;
+        sc_log_add('MAIL_DOCS', "onAfterInsert doc=$docId — destinatario da lookup login=[$loginField] → $destinatario");
+    }
+}
+
+if ($destinatario === '' || !form_docs_email_valida($destinatario)) {
+    sc_log_add('MAIL_DOCS', "onAfterInsert doc=$docId — email non valida: login/intestatario=[$loginField] dest=[$destinatario]");
     return;
 }
 // SMTP + login_url dalla stessa query

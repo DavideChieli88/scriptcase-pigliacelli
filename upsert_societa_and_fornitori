@@ -140,6 +140,7 @@ sc_log_add("UPSERT_SOC_FOR", "Societa elaborate (upsert): " . $societa_elaborate
 // =====================================================================
 $sql_fornitori = "
     SELECT SOCIETA, CODICE, RAGIONE_SOCIALE, PARTITA_IVA, CODICE_FISCALE,
+           INDIRIZZO, LOCALITA, PROVINCIA,
            TELEFONO, CELLULARE, E_MAIL
     FROM BaCliFor
     WHERE CLIENTE_FORNITORE = 'F'
@@ -163,9 +164,12 @@ while (($row = $stmt_for->fetch(PDO::FETCH_NUM)) !== false) {
     $ragione_sociale = valore_o_null($row[2]);
     $partita_iva     = valore_o_null($row[3]);
     $codice_fiscale  = valore_o_null($row[4]);
-    $phone           = valore_o_null($row[5]);
-    $cellphone       = valore_o_null($row[6]);
-    $email           = valore_o_null($row[7]);
+    $indirizzo       = valore_o_null($row[5]);
+    $sede_citta      = valore_o_null($row[6]);
+    $sede_prov       = valore_o_null($row[7]);
+    $phone           = valore_o_null($row[8]);
+    $cellphone       = valore_o_null($row[9]);
+    $email           = valore_o_null($row[10]);
 
     if ($societa_sga === null || $societa_sga === '' || $codice_sga === null) {
         continue;
@@ -173,25 +177,30 @@ while (($row = $stmt_for->fetch(PDO::FETCH_NUM)) !== false) {
 
     $ins = "
         INSERT INTO fornitori
-            (societa_sga, codice_sga, ragione_sociale, piva, cod_fiscale,
-             phone, cellphone, email)
+            (societa_sga, codice_sga, ragione_sociale, cod_fiscale, piva,
+             email, phone, cellphone, indirizzo, sede_citta, sede_prov)
         VALUES
             (" . sql_num($societa_sga) . ",
              " . sql_quote($codice_sga) . ",
              " . sql_quote($ragione_sociale) . ",
-             " . sql_quote($partita_iva) . ",
              " . sql_quote($codice_fiscale) . ",
+             " . sql_quote($partita_iva) . ",
+             " . sql_quote($email) . ",
              " . sql_quote($phone) . ",
              " . sql_quote($cellphone) . ",
-             " . sql_quote($email) . ")
+             " . sql_quote($indirizzo) . ",
+             " . sql_quote($sede_citta) . ",
+             " . sql_quote($sede_prov) . ")
         ON DUPLICATE KEY UPDATE
             ragione_sociale = VALUES(ragione_sociale),
-            piva            = VALUES(piva),
             cod_fiscale     = VALUES(cod_fiscale),
+            piva            = VALUES(piva),
+            email           = VALUES(email),
             phone           = VALUES(phone),
             cellphone       = VALUES(cellphone),
-            email           = VALUES(email),
-            updated_at      = CURRENT_TIMESTAMP
+            indirizzo       = VALUES(indirizzo),
+            sede_citta      = VALUES(sede_citta),
+            sede_prov       = VALUES(sede_prov)
     ";
     sc_exec_sql($ins, "pigliacelli");
     $fornitori_elaborati++;

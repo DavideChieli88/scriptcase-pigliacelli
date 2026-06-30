@@ -2,7 +2,7 @@
   * Scriptcase app: finalize_contract_subvector
   *
   * Orchestratore: genera PDF in iframe, poll status, avvia EasyGN.
-  * mode=admin / sendMailOnly=1 / stato "Compilato dal subvettore" (operatore):
+  * mode=admin / sendMailOnly=1 / stato_contratto_id 3 o 4 (operatore):
   *   fetch easygn_start_wf silent=1 → mail al subvettore, nessun redirect browser.
   * mode=subvettore: redirect a easygn_start_wf_auto per la firma.
   * Parametri: [contrattoId], [subvettoreId], [tipoContrattoId] (GET o globali SC).
@@ -68,15 +68,15 @@
       unset($_SESSION['finalize_send_mail_only']);
   } elseif ($contrattoId > 0) {
       sc_lookup(rsStatoFinAdmin, "
-          SELECT COALESCE(st.nome, '')
+          SELECT c.stato_contratto_id
           FROM contratti c
-          LEFT JOIN stati_contratti st ON st.id = c.stato_contratto_id
           WHERE c.id = " . (int)$contrattoId . "
           LIMIT 1
       ", "pigliacelli");
-      if (!empty({rsStatoFinAdmin[0][0]}) && trim((string){rsStatoFinAdmin[0][0]}) === 'Compilato dal subvettore') {
+      $statoFinId = !empty({rsStatoFinAdmin[0][0]}) ? (int){rsStatoFinAdmin[0][0]} : 0;
+      if ($statoFinId === 3 || $statoFinId === 4) {
           $isAdminFlow = true;
-          $adminFlowReason = 'stato_compilato_subvettore';
+          $adminFlowReason = 'stato_id_' . $statoFinId;
       }
   }
 

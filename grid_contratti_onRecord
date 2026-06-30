@@ -126,19 +126,7 @@ if (
     && $firmatoIl !== ''
     && $firmatoIl !== '0000-00-00 00:00:00'
 ) {
-    $statoIdComm = 0;
-    sc_lookup(rsStCommGrid, "
-        SELECT id
-        FROM stati_contratti
-        WHERE nome = 'In attesa della firma committente'
-        LIMIT 1
-    ");
-    if (!empty({rsStCommGrid[0][0]})) {
-        $statoIdComm = (int){rsStCommGrid[0][0]};
-    }
-    if ($statoIdComm <= 0) {
-        $statoIdComm = 5;
-    }
+    $statoIdComm = 5; // In attesa della firma committente
     $contrattoIdGrid = isset({id}) ? (int){id} : 0;
     if ($contrattoIdGrid > 0) {
         sc_exec_sql("
@@ -187,7 +175,13 @@ switch ($stato) {
         sc_actionbar_show("send_magic_link_to_subvector");
         break;
 
-    case 4: // In attesa della firma subvettore
+    case 4: // In attesa della firma subvettore — rimanda / riavvia invio firma
+        sc_actionbar_hide("select_new_contract");
+        sc_actionbar_show("show_contract_signed");
+        sc_actionbar_show("send_contract_to_sign");
+        sc_actionbar_hide("send_magic_link_to_subvector");
+        break;
+
     case 5: // In attesa della firma committente
         sc_actionbar_hide("select_new_contract");
         sc_actionbar_show("show_contract_signed");

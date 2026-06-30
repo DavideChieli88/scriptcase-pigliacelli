@@ -9,3 +9,4 @@
  * La sincronizzazione anagrafica + notifica operatori va in onAfterUpdate / onAfterInsert:
  * incollare il contenuto di form_subvettori_contratti_magic_link_review_onAfterSave.
  */
+sc_exec_sql('COMMIT');

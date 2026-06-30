@@ -2,8 +2,8 @@
  * form_subvettori_contratti
  * → onBeforeUpdate
  *
- * Blocca il salvataggio se stato_contratto_id da 3 in su (compilato / firma / completato / rifiutati).
  * save_and_send_magic_link: flag da cookie (Ajax SC non invia hidden creati via JS).
+ * Stato > 2: blocca solo invio magic link, non il salva normale (rappresentante editabile).
  */
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
@@ -31,11 +31,6 @@ if ($scId > 0) {
     }
 }
 
-if ($scId > 0 && $statoContrattoBeforeUpd > 2) {
-    sc_error_message('Il contratto non e piu modificabile in questo stato (compilato o oltre).');
-    return;
-}
-
 $sendMagicLinkAfter = false;
 
 if (isset($_COOKIE['pigliacelli_send_ml']) && trim((string)$_COOKIE['pigliacelli_send_ml']) === '1') {
@@ -55,9 +50,15 @@ if (!$sendMagicLinkAfter && isset($_REQUEST['send_magic_link_after']) && trim((s
     $sendMagicLinkAfter = true;
 }
 
+if ($sendMagicLinkAfter && $scId > 0 && $statoContrattoBeforeUpd > 2) {
+    sc_error_message('Il magic link non puo essere inviato: il contratto e gia compilato o oltre.');
+    unset($_SESSION['pigliacelli_send_magic_link_after']);
+    return;
+}
+
 if ($sendMagicLinkAfter) {
     $_SESSION['pigliacelli_send_magic_link_after'] = 1;
-    sc_log_add('SAVE_SEND_ML', 'flag catturato onBeforeUpdate scId=' . (int)$scId);
+    sc_log_add('SAVE_SEND_ML', 'flag catturato onBeforeUpdate scId=' . (int)$scId . ' stato=' . (int)$statoContrattoBeforeUpd);
 } else {
     unset($_SESSION['pigliacelli_send_magic_link_after']);
 }

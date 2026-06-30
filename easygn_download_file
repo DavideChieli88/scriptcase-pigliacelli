@@ -1,0 +1,156 @@
+/**
+ * Blank ScriptCase: scarica PDF firmato da EasyGN e lo invia al browser.
+ * API: GET {easygn_base_url}/files/download/{id}
+ *
+ * Parametro globale: [contrattoId] — legge easygn_file_id da contratti.easygn_file_id
+ * sec_settings: easygn_bearer, easygn_base_url
+ */
+$contrattoId = (int)[contrattoId];
+if ($contrattoId <= 0) {
+    sc_error_message('contrattoId mancante o non valido.');
+    return;
+}
+
+$log = function ($msg) use ($contrattoId) {
+    sc_log_add('EASYGN_DL', '[contrattoId=' . $contrattoId . '] ' . (string)$msg);
+};
+
+$fail = function ($msg) use ($log) {
+    $log('FAIL: ' . (string)$msg);
+    if (function_exists('sc_error_message')) {
+        sc_error_message((string)$msg);
+    }
+    die((string)$msg);
+};
+
+$sc_setting = function ($name, $default = '') {
+    $safeName = str_replace("'", "''", trim((string)$name));
+    sc_lookup(rsSet, "SELECT set_value FROM sec_settings WHERE set_name = '" . $safeName . "' LIMIT 1");
+    if (isset({rsSet[0][0]})) {
+        return trim((string){rsSet[0][0]});
+    }
+    return (string)$default;
+};
+
+$bearer = trim($sc_setting('easygn_bearer', ''));
+if ($bearer === '') {
+    $fail('Bearer EasyGN mancante in sec_settings (easygn_bearer).');
+}
+
+$easygnBaseUrl = rtrim(trim($sc_setting('easygn_base_url', 'https://easygn.digiwebuno.it/api')), '/');
+$log('start download stream baseUrl=' . $easygnBaseUrl);
+
+sc_lookup(rsF, "SELECT easygn_file_id FROM contratti WHERE id = $contrattoId LIMIT 1");
+$fileId = !empty({rsF[0][0]}) ? trim((string){rsF[0][0]}) : '';
+
+if ($fileId === '') {
+    $fail('easygn_file_id assente su contratti per contratto_id=' . $contrattoId . ' (inviare prima la firma EasyGN).');
+}
+
+$easygn_get_download = function ($url, $bearerKy) {
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_HTTPGET, true);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 120);
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Authorization: Bearer ' . $bearerKy,
+        'Accept: application/pdf, application/octet-stream, application/json, */*',
+    ]);
+
+    $body = curl_exec($ch);
+    $errno = curl_errno($ch);
+    $err = curl_error($ch);
+    $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $ctype = (string)curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+    curl_close($ch);
+
+    if ($errno) {
+        return [false, "cURL error $errno: $err", $http, '', $ctype];
+    }
+    if ($http < 200 || $http >= 300) {
+        return [false, "HTTP $http", $http, (string)$body, $ctype];
+    }
+    return [true, '', $http, (string)$body, $ctype];
+};
+
+$extract_pdf_binary = function ($body) {
+    $body = (string)$body;
+    if ($body === '') {
+        return ['', 'body vuoto'];
+    }
+    if (strncmp($body, '%PDF', 4) === 0) {
+        return [$body, 'binary'];
+    }
+
+    $json = json_decode($body, true);
+    if (!is_array($json)) {
+        return ['', 'risposta non PDF e non JSON'];
+    }
+
+    $candidates = [];
+    $walker = function ($node) use (&$walker, &$candidates) {
+        if (!is_array($node)) {
+            return;
+        }
+        foreach (['content', 'file', 'data', 'document', 'body', 'pdf'] as $k) {
+            if (isset($node[$k]) && is_string($node[$k]) && $node[$k] !== '') {
+                $candidates[] = $node[$k];
+            }
+        }
+        foreach ($node as $v) {
+            if (is_array($v)) {
+                $walker($v);
+            }
+        }
+    };
+    $walker($json);
+
+    foreach ($candidates as $c) {
+        $c = trim((string)$c);
+        if ($c === '') {
+            continue;
+        }
+        $bin = base64_decode($c, true);
+        if ($bin !== false && strncmp($bin, '%PDF', 4) === 0) {
+            return [$bin, 'json_base64'];
+        }
+    }
+
+    return ['', 'JSON senza PDF decodificabile'];
+};
+
+$downloadUrl = $easygnBaseUrl . '/files/download/' . rawurlencode($fileId);
+$log('GET ' . $downloadUrl);
+
+[$ok, $err, $http, $respBody, $contentType] = $easygn_get_download($downloadUrl, $bearer);
+if (!$ok) {
+    $preview = preg_replace('/\s+/u', ' ', (string)$respBody);
+    if ($preview !== null && strlen($preview) > 500) {
+        $preview = substr($preview, 0, 500) . '...';
+    }
+    $fail('Download EasyGN fallito: ' . $err . "\nHTTP: $http\nRisposta: " . (string)$preview);
+}
+
+[$pdfBin, $source] = $extract_pdf_binary($respBody);
+if ($pdfBin === '') {
+    $fail('File scaricato ma non riconosciuto come PDF (' . $source . '). len=' . strlen((string)$respBody));
+}
+
+$pdfLen = strlen($pdfBin);
+$filename = 'contratto_' . $contrattoId . '_firmato.pdf';
+$log("download ok http=$http source=$source pdf_len=$pdfLen → browser");
+
+if (headers_sent()) {
+    $fail('Headers già inviati: impossibile inviare il PDF al browser.');
+}
+
+header('Content-Type: application/pdf');
+//header('Content-Disposition: attachment; filename="' . $filename . '"');
+header('Content-Disposition: inline; filename="' . $filename . '"');
+header('Content-Length: ' . (string)$pdfLen);
+header('Cache-Control: no-store, no-cache, must-revalidate');
+echo $pdfBin;
+exit;

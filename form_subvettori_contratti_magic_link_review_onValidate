@@ -114,12 +114,6 @@
         $msg = "Per inviare i dati in revisione è necessario compilare tutti i campi obbligatori:\n- "
             . implode("\n- ", $errors);
 
-        if (function_exists('sc_err_msg')) {
-            sc_err_msg($msg);
-        } else {
-            sc_error_message($msg);
-            if (function_exists('sc_error_exit')) {
-                sc_error_exit();
-            }
-        }
+		sc_error_message($msg);
+		sc_error_exit();
     }

@@ -326,11 +326,17 @@ $pdf->SetXY($contentX, $sigAnchorY + 42);
 $pdf->SetFont('Arial', 'B', 12);
 $pdf->Cell(110, 7, 'Autotrasporti Pigliacelli SpA', 0, 1, 'L');
 
-// Riquadri firma EasyGN sotto le etichette (y = top del box in mm dall'alto pagina)
-$sigBoxYCommittente = $sigAnchorY + 50; // sotto "Autotrasporti Pigliacelli SpA"
-$sigBoxYVettore     = $sigAnchorY + 40; // sotto "IL VETTORE"
-$easygnSignPush('committente', $sigPage, $contentX, $sigBoxYCommittente, 100, 12);
-$easygnSignPush('vettore', $sigPage, $tableX + $tableW - 75, $sigBoxYVettore, 75, 12);
+// Riquadri firma EasyGN: y = top del box in mm dall'alto pagina.
+// Offset fisso sotto "IL COMMITTENTE" / "IL VETTORE" (EasyGN tende a renderizzare sopra l'etichetta se troppo in alto).
+$easygnSigDropMm = 12;
+$sigLabelsY = $sigAnchorY + 31;
+$sigLabelLineH = 7;
+$sigBoxH = 12;
+$maxSigBoxY = $pageH - $marginB - $sigBoxH;
+$sigBoxYCommittente = min($sigLabelsY + $sigLabelLineH + $easygnSigDropMm, $maxSigBoxY);
+$sigBoxYVettore = min($sigLabelsY + $sigLabelLineH + $easygnSigDropMm, $maxSigBoxY);
+$easygnSignPush('committente', $sigPage, $contentX, $sigBoxYCommittente, 100, $sigBoxH);
+$easygnSignPush('vettore', $sigPage, $tableX + $tableW - 75, $sigBoxYVettore, 75, $sigBoxH);
 $contrattiAttachEasygnSignMeta($pdf, $easygnSignVisuals);
 
 // --- Output: anteprima browser (default) oppure salvataggio per campo Document filename ---

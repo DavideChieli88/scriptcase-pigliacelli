@@ -4,7 +4,9 @@
  * Flusso atteso (tipo 1, firma ordinata) — 3 chiamate HTTP:
  *   1) type=member, status=done  → vettore firmato → firmato_il, email committente, In attesa firma committente
  *   2) type=member, status=done  → committente firmato → nessuna email (in attesa chiusura procedura)
- *   3) type=procedure, status=done → Completato, data_inizio_contratto, attiva utente + mail credenziali (se active=N) o link login (se active=Y)
+ *   3) type=procedure, status=done → Completato, data_inizio_contratto, attiva utente
+ *      + mail completamento al subvettore (credenziali se active=N, link area riservata se active=Y)
+ *      + mail completamento al committente (notifica, senza credenziali)
  *   Rifiuti member/procedure → Rifiutato dal subvettore / Rifiutato dal committente (+ motivo in contratti.notes da body.comments)
  *
  * File: web_hook_firma/api_logs/GG-MM-AAAA.txt | Log: sc_log_add('WEBHOOK_FIRMA', …)
@@ -349,18 +351,38 @@ function webhook_set_stato_contratto($contrattoId, $statoNome, $tipo, $status)
         webhook_sc_log('stato "' . $statoNome . '" assente in stati_contratti');
         return false;
     }
-    $giaCompletato = webhook_contratto_gia_completato($contrattoId);
     $isCompletato = (strtolower(trim((string)$statoNome)) === 'completato');
-    $extraSql = '';
-    if ($isCompletato && !$giaCompletato) {
-        $extraSql = ', data_inizio_contratto = ' . webhook_now_sql_literal();
+
+    if ($isCompletato) {
+        $dtSql = webhook_now_sql_literal();
+        sc_exec_sql("
+            UPDATE contratti
+            SET stato_contratto_id = $statoId,
+                data_inizio_contratto = IF(
+                    data_inizio_contratto IS NULL OR data_inizio_contratto = '0000-00-00 00:00:00',
+                    $dtSql,
+                    data_inizio_contratto
+                )
+            WHERE id = $contrattoId
+              AND stato_contratto_id <> $statoId
+        ");
+        sc_lookup(rsWhStUp, "SELECT ROW_COUNT()");
+        $rowsUp = empty({rsWhStUp[0][0]}) ? 0 : (int){rsWhStUp[0][0]};
+        webhook_sc_log(
+            'UPDATE contratto_id=' . $contrattoId
+            . ' stato_contratto_id=' . $statoId . ' (Completato) type=' . $tipo
+            . ' status=' . $status . ' rows=' . $rowsUp
+        );
+        if ($rowsUp > 0) {
+            webhook_activate_subvettore_after_completato($contrattoId);
+        } else {
+            webhook_sc_log('completato: stato già Completato — skip attivazione/mail (duplicato procedure/workflow?)');
+        }
+        return true;
     }
-    sc_exec_sql("UPDATE contratti SET stato_contratto_id = $statoId$extraSql WHERE id = $contrattoId");
-    webhook_sc_log('UPDATE contratto_id=' . $contrattoId . ' stato_contratto_id=' . $statoId . ' (' . $statoNome . ') type=' . $tipo . ' status=' . $status
-        . ($extraSql !== '' ? ' + data_inizio_contratto' : ''));
-    if (!$giaCompletato && $isCompletato) {
-        webhook_activate_subvettore_after_completato($contrattoId);
-    }
+
+    sc_exec_sql("UPDATE contratti SET stato_contratto_id = $statoId WHERE id = $contrattoId");
+    webhook_sc_log('UPDATE contratto_id=' . $contrattoId . ' stato_contratto_id=' . $statoId . ' (' . $statoNome . ') type=' . $tipo . ' status=' . $status);
     return true;
 }
 
@@ -482,11 +504,31 @@ function webhook_user_active_is_yes($active)
     return ($a === 'Y' || $a === '1' || $a === 'S' || $a === 'SI' || $a === 'YES');
 }
 
-/** Dopo stato Completato: attiva utente se necessario; mail credenziali (active=N) o link login (active=Y). */
+function webhook_email_valida($email)
+{
+    $email = trim((string)$email);
+    if ($email === '') {
+        return false;
+    }
+    if (strpos($email, ';') !== false || strpos($email, ',') !== false || strpos($email, ' ') !== false) {
+        return false;
+    }
+    return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+}
+
+/** Dopo stato Completato: attiva subvettore; mail completamento a subvettore e committente. */
 function webhook_activate_subvettore_after_completato($contrattoId)
 {
     $contrattoId = (int)$contrattoId;
     if ($contrattoId <= 0) {
+        return;
+    }
+    $metaCompletato = webhook_load_easygn_sign_link_json($contrattoId);
+    $subMailDone = !empty($metaCompletato['mail_completato_sub_inviata'])
+        || !empty($metaCompletato['mail_completato_inviata']);
+    $commMailDone = !empty($metaCompletato['mail_completato_comm_inviata']);
+    if ($subMailDone && $commMailDone) {
+        webhook_sc_log('completato: mail subvettore e committente già inviate contratto_id=' . $contrattoId);
         return;
     }
     sc_lookup(rsSub, "
@@ -505,18 +547,22 @@ function webhook_activate_subvettore_after_completato($contrattoId)
     ");
     if (empty({rsSub[0][0]})) {
         webhook_sc_log('completato: nessun subvettore per contratto_id=' . $contrattoId);
+        if (!$commMailDone) {
+            $commEmail = isset($metaCompletato['committente_email']) ? trim((string)$metaCompletato['committente_email']) : '';
+            $commNome = isset($metaCompletato['committente_nome']) ? trim((string)$metaCompletato['committente_nome']) : '';
+            if (webhook_email_valida($commEmail) && webhook_send_completato_committente_email($contrattoId, $commEmail, $commNome)) {
+                $metaCompletato['mail_completato_comm_inviata'] = 1;
+                webhook_save_easygn_sign_link_json($contrattoId, $metaCompletato);
+            }
+        }
         return;
     }
     $subvettoreId = (int){rsSub[0][0]};
     $loginSubv = trim((string){rsSub[0][1]});
     $ragioneSociale = trim((string){rsSub[0][2]});
     $phoneSub = trim((string){rsSub[0][3]});
-    $emailSub = trim((string){rsSub[0][4]});
+    $emailRapp = trim((string){rsSub[0][4]});
     $nomeFirm = trim((string){rsSub[0][5]});
-    if ($emailSub === '' || filter_var($emailSub, FILTER_VALIDATE_EMAIL) === false) {
-        webhook_sc_log('completato: email subvettore assente contratto_id=' . $contrattoId);
-        return;
-    }
     $login = $loginSubv;
     $userLogin = '';
     $userActive = '';
@@ -538,53 +584,109 @@ function webhook_activate_subvettore_after_completato($contrattoId)
         $userActive = trim((string){rsU[0][1]});
         $userEmail = trim((string){rsU[0][2]});
     }
+
+    $toEmail = '';
+    if (webhook_email_valida($userEmail)) {
+        $toEmail = $userEmail;
+    } elseif (webhook_email_valida($loginSubv)) {
+        $toEmail = $loginSubv;
+    } elseif (webhook_email_valida($emailRapp)) {
+        $toEmail = $emailRapp;
+    }
+    if ($toEmail === '') {
+        webhook_sc_log(
+            'completato: email subvettore assente contratto_id=' . $contrattoId
+            . ' login_sub=[' . $loginSubv . '] email_rapp=[' . $emailRapp
+            . '] user_email=[' . $userEmail . '] — skip mail subvettore'
+        );
+    }
+
     $plainPassword = '';
     $mustSendCredentials = false;
     $mustSendLoginLink = false;
-    $toEmail = $userEmail !== '' ? $userEmail : $emailSub;
     $displayName = $ragioneSociale !== '' ? $ragioneSociale : $nomeFirm;
-    if ($userLogin === '') {
-        $login = $emailSub;
-        $plainPassword = webhook_generate_temp_password();
-        $pswHash = md5($plainPassword);
-        $lq = webhook_sql_quote($login);
-        $le = webhook_sql_quote($emailSub);
-        $ln = webhook_sql_quote($displayName);
-        $lp = webhook_sql_quote($phoneSub);
-        sc_exec_sql("
-            INSERT INTO sec_users (login, pswd, name, email, phone, active, subvettore_id)
-            VALUES ('$lq', '" . webhook_sql_quote($pswHash) . "', '$ln', '$le', '$lp', 'Y', $subvettoreId)
-        ");
-        sc_lookup(rsGrp, "SELECT login FROM sec_users_groups WHERE login = '$lq' AND group_id = 2 LIMIT 1");
-        if (empty({rsGrp[0][0]})) {
-            sc_exec_sql("INSERT INTO sec_users_groups (login, group_id) VALUES ('$lq', 2)");
+
+    if ($toEmail !== '' && !$subMailDone) {
+        if ($userLogin === '') {
+            $login = $toEmail;
+            $plainPassword = webhook_generate_temp_password();
+            $pswHash = md5($plainPassword);
+            $lq = webhook_sql_quote($login);
+            $le = webhook_sql_quote($toEmail);
+            $ln = webhook_sql_quote($displayName);
+            $lp = webhook_sql_quote($phoneSub);
+            sc_exec_sql("
+                INSERT INTO sec_users (login, pswd, name, email, phone, active, subvettore_id)
+                VALUES ('$lq', '" . webhook_sql_quote($pswHash) . "', '$ln', '$le', '$lp', 'Y', $subvettoreId)
+            ");
+            sc_lookup(rsGrp, "SELECT login FROM sec_users_groups WHERE login = '$lq' AND group_id = 2 LIMIT 1");
+            if (empty({rsGrp[0][0]})) {
+                sc_exec_sql("INSERT INTO sec_users_groups (login, group_id) VALUES ('$lq', 2)");
+            }
+            if ($loginSubv === '') {
+                sc_exec_sql("UPDATE subvettori SET login_subvettore = '$lq' WHERE id = $subvettoreId");
+            }
+            $mustSendCredentials = true;
+            webhook_sc_log('completato: creato sec_users login=' . $login . ' subvettore_id=' . $subvettoreId);
+        } elseif (webhook_user_active_is_yes($userActive)) {
+            $mustSendLoginLink = true;
+            webhook_sc_log('completato: account già attivo login=' . $login . ' — mail link area riservata');
+        } else {
+            $plainPassword = webhook_generate_temp_password();
+            $pswHash = webhook_sql_quote(md5($plainPassword));
+            $lq = webhook_sql_quote($login);
+            sc_exec_sql("UPDATE sec_users SET active = 'Y', pswd = '$pswHash' WHERE login = '$lq'");
+            $mustSendCredentials = true;
+            webhook_sc_log('completato: attivato sec_users login=' . $login . ' (era inactive)');
         }
-        if ($loginSubv === '') {
-            sc_exec_sql("UPDATE subvettori SET login_subvettore = '$lq' WHERE id = $subvettoreId");
-        }
-        $mustSendCredentials = true;
-        webhook_sc_log('completato: creato sec_users login=' . $login . ' subvettore_id=' . $subvettoreId);
-    } elseif (webhook_user_active_is_yes($userActive)) {
-        $mustSendLoginLink = true;
-        webhook_sc_log('completato: account già attivo login=' . $login . ' — mail link area riservata');
-    } else {
-        $plainPassword = webhook_generate_temp_password();
-        $pswHash = webhook_sql_quote(md5($plainPassword));
-        $lq = webhook_sql_quote($login);
-        sc_exec_sql("UPDATE sec_users SET active = 'Y', pswd = '$pswHash' WHERE login = '$lq'");
-        $mustSendCredentials = true;
-        webhook_sc_log('completato: attivato sec_users login=' . $login . ' (era inactive)');
     }
-    if ($mustSendCredentials && $plainPassword !== '') {
-        if (!webhook_send_credenziali_subvettore_email($contrattoId, $toEmail, $login, $plainPassword, $displayName)) {
-            webhook_sc_log('completato: invio credenziali FALLITO to=' . $toEmail . ' login=' . $login);
+
+    $mailSubOk = false;
+    if (!$subMailDone && $toEmail !== '') {
+        if ($mustSendCredentials && $plainPassword !== '') {
+            if (webhook_send_credenziali_subvettore_email($contrattoId, $toEmail, $login, $plainPassword, $displayName)) {
+                $mailSubOk = true;
+            } else {
+                webhook_sc_log('completato: invio credenziali FALLITO to=' . $toEmail . ' login=' . $login);
+            }
+        } elseif ($mustSendLoginLink) {
+            if (webhook_send_area_riservata_login_email($contrattoId, $toEmail, $displayName)) {
+                $mailSubOk = true;
+            } else {
+                webhook_sc_log('completato: invio link login FALLITO to=' . $toEmail . ' login=' . $login);
+            }
+        } else {
+            webhook_sc_log(
+                'completato: nessuna mail subvettore (cred=' . ($mustSendCredentials ? '1' : '0')
+                . ' link=' . ($mustSendLoginLink ? '1' : '0') . ')'
+            );
         }
-    } elseif ($mustSendLoginLink) {
-        if (!webhook_send_area_riservata_login_email($contrattoId, $toEmail, $displayName)) {
-            webhook_sc_log('completato: invio link login FALLITO to=' . $toEmail . ' login=' . $login);
+    }
+
+    $mailCommOk = false;
+    if (!$commMailDone) {
+        $commEmail = isset($metaCompletato['committente_email']) ? trim((string)$metaCompletato['committente_email']) : '';
+        $commNome = isset($metaCompletato['committente_nome']) ? trim((string)$metaCompletato['committente_nome']) : '';
+        if (webhook_email_valida($commEmail)) {
+            if (webhook_send_completato_committente_email($contrattoId, $commEmail, $commNome)) {
+                $mailCommOk = true;
+            } else {
+                webhook_sc_log('completato: invio mail committente FALLITO to=' . $commEmail);
+            }
+        } else {
+            webhook_sc_log('completato: mail committente SKIP email assente/non valida contratto_id=' . $contrattoId);
         }
-    } else {
-        webhook_sc_log('completato: nessuna mail inviata (cred=' . ($mustSendCredentials ? '1' : '0') . ' link=' . ($mustSendLoginLink ? '1' : '0') . ')');
+    }
+
+    if ($mailSubOk) {
+        $metaCompletato['mail_completato_sub_inviata'] = 1;
+        $metaCompletato['mail_completato_inviata'] = 1;
+    }
+    if ($mailCommOk) {
+        $metaCompletato['mail_completato_comm_inviata'] = 1;
+    }
+    if ($mailSubOk || $mailCommOk) {
+        webhook_save_easygn_sign_link_json($contrattoId, $metaCompletato);
     }
 }
 
@@ -618,7 +720,7 @@ function webhook_send_credenziali_subvettore_email($contrattoId, $to, $login, $p
     }
     $titolo = 'Credenziali area riservata — contratto #' . (int)$contrattoId;
     $testo = $nome . ",\n\n"
-        . "Il contratto #" . (int)$contrattoId . " è stato completato.\n"
+        . "Il contratto #" . (int)$contrattoId . " è stato firmato da ambo le parti ed è completo.\n"
         . "Puoi accedere all'area riservata con le credenziali seguenti (password temporanea).\n\n"
         . "Login: " . $login . "\n"
         . "Password: " . $plainPassword . "\n";
@@ -631,7 +733,7 @@ function webhook_send_credenziali_subvettore_email($contrattoId, $to, $login, $p
     $safeNome = htmlspecialchars($nome, ENT_QUOTES, 'UTF-8');
     $mailLogoUrl = webhook_mail_logo_src();
     $credInner = '<p style="margin:0 0 16px;">' . $safeNome . ',</p>'
-        . '<p style="margin:0 0 20px;">Il contratto <strong>#' . (int)$contrattoId . '</strong> è stato completato. '
+        . '<p style="margin:0 0 20px;">Il contratto <strong>#' . (int)$contrattoId . '</strong> è stato firmato da ambo le parti ed è completo. '
         . 'Ecco le credenziali per l\'area riservata (password temporanea).</p>'
         . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
         . 'style="margin:0 0 20px;background:#f8f9fb;border:1px solid #e2e6ea;border-radius:8px;">'
@@ -688,7 +790,7 @@ function webhook_send_area_riservata_login_email($contrattoId, $to, $displayName
     }
     $titolo = 'Contratto completato — area riservata #' . (int)$contrattoId;
     $testo = $nome . ",\n\n"
-        . "Il contratto #" . (int)$contrattoId . " è stato completato.\n"
+        . "Il contratto #" . (int)$contrattoId . " è stato firmato da ambo le parti ed è completo.\n"
         . "Puoi accedere all'area riservata con le credenziali già in tuo possesso:\n\n"
         . $loginUrl . "\n\n"
         . "Messaggio automatico — non rispondere.";
@@ -696,7 +798,7 @@ function webhook_send_area_riservata_login_email($contrattoId, $to, $displayName
     $safeLoginUrl = htmlspecialchars($loginUrl, ENT_QUOTES, 'UTF-8');
     $mailLogoUrl = webhook_mail_logo_src();
     $inner = '<p style="margin:0 0 16px;">' . $safeNome . ',</p>'
-        . '<p style="margin:0 0 20px;">Il contratto <strong>#' . (int)$contrattoId . '</strong> è stato completato. '
+        . '<p style="margin:0 0 20px;">Il contratto <strong>#' . (int)$contrattoId . '</strong> è stato firmato da ambo le parti ed è completo. '
         . 'Puoi accedere all\'area riservata con le <strong>credenziali già in tuo possesso</strong>.</p>'
         . '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px;"><tr>'
         . '<td align="center" bgcolor="#5b2d8e" style="border-radius:8px;background-color:#5b2d8e;">'
@@ -719,6 +821,65 @@ function webhook_send_area_riservata_login_email($contrattoId, $to, $displayName
         return false;
     }
     webhook_sc_log('login_link inviato to=' . $to . ' contratto_id=' . $contrattoId);
+    return true;
+}
+
+/** Notifica completamento al committente (senza credenziali). */
+function webhook_send_completato_committente_email($contrattoId, $to, $displayName)
+{
+    $to = trim((string)$to);
+    if (!webhook_email_valida($to)) {
+        webhook_sc_log('completato_comm SKIP email non valida contratto_id=' . $contrattoId);
+        return false;
+    }
+    if (!function_exists('sc_send_mail_api')) {
+        webhook_sc_log('completato_comm SKIP sc_send_mail_api assente');
+        return false;
+    }
+    $loginUrl = rtrim(trim(webhook_setting('login_url', '')), '/');
+    if ($loginUrl === '') {
+        $loginUrl = rtrim(trim(webhook_setting('app_url', '')), '/');
+    }
+    webhook_init_smtp_config();
+    $nome = trim((string)$displayName);
+    if ($nome === '') {
+        $nome = 'Gentile committente';
+    }
+    $titolo = 'Contratto completato #' . (int)$contrattoId;
+    $testo = $nome . ",\n\n"
+        . "Il contratto #" . (int)$contrattoId . " è stato firmato da ambo le parti ed è completo.\n";
+    if ($loginUrl !== '') {
+        $testo .= "Può consultare il contratto nell'area di gestione:\n" . $loginUrl . "\n\n";
+    }
+    $testo .= "Messaggio automatico — non rispondere.";
+    $safeNome = htmlspecialchars($nome, ENT_QUOTES, 'UTF-8');
+    $safeLoginUrl = htmlspecialchars($loginUrl, ENT_QUOTES, 'UTF-8');
+    $mailLogoUrl = webhook_mail_logo_src();
+    $inner = '<p style="margin:0 0 16px;">' . $safeNome . ',</p>'
+        . '<p style="margin:0 0 20px;">Il contratto <strong>#' . (int)$contrattoId . '</strong> è stato firmato da ambo le parti ed è completo.</p>';
+    if ($loginUrl !== '') {
+        $inner .= '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px;"><tr>'
+            . '<td align="center" bgcolor="#5b2d8e" style="border-radius:8px;background-color:#5b2d8e;">'
+            . '<a href="' . $safeLoginUrl . '" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:bold;'
+            . 'color:#ffffff;text-decoration:none;">Accedi all\'area di gestione</a>'
+            . '</td></tr></table>';
+    }
+    $html = pigliacelli_mail_layout($titolo, $inner, $mailLogoUrl);
+    $smtpCfg = webhook_get_smtp_config();
+    try {
+        sc_send_mail_api(array_merge($smtpCfg, array(
+            'message' => array(
+                'html'    => $html,
+                'text'    => $testo,
+                'to'      => $to,
+                'subject' => $titolo,
+            ),
+        )));
+    } catch (Throwable $e) {
+        webhook_sc_log('completato_comm EXCEPTION to=' . $to . ' msg=' . $e->getMessage());
+        return false;
+    }
+    webhook_sc_log('completato_comm inviato to=' . $to . ' contratto_id=' . $contrattoId);
     return true;
 }
 

@@ -1,0 +1,107 @@
+$savePath = $_SERVER['DOCUMENT_ROOT'] . '/cartella_fatture/';
+die($savePath);
+
+// Recupero Parametri
+$check_sql = "SELECT set_value"
+   . " FROM sec_settings"
+   . " WHERE set_name IN ('zuc_endp', 'zuc_login', 'zuc_pswd', 'zuc_comp')";
+sc_lookup(rs, $check_sql);
+
+if (isset({rs[0][0]})) {    // Row found
+	$zEndp = {rs[1][0]};
+    $zLogin = {rs[2][0]};
+    $zPswd = {rs[3][0]};
+    $zComp = {rs[0][0]};
+
+	$api = new ZucchettiAPI($zEndp, $zLogin, $zPswd, $zComp);
+
+	// Seleziona dal DB le fatture senza XML
+	$sql = "SELECT id_zucchetti FROM fatture_passive WHERE file_scaricato = 0 LIMIT 50";
+	sc_lookup(rs, $sql);
+
+	if (!empty({rs})) {
+		if ($api->connect()) {
+
+			foreach ({rs} as $row) {
+				$idZucchetti = $row[0];
+
+				// Facciamo la chiamata all'API 
+				$responseXML = $api->getDocumentFileFP($idZucchetti);
+
+		// Regex per rimuovere TUTTI i prefissi di namespace
+				$cleanXML = preg_replace('/(<\/?)(?!xml)([\wA-Za-z0-9_]+):/', '$1', $responseXML);
+				$xml = simplexml_load_string($cleanXML);
+
+				if ($xml !== false && isset($xml->Body->getDocumentFileFPResponse->getDocumentFileFPReturn)) {
+
+					$returnNode = $xml->Body->getDocumentFileFPResponse->getDocumentFileFPReturn;
+
+					// Controllo se l'API ha risposto con Successo (code = 0)
+					if ((string)$returnNode->code === '0') {
+
+						// Estraiamo il contenuto testuale di <response>
+						$innerResponse = trim((string)$returnNode->response);
+						$fileNode = null;
+
+						// Caso 1: XML "escapato" (stringa che inizia con <)
+						if (!empty($innerResponse) && strpos($innerResponse, '<') === 0) {
+							$innerXml = simplexml_load_string($innerResponse);
+							if ($innerXml !== false) {
+								$fileNode = $innerXml;
+							}
+						} 
+						// Caso 2: XML puro e non escapato
+						else if (isset($returnNode->response->file)) {
+							$fileNode = $returnNode->response->file;
+						}
+
+						// Se abbiamo trovato il nodo file e contiene il base64
+						if ($fileNode && isset($fileNode->base64)) {
+
+							$base64 = (string)$fileNode->base64; // 
+							$nomeFile = (string)$fileNode->nome; // 
+
+							if (!empty($base64)) {
+								$xmlContent = base64_decode($base64);
+
+								// Percorso di salvataggio
+								$savePath = $_SERVER['DOCUMENT_ROOT'] . '/cartella_fatture/' . $nomeFile;
+								file_put_contents($savePath, $xmlContent);
+
+								// Aggiorna a DB segnando che il file è scaricato
+								$update_sql = "UPDATE fatture_passive SET file_scaricato = 1, nome_file_xml = '$nomeFile' WHERE id_zucchetti = '$idZucchetti'";
+								sc_exec_sql($update_sql);
+
+								echo "Scaricato e salvato: $nomeFile <br>";
+							} else {
+								 echo "Base64 vuoto per ID $idZucchetti <br>";
+							}
+						} else {
+							// Caso in cui la fattura sia storicizzata (la response contiene <esito>KO</esito> e <messaggio>File non disponibile</messaggio>) 
+							 if(isset($fileNode->esito) && (string)$fileNode->esito === 'KO') {
+								 echo "Errore per ID $idZucchetti: " . (string)$fileNode->messaggio . "<br>";
+							 } else {
+								 echo "Struttura 'file' non trovata per ID $idZucchetti <br>";
+							 }
+						}
+
+					} else {
+						 echo "Errore WS Zucchetti per ID $idZucchetti: " . (string)$returnNode->message . " (Codice: " . (string)$returnNode->code . ")<br>";
+					}
+				} else {
+					echo "Errore di parsing della risposta per ID $idZucchetti.<br>";
+				}
+			}
+
+			echo "<br>Processo di download XML completato.";
+			$api->disconnect();
+		} else {
+			echo "Errore di connessione a Zucchetti.";
+		}
+	} else {
+		echo "Nessun nuovo XML da scaricare nel database.";
+	}		
+} else {     // No row found
+	http_response_code(404);
+    echo "Impossibile recuperare i parametri per la connessione al WS!";
+}

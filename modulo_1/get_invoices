@@ -1,0 +1,131 @@
+// Recupero Parametri
+$check_sql = "SELECT set_value"
+   . " FROM sec_settings"
+   . " WHERE set_name IN ('zuc_endp', 'zuc_login', 'zuc_pswd', 'zuc_comp', 'zuc_sync')";
+sc_lookup(rs, $check_sql);
+
+if (isset({rs[0][0]})) {    // Row found
+	$zEndp = {rs[1][0]};
+    $zLogin = {rs[2][0]};
+    $zPswd = {rs[3][0]};
+    $zComp = {rs[0][0]};
+	$dateFrom = {rs[4][0]};
+	$dateTo = date('YmdHis');
+
+	$api = new ZucchettiAPI($zEndp, $zLogin, $zPswd, $zComp);
+
+	if ($api->connect()) {
+		$responseXML = $api->getDocumentsListFPHMS($dateFrom, $dateTo);
+
+		// Regex per rimuovere TUTTI i prefissi di namespace
+		$cleanXML = preg_replace('/(<\/?)(?!xml)([\wA-Za-z0-9_]+):/', '$1', $responseXML);
+		$xml = simplexml_load_string($cleanXML);
+
+		if (isset($xml->Body->getDocumentsListFPHMSResponse->getDocumentsListFPHMSReturn)) {
+			
+			$returnNode = $xml->Body->getDocumentsListFPHMSResponse->getDocumentsListFPHMSReturn;
+
+			// Controllo se l'API ha risposto con Successo (code = 0)
+			if ((string)$returnNode->code === '0') {
+				
+				// Estraiamo il contenuto testuale di <response>
+				$innerResponse = trim((string)$returnNode->response);
+				$documenti_list = null;
+
+				// Caso 1: XML "escapato" (stringa che inizia con <)
+				if (!empty($innerResponse) && strpos($innerResponse, '<') === 0) {
+					$innerXml = simplexml_load_string($innerResponse);
+					if ($innerXml !== false) {
+						$documenti_list = $innerXml->documento;
+					}
+				} 
+				// Caso 2: XML puro e non escapato
+				else if (isset($returnNode->response->documenti->documento)) {
+					$documenti_list = $returnNode->response->documenti->documento;
+				}
+
+				if ($documenti_list) {
+					$nDocs = count($documenti_list);
+					foreach ($documenti_list as $doc) {
+						// --- DATI DI SISTEMA ---
+						$idZucchetti = (string)$doc['id']; 
+						$stato = (string)$doc->stato;
+						$dataRicezioneHub = (string)$doc->dataRicezione;
+						$identificativoSdi = (string)$doc->identificativoSdi;
+						
+						// --- ESTRAZIONE DATI FORNITORE ---
+                    	$cedenteDenominazione = addslashes((string)$doc->cedente->denominazione);
+                        $cedentePaese = (string)$doc->cedente->partitaIva->idPaese;
+                        $cedentePiva = (string)$doc->cedente->partitaIva->idCodice;
+                        $cedenteCf = (string)$doc->cedente->codiceFiscale;
+
+                        // --- ESTRAZIONE DATI FATTURA ---
+                        $nodoFattura = $doc->fatture->fattura[0];
+                        
+                        $numeroFattura = addslashes((string)$nodoFattura->numero);
+                        $dataFattura = (string)$nodoFattura->data;
+                        $tipoDocumento = (string)$nodoFattura->tipo;
+                        $divisa = (string)$nodoFattura->divisa;
+                        
+						// --- FORMATTAZIONE TOTALE ---
+                        $totaleString = (string)$nodoFattura->totale;
+                        $totaleFattura = str_replace(',', '.', $totaleString);
+                        if (empty($totaleFattura)) {
+                            $totaleFattura = '0.00';
+                        }
+
+                        /* --- INSERIMENTO A DATABASE ---
+                        $check_db = "SELECT id FROM fatture_passive WHERE id_zucchetti = '$idZucchetti'";
+                        sc_lookup(rs_check, $check_db);
+
+                        if (empty({rs_check})) {
+                            $insert_sql = "INSERT INTO fatture_passive (
+                                id_zucchetti, sdi_identificativo, data_ricezione_hub,
+                                cedente_denominazione, cedente_paese, cedente_piva,
+								cedente_cf, numero_fattura, data_fattura, 
+								totale_fattura, tipo_documento, divisa
+                            ) VALUES (
+                                '$idZucchetti', '$identificativoSdi', '$dataRicezioneHub',
+                                '$cedenteDenominazione', '$cedentePaese', '$cedentePiva', 
+								'$cedenteCf', '$numeroFattura', '$dataFattura',
+								'$totaleFattura, '$tipoDocumento', '$divisa'
+                            )";
+                            
+                            sc_exec_sql($insert_sql);
+                        }*/
+						
+						echo "ID ZUCCHETTI $idZucchetti | ID SdI $identificativoSdi <br>";
+					}
+					
+					echo "<br>Sincronizzazione $nDocs documenti completata.";					
+				} else {
+					echo "Non ci sono documenti da sincronizzare nel periodo indicato.";
+				}
+				// --- AGGIORNO PARAMETRO SINCRONIZZAZIONE ---
+				$update_table  = 'sec_settings';      // Table name
+				$update_where  = "set_name = 'zuc_sync'"; // Where clause
+				$update_fields = array(   // Field list, add as many as needed
+					 "set_value = '$dateTo'"
+				 );
+
+				// Update record
+				$update_sql = 'UPDATE ' . $update_table
+					. ' SET '   . implode(', ', $update_fields)
+					. ' WHERE ' . $update_where;
+				sc_exec_sql($update_sql);									
+			} else {
+				echo "Errore WS Zucchetti: " . (string)$returnNode->message . " (Codice: " . (string)$returnNode->code . ")";
+			}
+		} else {
+			echo "Errore critico: impossibile leggere la risposta XML o struttura inattesa.";
+		}
+		
+		$api->disconnect();
+	} else {
+		http_response_code(500);
+		echo "Errore di connessione a Zucchetti.";
+	}
+} else {     // No row found
+	http_response_code(404);
+    echo "Impossibile recuperare i parametri per la connessione al WS!";
+}

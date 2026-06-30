@@ -138,6 +138,7 @@ if (!function_exists('magic_link_review_sync_after_save')) {
             || $prov_nascita !== '' || trim((string)$data_nascita_raw) !== ''
         );
 
+		/*
         if ($scId > 0 && $hasLegali) {
             $data_nascita_sql = ($data_nascita_db !== null) ? magic_link_review_sql_quote($data_nascita_db) : 'NULL';
             sc_exec_sql("
@@ -152,6 +153,7 @@ if (!function_exists('magic_link_review_sync_after_save')) {
             ");
             sc_log_add('MAGIC_LINK_REVIEW', 'subvettori_contratti aggiornato id=' . (int)$scId);
         }
+		*/
     }
 }
 
@@ -496,7 +498,12 @@ sc_log_add(
     'MAGIC_LINK_REVIEW',
     'redirect blank conferma scId=' . (int)$scId . ' contratto=' . (int)$contrattoId
 );
-
+sc_exec_sql('COMMIT');
+if({closewin} == 'Y'){
+	sc_redir('blank_magic_link_review_inviato', $redirReviewOk);
+	//exit;
+}
+/*
 if (function_exists('sc_redir')) {
     sc_redir('blank_magic_link_review_inviato', $redirReviewOk);
     exit;
@@ -521,3 +528,5 @@ if (function_exists('sc_ajax_message')) {
 } elseif (function_exists('sc_alert')) {
     sc_alert($msgSub);
 }
+*/
+

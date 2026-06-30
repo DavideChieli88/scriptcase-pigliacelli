@@ -8,7 +8,7 @@
  *
  * Grid: Defined application method → start_contract_firma_after_review
  *       contrattoId={contratto_id};subvettoreId={subvettore_id}
- *       Visibilità: stato_contratto = 'Compilato dal subvettore'
+ *       Visibilità: stato_contratto_id 3 o 4
  *       Gruppi: 1, 3
  */
 $contrattoId = 0;
@@ -54,18 +54,8 @@ if (empty({rsScReview})) {
 
 $scId = (int){rsScReview[0][0]};
 
-sc_lookup(rsStatoRevId, "
-    SELECT id
-    FROM stati_contratti
-    WHERE nome = 'Compilato dal subvettore'
-    LIMIT 1
-", "pigliacelli");
-
-if (empty({rsStatoRevId[0][0]})) {
-    $fail("Stato 'Compilato dal subvettore' non configurato in stati_contratti.");
-}
-
-$statoRevId = (int){rsStatoRevId[0][0]};
+// stati_contratti ID fissi: 3 = Compilato dal subvettore, 4 = In attesa firma subvettore
+$statiAmmessiIds = array(3, 4);
 
 sc_lookup(rsContrattoStato, "
     SELECT c.tipo_contratto_id, c.stato_contratto_id, COALESCE(st.nome, '')
@@ -87,10 +77,10 @@ if ($tipoContrattoId <= 0) {
     $fail('Tipo contratto non riconosciuto per contratto #' . (int)$contrattoId);
 }
 
-if ($statoAttualeId !== $statoRevId) {
+if (!in_array($statoAttualeId, $statiAmmessiIds, true)) {
     $fail(
-        'Il contratto non è in stato "Compilato dal subvettore".'
-        . ($statoAttualeNome !== '' ? ' Stato attuale: ' . $statoAttualeNome . '.' : '')
+        'Il contratto non è in uno stato che consente l\'avvio della firma (stato_contratto_id 3 o 4).'
+        . ($statoAttualeNome !== '' ? ' Stato attuale: ' . $statoAttualeNome . ' (id=' . $statoAttualeId . ').' : '')
         . ' Verificare i dati prima di avviare la firma.'
     );
 }

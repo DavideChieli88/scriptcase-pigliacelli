@@ -255,3 +255,5 @@ ALTER TABLE `sec_users_groups` DROP FOREIGN KEY `sec_user_groups_sec_users_fk`; 
 ALTER TABLE `documenti` DROP FOREIGN KEY `documenti_sec_users_fk`; ALTER TABLE `documenti` ADD CONSTRAINT `documenti_sec_users_fk` FOREIGN KEY (`login`) REFERENCES `sec_users`(`login`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 INSERT INTO `stati_contratti` (`id`, `nome`) VALUES (NULL, 'Da revisionare');
+
+CREATE TABLE `pigliacelli`.`tipo_fatture` (`id` INT(11) NOT NULL AUTO_INCREMENT , `nome` VARCHAR(255) NOT NULL , PRIMARY KEY (`id`)) ENGINE = InnoDB;

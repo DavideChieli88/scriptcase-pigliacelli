@@ -4,6 +4,74 @@ sc_lookup(grId, "SELECT group_id FROM sec_users_groups sug INNER JOIN sec_users 
 
 $group_id = {grId[0][0]};
 
+if (!function_exists('form_docs_email_valida')) {
+    function form_docs_email_valida($email)
+    {
+        $email = trim((string)$email);
+        if ($email === '') {
+            return false;
+        }
+        if (strpos($email, ';') !== false || strpos($email, ',') !== false || strpos($email, ' ') !== false) {
+            return false;
+        }
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+}
+
+if (!function_exists('form_docs_resolve_destinatario')) {
+    function form_docs_resolve_destinatario($loginField)
+    {
+        $loginField = trim((string)$loginField);
+        if ($loginField === '') {
+            return '';
+        }
+        if (form_docs_email_valida($loginField)) {
+            return $loginField;
+        }
+
+        $loginSql = str_replace("'", "''", $loginField);
+        sc_lookup(rsFdUser, "
+            SELECT email, subvettore_id
+            FROM sec_users
+            WHERE login = '$loginSql'
+            LIMIT 1
+        ", 'pigliacelli');
+
+        if (!empty({rsFdUser[0][0]})) {
+            $emailUser = trim((string){rsFdUser[0][0]});
+            if (form_docs_email_valida($emailUser)) {
+                return $emailUser;
+            }
+            $subId = (int){rsFdUser[0][1]};
+            if ($subId > 0) {
+                sc_lookup(rsFdSub, "
+                    SELECT login_subvettore
+                    FROM subvettori
+                    WHERE id = $subId
+                    LIMIT 1
+                ", 'pigliacelli');
+                if (!empty({rsFdSub[0][0]})) {
+                    $emailSub = trim((string){rsFdSub[0][0]});
+                    if (form_docs_email_valida($emailSub)) {
+                        return $emailSub;
+                    }
+                }
+            }
+        }
+
+        sc_lookup(rsFdUserEmail, "
+            SELECT email
+            FROM sec_users
+            WHERE email = '$loginSql'
+            LIMIT 1
+        ", 'pigliacelli');
+        if (!empty({rsFdUserEmail[0][0]}) && form_docs_email_valida({rsFdUserEmail[0][0]})) {
+            return trim((string){rsFdUserEmail[0][0]});
+        }
+
+        return '';
+    }
+}
 
 $tipo_documento = {tipo_documento_id};
 sc_lookup(rs, "SELECT nome FROM tipi_documento WHERE id = $tipo_documento");
@@ -239,10 +307,10 @@ if ({is_not_ok} == 1 && (int)$group_id !== 2) {
         sc_log_add('MAIL_DOCS', "ERRORE onAfterUpdate doc=$docId — notifica revisione a $intestatario: " . $e->getMessage());
     }
 
-    $destinatario = trim((string)$intestatario);
+    $destinatario = form_docs_resolve_destinatario($intestatario);
 
-    if ($destinatario === '' || filter_var($destinatario, FILTER_VALIDATE_EMAIL) === false) {
-        sc_log_add('MAIL_DOCS', "ERRORE onAfterUpdate doc=$docId — email subvettore non valida: [$destinatario]");
+    if ($destinatario === '' || !form_docs_email_valida($destinatario)) {
+        sc_log_add('MAIL_DOCS', "ERRORE onAfterUpdate doc=$docId — email subvettore non valida: intestatario/login=[$intestatario] dest=[$destinatario]");
     } else {
 
         sc_lookup(rs_smtp_rev, "SELECT set_name, set_value FROM sec_settings");
