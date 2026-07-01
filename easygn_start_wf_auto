@@ -691,8 +691,12 @@ if (is_array($pdfSignVisualsFromMeta)
     $visualsMmListCommittente[] = array('page' => $allegatoAEndPage, 'x' => 56, 'y' => 183.5, 'w' => 50.01, 'h' => 10.01);
 
     $visualsMmListVettore = array();
-    if ($mainPagesEnd >= 3) {
-        for ($p = 3; $p <= $mainPagesEnd - 2; $p++) {
+    if ($mainPagesEnd >= 1) {
+        $lastFooterPage = $mainPagesEnd - 2;
+        if ($lastFooterPage < 2) {
+            $lastFooterPage = min(2, $mainPagesEnd);
+        }
+        for ($p = 1; $p <= $lastFooterPage; $p++) {
             $visualsMmListVettore[] = array('page' => $p, 'x' => 117.5, 'y' => 287, 'w' => 87.51, 'h' => 8.01);
         }
     }

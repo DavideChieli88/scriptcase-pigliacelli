@@ -1,1 +1,8 @@
+/**
+ * form_subvettori_contratti_magic_link_review → onScriptInit
+ *
+ * NON usare ?> <script> in PHP (popup Output). Solo sc_ajax_javascript.
+ * hide_save.js maschera sc_b_upd_* con opacity/pointer-events, NON display:none.
+ */
+
 sc_ajax_javascript('mlReviewHideSaveInit');

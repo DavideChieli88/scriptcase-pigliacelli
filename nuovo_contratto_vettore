@@ -643,8 +643,12 @@ if ($htmlContratto !== '') {
 
 // Coordinate firme corpo contratto (pagine portrait variabili)
 $mainPagesEnd = method_exists($pdf, 'getNumPages') ? (int)$pdf->getNumPages() : 0;
-if ($mainPagesEnd >= 3) {
-    for ($p = 3; $p <= $mainPagesEnd - 2; $p++) {
+if ($mainPagesEnd >= 1) {
+    $lastFooterPage = $mainPagesEnd - 2;
+    if ($lastFooterPage < 2) {
+        $lastFooterPage = min(2, $mainPagesEnd);
+    }
+    for ($p = 1; $p <= $lastFooterPage; $p++) {
         $easygnSignPush('vettore', $p, 117.5, 287, 87.51, 8.01);
     }
 }
