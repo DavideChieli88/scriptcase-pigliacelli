@@ -1,15 +1,16 @@
 /**
  * Invio magic link + eventuale mail credenziali/area riservata.
  *
- * MAGIC LINK (sempre, se anagrafica ok):
- *   Destinatario: subvettori.login_subvettore (email in anagrafica).
- *   Non dipende da sec_users: anche senza utenza valida, il link va all'email del subvettore.
- *   Se login_subvettore mancante/non valido → errore, nessuna mail inviata.
+ * MAGIC LINK (sempre, se PEC ok):
+ *   Destinatario: subvettori.pec (E_MAIL_CERTIFICATA da SGA).
+ *   Non dipende da sec_users: anche senza utenza valida, il link va alla PEC del subvettore.
+ *   Se pec mancante/non valida → errore, nessuna mail inviata.
  *
  * MAIL CREDENZIALI (solo contratti tipo 2 o 3, mai crea utenze — le crea il job import):
+ *   Destinatario: subvettori.login_subvettore (invariato).
  *   - utenza valida in sec_users + active=Y → mail “accedi con le tue credenziali”
  *   - utenza valida + active=N → riattiva (UPDATE), nuova password + mail credenziali
- *   - nessuna utenza / SUBVETTORE_* / tipo ≠ 2,3 → skip mail credenziali (magic link comunque)
+ *   - nessuna utenza / SUBVETTORE_* / tipo ≠ 2,3 → skip mail credenziali (magic link comunque se PEC ok)
  *
  * Test UAT credenziali (solo mail area riservata/credenziali, non il magic link):
  *   ?mail_override=1 | ?mail_override=tua@email.it | ?mail_override=1&mail_to=altra@email.it
@@ -379,6 +380,7 @@ sc_lookup(rsSc, "
         sc.nome_rappresentante,
         sc.cognome_rappresentante,
         s.login_subvettore,
+        s.pec,
         s.ragione_sociale,
         COALESCE(NULLIF(TRIM(s.phone), ''), NULLIF(TRIM(s.cellphone), ''), '') AS phone_sub
     FROM subvettori_contratti sc
@@ -396,10 +398,11 @@ $scId = (int){rsSc[0][0]};
 $nomeR = trim((string){rsSc[0][1]});
 $cognomeR = trim((string){rsSc[0][2]});
 $loginSub = trim((string){rsSc[0][3]});
-$ragioneSociale = trim((string){rsSc[0][4]});
-$phoneSub = trim((string){rsSc[0][5]});
+$pecEmail = trim((string){rsSc[0][4]});
+$ragioneSociale = trim((string){rsSc[0][5]});
+$phoneSub = trim((string){rsSc[0][6]});
 
-$toEmail = $loginSub;
+$toEmailMagic = $pecEmail;
 
 $displayNameMl = trim($nomeR . ' ' . $cognomeR);
 if ($displayNameMl === '') {
@@ -411,14 +414,15 @@ if ($displayNameMl === '') {
 
 $displayNameCred = $ragioneSociale !== '' ? $ragioneSociale : 'Gentile subvettore';
 
-if (!smlc_email_valida($toEmail)) {
+if (!smlc_email_valida($toEmailMagic)) {
     sc_log_add(
         'MAGIC_LINK_CRED',
-        'FAIL email subvettore mancante/non valida subvettore_id=' . (int)$subvettoreId
+        'FAIL PEC subvettore mancante/non valida subvettore_id=' . (int)$subvettoreId
+        . ' pec=[' . $pecEmail . ']'
         . ' login_subvettore=[' . $loginSub . ']'
     );
     $ajax_fail(
-        'Email del subvettore mancante o non valida in anagrafica (campo Email / login_subvettore). '
+        'PEC del subvettore mancante o non valida in anagrafica (campo pec / E_MAIL_CERTIFICATA SGA). '
         . 'Aggiornare il subvettore da Anagrafica subvettori prima di inviare.'
     );
 }
@@ -665,7 +669,7 @@ sc_log_add(
     . ' contratto=' . (int)$contrattoId
 );
 
-// --- Magic link (sempre al subvettore reale, non mail_override) ---
+// --- Magic link (sempre alla PEC reale del subvettore, non mail_override) ---
 $payload = json_encode(array(
     'scId'         => $scId,
     'contrattoId'  => (int)$contrattoId,
@@ -700,7 +704,7 @@ $mailBase = rtrim(trim($sc_setting('mail_base_url', '')), '/');
 $mailLogoLog = (strpos($mailLogoUrl, 'data:image/') === 0)
     ? 'embed bytes=' . (strlen($mailLogoUrl) - 22)
     : 'url src=[' . $mailLogoUrl . ']';
-sc_log_add('MAGIC_LINK_CRED', 'magic_link mail_logo ' . $mailLogoLog . ' mail_base_url=[' . $mailBase . '] to=' . $toEmail);
+sc_log_add('MAGIC_LINK_CRED', 'magic_link mail_logo ' . $mailLogoLog . ' mail_base_url=[' . $mailBase . '] to_pec=' . $toEmailMagic);
 
 $mailInner = '<p style="margin:0 0 16px;">' . $safeNome . ',</p>'
     . '<p style="margin:0 0 16px;">Per il contratto <strong>#' . (int)$contrattoId . '</strong> la chiediamo di compilare '
@@ -722,7 +726,7 @@ try {
         'message' => array(
             'html'    => $htmlContent,
             'text'    => $messaggioTesto,
-            'to'      => $toEmail,
+            'to'      => $toEmailMagic,
             'subject' => $titolo,
         ),
     )));
@@ -749,7 +753,7 @@ if (!empty({rsStInviato[0][0]})) {
     sc_log_add('MAGIC_LINK_CRED', "WARN: stato 'Inviato al subvettore' assente in stati_contratti");
 }
 
-$msgOk = 'Magic link inviato a ' . $toEmail . ' (email anagrafica subvettore)';
+$msgOk = 'Magic link inviato a ' . $toEmailMagic . ' (PEC subvettore)';
 if ($esitoCred === 'credenziali') {
     $msgOk .= '; credenziali area riservata inviate (utenza riattivata)';
 } elseif ($esitoCred === 'area_riservata') {

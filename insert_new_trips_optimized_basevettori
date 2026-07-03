@@ -64,6 +64,20 @@ function normalizza_stringa($s)
     return $s;
 }
 
+function importo_unitario_valido($value)
+{
+    if ($value === null) {
+        return false;
+    }
+    if (is_string($value) && trim($value) === '') {
+        return false;
+    }
+    if (!is_numeric($value)) {
+        return false;
+    }
+    return round((float)$value, 2) > 0;
+}
+
 function crea_hash_tratta($carico_str, $scarico_str, $codice_vettore, $importo_unitario)
 {
     $carichi = [];
@@ -424,6 +438,7 @@ $tot_aggiornati = 0;
 $tot_saltati_hash = 0;
 $tot_saltati_invariati = 0;
 $tot_saltati_subvettore = 0;
+$tot_saltati_importo = 0;
 $subvettori_mancanti = [];
 $ultima_sync_data_ora = null;
 
@@ -467,6 +482,7 @@ for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
         $viaggi_unici = [];
         $viaggi_letti = 0;
         $viaggi_senza_localita = 0;
+        $viaggi_importo_non_valido = 0;
 
         foreach ($viaggi_base_rows as $row_sga) {
             $viaggi_letti++;
@@ -500,6 +516,11 @@ for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
                 continue;
             }
 
+            if (!importo_unitario_valido($importo_unitario)) {
+                $viaggi_importo_non_valido++;
+                continue;
+            }
+
             $extra_totale = isset($extra_map[$viaggio_key]) ? $extra_map[$viaggio_key] : 0;
             $key = (string)$codice_vettore . '|' . $carico_str . '|' . $scarico_str;
 
@@ -528,6 +549,7 @@ for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
             '102',
             'ANNO ' . $anno . ' | dedup completato | letti=' . $viaggi_letti .
             ' | senza_localita=' . $viaggi_senza_localita .
+            ' | importo_non_valido=' . $viaggi_importo_non_valido .
             ' | candidati=' . $candidati_insert
         );
     } catch (PDOException $e) {
@@ -552,6 +574,7 @@ for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
     $saltati_hash = 0;
     $saltati_invariati = 0;
     $saltati_subvettore = 0;
+    $saltati_importo = 0;
     $insert_elaborati = 0;
 
     log_insert_trips('110', 'ANNO ' . $anno . ' | inizio upsert MySQL | candidati=' . $candidati_insert);
@@ -571,6 +594,11 @@ for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
         $tariffa_sigla    = $viaggio['tariffa_sigla'];
         $importo_unitario = $viaggio['importo_unitario'];
         $extra_totale     = $viaggio['extra_totale'];
+
+        if (!importo_unitario_valido($importo_unitario)) {
+            $saltati_importo++;
+            continue;
+        }
 
         $codice_vettore_key = (string)$codice_vettore;
         if (!isset($subvettori_map[$codice_vettore_key])) {
@@ -712,6 +740,7 @@ for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
     $tot_saltati_hash += $saltati_hash;
     $tot_saltati_invariati += $saltati_invariati;
     $tot_saltati_subvettore += $saltati_subvettore;
+    $tot_saltati_importo += $saltati_importo;
 
     log_insert_trips(
         '112',
@@ -719,7 +748,8 @@ for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
         ' | aggiornati=' . $aggiornati .
         ' | hash_skip=' . $saltati_hash .
         ' | invariati=' . $saltati_invariati .
-        ' | subvettore_skip=' . $saltati_subvettore
+        ' | subvettore_skip=' . $saltati_subvettore .
+        ' | importo_skip=' . $saltati_importo
     );
 }
 
@@ -730,6 +760,7 @@ sc_log_add(
     ", hash gia' presenti: " . $tot_saltati_hash .
     ", invariate: " . $tot_saltati_invariati .
     ", subvettore mancante: " . $tot_saltati_subvettore .
+    ", importo non valido: " . $tot_saltati_importo .
     ", anni=" . $anno_da . ".." . $anno_a
 );
 

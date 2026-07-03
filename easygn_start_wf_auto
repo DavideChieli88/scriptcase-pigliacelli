@@ -297,7 +297,7 @@ if (!function_exists('contratti_detect_workspace_root')) {
     }
 }
 if (!function_exists('resolve_contratti_base_dir')) {
-    function resolve_contratti_base_dir($configuredPath, $anchorFile = null)
+    function resolve_contratti_base_dir($configuredPath, $anchorFile = null, $useDocumentRoot = false)
     {
         $configuredPath = trim((string)$configuredPath);
         if ($configuredPath === '') {
@@ -311,6 +311,16 @@ if (!function_exists('resolve_contratti_base_dir')) {
         if (preg_match('#^[A-Za-z]:/#', $normalized) || preg_match('#^[A-Za-z]:\\\\#', $configuredPath)) {
             $resolved = realpath($configuredPath);
             return $resolved !== false ? $resolved : rtrim($configuredPath, "/\\");
+        }
+        if ($useDocumentRoot && !empty($_SERVER['DOCUMENT_ROOT'])) {
+            $docRoot = @realpath((string)$_SERVER['DOCUMENT_ROOT']);
+            if ($docRoot !== false && $docRoot !== '') {
+                $docCand = $docRoot . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, trim($normalized, '/'));
+                if (is_dir($docCand)) {
+                    $resolved = realpath($docCand);
+                    return $resolved !== false ? $resolved : $docCand;
+                }
+            }
         }
         $root = contratti_detect_workspace_root($anchorFile);
         if ($root === '') {
@@ -330,9 +340,13 @@ if ($baseDirRaw === '') {
     }
 }
 
+$useDocumentRootForPdf = (
+    str_replace('\\', '/', trim($baseDirRaw)) === 'scriptcase/app/pigliacelli_workspace/_lib/file/doc'
+);
+
 $baseDir = '';
 if ($baseDirRaw !== '') {
-    $baseDir = resolve_contratti_base_dir($baseDirRaw, __FILE__);
+    $baseDir = resolve_contratti_base_dir($baseDirRaw, __FILE__, $useDocumentRootForPdf);
 }
 
 if ($baseDir === '') {

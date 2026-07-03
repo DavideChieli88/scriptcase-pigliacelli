@@ -3,7 +3,7 @@ $hasSigned = !empty({easygn_file_id}); // il pdf è stato generato da easygn
 $stato     = (int){stato_contratto_id};
 $firmatoIl = isset({firmato_il}) ? trim((string){firmato_il}) : '';
 
-// change_subvector_email: nascosto di default, mostrato solo se subvettore senza email valida
+// change_subvector_email: nascosto di default, mostrato se subvettore senza email valida o senza PEC valida
 sc_actionbar_hide('change_subvector_email');
 
 if (!function_exists('grid_contratti_login_is_tecnico')) {
@@ -79,6 +79,13 @@ if (!function_exists('grid_contratti_subvettore_senza_email_valida')) {
     }
 }
 
+if (!function_exists('grid_contratti_subvettore_senza_pec_valida')) {
+    function grid_contratti_subvettore_senza_pec_valida($pec)
+    {
+        return !grid_contratti_email_valida($pec);
+    }
+}
+
 $contrattoIdGrid = isset({id}) ? (int){id} : 0;
 $subvettoreIdGrid = 0;
 $mostraChangeSubvectorEmail = false;
@@ -88,6 +95,7 @@ if ($contrattoIdGrid > 0) {
         SELECT
             sc.subvettore_id,
             COALESCE(s.login_subvettore, '') AS login_subvettore,
+            COALESCE(s.pec, '') AS pec,
             COALESCE(c.intestatario, '') AS intestatario
         FROM subvettori_contratti sc
         INNER JOIN subvettori s ON s.id = sc.subvettore_id
@@ -100,13 +108,14 @@ if ($contrattoIdGrid > 0) {
     if (!empty({rsGridSubEmail[0][0]})) {
         $subvettoreIdGrid = (int){rsGridSubEmail[0][0]};
         $loginSubGrid = trim((string){rsGridSubEmail[0][1]});
-        $intestatarioGrid = trim((string){rsGridSubEmail[0][2]});
+        $pecGrid = trim((string){rsGridSubEmail[0][2]});
+        $intestatarioGrid = trim((string){rsGridSubEmail[0][3]});
 
         $mostraChangeSubvectorEmail = grid_contratti_subvettore_senza_email_valida(
             $subvettoreIdGrid,
             $loginSubGrid,
             $intestatarioGrid
-        );
+        ) || grid_contratti_subvettore_senza_pec_valida($pecGrid);
     }
 }
 
@@ -172,11 +181,11 @@ switch ($stato) {
         sc_actionbar_show("select_new_contract");
         sc_actionbar_hide("show_contract_signed");
         sc_actionbar_show("send_contract_to_sign");
-        sc_actionbar_show("send_magic_link_to_subvector");
+        sc_actionbar_hide("send_magic_link_to_subvector");
         break;
 
-    case 4: // In attesa della firma subvettore — rimanda / riavvia invio firma
-        sc_actionbar_hide("select_new_contract");
+    case 4: // In attesa della firma subvettore
+   		sc_actionbar_hide("select_new_contract");
         sc_actionbar_show("show_contract_signed");
         sc_actionbar_show("send_contract_to_sign");
         sc_actionbar_hide("send_magic_link_to_subvector");

@@ -103,7 +103,8 @@ $sql = "
     tbvt.PROVINCIA,
     tbvt.TELEFONO,
     tbvt.CELLULARE,
-    COALESCE(NULLIF(RTRIM(tbvt.E_MAIL), ''), NULLIF(RTRIM(tbvt.B2B_EMAIL), '')) AS E_MAIL,
+    NULLIF(RTRIM(tbvt.E_MAIL), '') AS E_MAIL,
+    NULLIF(RTRIM(tbvt.E_MAIL_CERTIFICATA), '') AS E_MAIL_CERTIFICATA,
     b.PARTITA_IVA,
     b.CODICE_FISCALE
   FROM T2BaseVettori tbvt
@@ -151,6 +152,7 @@ $inseriti    = 0;
 $saltati     = 0;
 $errori      = 0;
 $senza_email = 0;
+$senza_pec = 0;
 $senza_piva  = 0;
 
 while (($row = $stmt->fetch(PDO::FETCH_NUM)) !== false) {
@@ -163,11 +165,15 @@ while (($row = $stmt->fetch(PDO::FETCH_NUM)) !== false) {
     $phone           = $row[5];
     $cellphone       = $row[6];
     $email           = trim((string)$row[7]);
-    $piva            = $row[8];
-    $cod_fiscale     = $row[9];
+    $pec             = trim((string)$row[8]);
+    $piva            = $row[9];
+    $cod_fiscale     = $row[10];
 
     if ($email === '') {
         $senza_email++;
+    }
+    if ($pec === '') {
+        $senza_pec++;
     }
     if (trim((string)$piva) === '' && trim((string)$cod_fiscale) === '') {
         $senza_piva++;
@@ -181,10 +187,10 @@ while (($row = $stmt->fetch(PDO::FETCH_NUM)) !== false) {
     $ins = "
       INSERT INTO subvettori
         (login_subvettore, ragione_sociale, cod_fiscale, piva, phone, cellphone,
-         indirizzo, sede_citta, sede_prov, codice_sga)
+         indirizzo, sede_citta, sede_prov, codice_sga, pec)
       VALUES
         (" . sql_quote($email) . ", " . sql_quote($ragione_sociale) . ", " . sql_quote($cod_fiscale) . ", " . sql_quote($piva) . ", " . sql_quote($phone) . ", " . sql_quote($cellphone) . ",
-         " . sql_quote($indirizzo) . ", " . sql_quote($sede_citta) . ", " . sql_quote($sede_prov) . ", " . sql_quote($codice_sga) . ")
+         " . sql_quote($indirizzo) . ", " . sql_quote($sede_citta) . ", " . sql_quote($sede_prov) . ", " . sql_quote($codice_sga) . ", " . sql_quote($pec !== '' ? $pec : null) . ")
     ";
 
     try {
@@ -212,6 +218,7 @@ log_insert_subvettori(
     ' saltati=' . $saltati .
     ' errori=' . $errori .
     ' senza_email=' . $senza_email .
+    ' senza_pec=' . $senza_pec .
     ' senza_piva_cf=' . $senza_piva
 );
 

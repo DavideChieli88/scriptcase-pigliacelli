@@ -257,3 +257,5 @@ ALTER TABLE `documenti` DROP FOREIGN KEY `documenti_sec_users_fk`; ALTER TABLE `
 INSERT INTO `stati_contratti` (`id`, `nome`) VALUES (NULL, 'Da revisionare');
 
 CREATE TABLE `pigliacelli`.`tipo_fatture` (`id` INT(11) NOT NULL AUTO_INCREMENT , `nome` VARCHAR(255) NOT NULL , PRIMARY KEY (`id`)) ENGINE = InnoDB;
+
+ALTER TABLE `subvettori` ADD `pec` VARCHAR(255) NULL AFTER `created_at`;

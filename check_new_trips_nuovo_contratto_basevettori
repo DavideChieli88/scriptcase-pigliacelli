@@ -150,6 +150,21 @@ function allega_tratta_a_contratto($contratto_id, $tratta_id) {
         return;
     }
 
+    $tariffa = {rsT[0][1]};
+    $extra = {rsT[0][2]};
+    $totale = {rsT[0][3]};
+    $hash = {rsT[0][4]};
+    $tipo_tariffa_id = {rsT[0][0]};
+    if (!tariffa_db_valida($tariffa)) {
+        log_export_tratte(
+            'SKIP_ALLEGATO',
+            'contratto=' . (int)$contratto_id .
+            ' tratta=' . (int)$tratta_id .
+            ' tariffa_non_valida=' . (string)$tariffa
+        );
+        return;
+    }
+
     [$carico, $scarico] = carica_carico_scarico_tratta($tratta_id);
     $version = ({rsT[0][5]} === null || {rsT[0][5]} === '') ? 1 : (int){rsT[0][5]};
 
@@ -159,19 +174,47 @@ function allega_tratta_a_contratto($contratto_id, $tratta_id) {
         $version,
         $carico,
         $scarico,
-        {rsT[0][0]},
-        {rsT[0][1]},
-        {rsT[0][2]},
-        {rsT[0][3]},
-        {rsT[0][4]}
+        $tipo_tariffa_id,
+        $tariffa,
+        $extra,
+        $totale,
+        $hash
     );
+}
+
+function filtra_tratte_importo_valido($tratte_ids) {
+    global $stat_skip_tratta_importo;
+    $valide = array();
+    foreach (array_values(array_unique(array_filter(array_map('intval', $tratte_ids)))) as $tratta_id) {
+        if ($tratta_id <= 0) {
+            continue;
+        }
+        sc_lookup(rsTrFil, "
+            SELECT tariffa
+            FROM tratte
+            WHERE id = " . sql_num($tratta_id) . "
+            LIMIT 1
+        ", "pigliacelli");
+        $tariffa = empty({rsTrFil}) ? null : {rsTrFil[0][0]};
+        if (tariffa_db_valida($tariffa)) {
+            $valide[] = $tratta_id;
+        } else {
+            $stat_skip_tratta_importo++;
+            log_export_tratte(
+                'SKIP_FILTRA',
+                'tratta=' . (int)$tratta_id .
+                ' tariffa_non_valida=' . (string)$tariffa
+            );
+        }
+    }
+    return $valide;
 }
 
 /**
  * Fine run: contratto tipo 1 per subvettore appena censito, con tutte le tratte del run.
  */
 function consolida_contratto_tipo1_run(&$contratti_batch, $subvettore_id, $intestatario, $nuove_tratte_ids) {
-    $nuove_tratte_ids = array_values(array_unique(array_filter(array_map('intval', $nuove_tratte_ids))));
+    $nuove_tratte_ids = filtra_tratte_importo_valido($nuove_tratte_ids);
     if (empty($nuove_tratte_ids)) {
         return;
     }
@@ -197,7 +240,7 @@ function consolida_contratto_tipo1_run(&$contratti_batch, $subvettore_id, $intes
  * Fine run: un contratto tipo 2 con SOLO le nuove tratte rilevate nel run (da firmare).
  */
 function consolida_contratto_tipo2_run($subvettore_id, $intestatario, $nuove_tratte_ids) {
-    $nuove_tratte_ids = array_values(array_unique(array_filter(array_map('intval', $nuove_tratte_ids))));
+    $nuove_tratte_ids = filtra_tratte_importo_valido($nuove_tratte_ids);
     if (empty($nuove_tratte_ids)) {
         return;
     }
@@ -223,7 +266,7 @@ function consolida_contratto_tipo2_run($subvettore_id, $intestatario, $nuove_tra
  * Fine run: un contratto tipo 3 con SOLO le tratte modificate nel run (da firmare).
  */
 function consolida_contratto_tipo3_run($subvettore_id, $intestatario, $tratte_modificate_ids) {
-    $tratte_modificate_ids = array_values(array_unique(array_filter(array_map('intval', $tratte_modificate_ids))));
+    $tratte_modificate_ids = filtra_tratte_importo_valido($tratte_modificate_ids);
     if (empty($tratte_modificate_ids)) {
         return;
     }
@@ -382,7 +425,61 @@ function importo_unitario_valido($value) {
     if (is_string($value) && trim($value) === '') {
         return false;
     }
-    return is_numeric($value);
+    if (!is_numeric($value)) {
+        return false;
+    }
+    return round((float)$value, 2) > 0;
+}
+
+function importo_unitario_normalizzato($value) {
+    if ($value === null) {
+        return null;
+    }
+    if (is_string($value) && trim($value) === '') {
+        return null;
+    }
+    if (!is_numeric($value)) {
+        return null;
+    }
+    $importo = round((float)$value, 2);
+    if ($importo <= 0) {
+        return null;
+    }
+    return $importo;
+}
+
+function tariffa_db_valida($tariffa) {
+    if ($tariffa === null) {
+        return false;
+    }
+    if (is_string($tariffa) && trim($tariffa) === '') {
+        return false;
+    }
+    if (!is_numeric($tariffa)) {
+        return false;
+    }
+    return round((float)$tariffa, 2) > 0;
+}
+
+function tratta_ha_tariffa_valida($tratta_id) {
+    $tratta_id = (int)$tratta_id;
+    if ($tratta_id <= 0) {
+        return false;
+    }
+
+    sc_lookup(rsTarVal, "
+        SELECT tariffa
+        FROM tratte
+        WHERE id = " . sql_num($tratta_id) . "
+        LIMIT 1
+    ", "pigliacelli");
+
+    if (empty({rsTarVal})) {
+        return false;
+    }
+
+    $tariffa = {rsTarVal[0][0]};
+    return tariffa_db_valida($tariffa);
 }
 
 function viaggio_ammesso_per_contratto($partenza_data_ora, $importo_unitario, &$motivo_skip) {
@@ -394,7 +491,7 @@ function viaggio_ammesso_per_contratto($partenza_data_ora, $importo_unitario, &$
     }
 
     if (!importo_unitario_valido($importo_unitario)) {
-        $motivo_skip = 'importo_unitario_mancante';
+        $motivo_skip = 'importo_unitario_non_valido';
         return false;
     }
 
@@ -460,6 +557,16 @@ function crea_contratto_tratta($tratta_id, $contratto_id, $version, $carico, $sc
         return;
     }
 
+    if (!tariffa_db_valida($tariffa)) {
+        log_export_tratte(
+            'SKIP_CONTRATTO_TRATTA',
+            'contratto=' . (int)$contratto_id .
+            ' tratta=' . (int)$tratta_id .
+            ' tariffa_non_valida=' . (string)$tariffa
+        );
+        return;
+    }
+
     [$merce, $caricatore, $proprietario_merce] = recupera_campi_tratta_allegato($tratta_id);
     $tipo_tariffa_sql = $tipo_tariffa_id === null ? "NULL" : sql_num($tipo_tariffa_id);
 
@@ -501,17 +608,35 @@ function assicura_contratto_tratta($tratta_id, $contratto_id, $version, $carico,
         return;
     }
 
+    sc_lookup(rsAss, "
+        SELECT tipo_tariffa_id, tariffa, extra, totale, hash, version
+        FROM tratte
+        WHERE id = " . sql_num($tratta_id) . "
+        LIMIT 1
+    ", "pigliacelli");
+
+    if (empty({rsAss})) {
+        return;
+    }
+
+    $tariffa_db = {rsAss[0][1]};
+    $extra_db = {rsAss[0][2]};
+    $totale_db = {rsAss[0][3]};
+    $hash_db = {rsAss[0][4]};
+    $tipo_tariffa_db = {rsAss[0][0]};
+    $version_db = ({rsAss[0][5]} === null || {rsAss[0][5]} === '') ? $version : (int){rsAss[0][5]};
+
     crea_contratto_tratta(
         $tratta_id,
         $contratto_id,
-        $version,
+        $version_db,
         $carico,
         $scarico,
-        $tipo_tariffa_id,
-        $tariffa,
-        $extra,
-        $totale,
-        $hash
+        $tipo_tariffa_db,
+        $tariffa_db,
+        $extra_db,
+        $totale_db,
+        $hash_db
     );
 }
 
@@ -539,6 +664,47 @@ function emailValidaSingola($email) {
     }
 
     return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+}
+
+function sync_pec_subvettore_da_sga($subvettore_id, $pec_sga) {
+    $subvettore_id = (int)$subvettore_id;
+    if ($subvettore_id <= 0) {
+        return;
+    }
+
+    $pec_sga = trim((string)$pec_sga);
+    if (!emailValidaSingola($pec_sga)) {
+        return;
+    }
+
+    sc_lookup(rsPecSub, "
+        SELECT COALESCE(pec, '')
+        FROM subvettori
+        WHERE id = " . sql_num($subvettore_id) . "
+        LIMIT 1
+    ", "pigliacelli");
+
+    if (empty({rsPecSub})) {
+        return;
+    }
+
+    $pec_db = trim((string){rsPecSub[0][0]});
+    if (strcasecmp($pec_db, $pec_sga) === 0) {
+        return;
+    }
+
+    sc_exec_sql("
+        UPDATE subvettori
+        SET pec = " . sql_quote($pec_sga) . "
+        WHERE id = " . sql_num($subvettore_id) . "
+    ", "pigliacelli");
+
+    log_export_tratte(
+        'SYNC_PEC',
+        'subvettore=' . $subvettore_id .
+        ' pec=' . $pec_sga .
+        ($pec_db !== '' ? ' prev=' . $pec_db : '')
+    );
 }
 
 function crea_utenza_subvettore($subvettore_id, $email, $ragione_sociale, $phone) {
@@ -790,7 +956,8 @@ if ($fine_sync_data_ora > $now_data_ora) {
 log_export_tratte(
     'START',
     'finestra sync da ' . $soglia_data_ora . ' a ' . $fine_sync_data_ora .
-    ' | batch_minutes=' . $batch_minutes
+    ' | batch_minutes=' . $batch_minutes .
+    ' | build=importo_guard_v3'
 );
 
 $sgam_user   = $settings['sgam_user'];
@@ -833,7 +1000,8 @@ $sql_viaggi_base = "
       t.PROVINCIA,
       t.TELEFONO,
       t.CELLULARE,
-      COALESCE(NULLIF(RTRIM(t.E_MAIL), ''), NULLIF(RTRIM(t.B2B_EMAIL), '')) AS E_MAIL,
+      NULLIF(RTRIM(t.E_MAIL), '') AS E_MAIL,
+      NULLIF(RTRIM(t.E_MAIL_CERTIFICATA), '') AS E_MAIL_CERTIFICATA,
       b.PARTITA_IVA,
       b.CODICE_FISCALE,
       v.TARIFFA,
@@ -891,6 +1059,7 @@ try {
 $ultima_sync_data_ora = null;
 $viaggi_unici = array();
 $stat_senza_localita = 0;
+$stat_importo_non_valido = 0;
 $stat_viaggi_sga = 0;
 
 try {
@@ -911,12 +1080,13 @@ try {
         $phone            = $row_sga[8];
         $cellphone        = $row_sga[9];
         $email            = $row_sga[10];
-        $piva             = $row_sga[11];
-        $cod_fiscale      = $row_sga[12];
-        $tariffa_sigla    = trim((string)$row_sga[13]);   // es. 'P'/'G'/'F'
-        $importo_unitario = $row_sga[14];
-        $partenza_data_ora = $row_sga[15];
-        $sync_data_ora    = $row_sga[16];
+        $pec              = trim((string)$row_sga[11]);
+        $piva             = $row_sga[12];
+        $cod_fiscale      = $row_sga[13];
+        $tariffa_sigla    = trim((string)$row_sga[14]);   // es. 'P'/'G'/'F'
+        $importo_unitario = $row_sga[15];
+        $partenza_data_ora = $row_sga[16];
+        $sync_data_ora    = $row_sga[17];
 
         if ($sync_data_ora !== null && ($ultima_sync_data_ora === null || $sync_data_ora > $ultima_sync_data_ora)) {
             $ultima_sync_data_ora = $sync_data_ora;
@@ -927,6 +1097,12 @@ try {
         // Mantiene il comportamento dei JOIN della query originale: senza carico o scarico il viaggio non entra.
         if ($carico_str === '' || $scarico_str === '') {
             $stat_senza_localita++;
+            continue;
+        }
+
+        $importo_unitario = importo_unitario_normalizzato($importo_unitario);
+        if ($importo_unitario === null) {
+            $stat_importo_non_valido++;
             continue;
         }
 
@@ -945,6 +1121,7 @@ try {
             'phone' => $phone,
             'cellphone' => $cellphone,
             'email' => $email,
+            'pec' => $pec,
             'piva' => $piva,
             'cod_fiscale' => $cod_fiscale,
             'carico_str' => $carico_str,
@@ -976,6 +1153,7 @@ log_export_tratte(
     'DEDUP',
     'viaggi_sga=' . $stat_viaggi_sga .
     ' | senza_localita=' . $stat_senza_localita .
+    ' | importo_non_valido=' . $stat_importo_non_valido .
     ' | candidati_unici=' . count($viaggi_unici)
 );
 
@@ -986,6 +1164,8 @@ $pending_tratte_tipo1 = array();
 $pending_tratte_tipo2 = array();
 $pending_modifiche_tariffa = array();
 $intestatari_sub = array();
+
+$stat_skip_tratta_importo = 0;
 
 $stat_run = array(
     'elaborati'              => 0,
@@ -1009,6 +1189,7 @@ foreach ($viaggi_unici as $viaggio) {
     $phone            = $viaggio['phone'];
     $cellphone        = $viaggio['cellphone'];
     $email            = $viaggio['email'];
+    $pec              = trim((string)($viaggio['pec'] ?? ''));
     $piva             = $viaggio['piva'];
     $cod_fiscale      = $viaggio['cod_fiscale'];
     $carico_str       = $viaggio['carico_str'];
@@ -1017,6 +1198,12 @@ foreach ($viaggi_unici as $viaggio) {
     $importo_unitario = $viaggio['importo_unitario'];
     $extra_totale     = $viaggio['extra_totale'];
     $partenza_data_ora = $viaggio['partenza_data_ora'];
+
+    $importo_unitario = importo_unitario_normalizzato($importo_unitario);
+    if ($importo_unitario === null) {
+        continue;
+    }
+
     $hash             = crea_hash_tratta($carico_str, $scarico_str, $codice_vettore, $importo_unitario);
 
     $motivo_skip_contratto = '';
@@ -1037,7 +1224,7 @@ foreach ($viaggi_unici as $viaggio) {
         $insSub = "
           INSERT INTO subvettori
             (login_subvettore, ragione_sociale, cod_fiscale, piva, phone, cellphone,
-             indirizzo, sede_citta, sede_prov, codice_sga)
+             indirizzo, sede_citta, sede_prov, codice_sga, pec)
           VALUES
             (" . sql_quote($email) . ",
              " . sql_quote($ragione_sociale) . ",
@@ -1048,7 +1235,8 @@ foreach ($viaggi_unici as $viaggio) {
              " . sql_quote($indirizzo) . ",
              " . sql_quote($sede_citta) . ",
              " . sql_quote($sede_prov) . ",
-             " . sql_quote($codice_vettore) . ")
+             " . sql_quote($codice_vettore) . ",
+             " . sql_quote($pec !== '' ? $pec : null) . ")
         ";
         sc_exec_sql($insSub, "pigliacelli");
 
@@ -1063,6 +1251,7 @@ foreach ($viaggi_unici as $viaggio) {
         $intestatario_contratto = recupera_intestatario_contratto($subvettore_id, $email, $ragione_sociale, $phone);
     } else {
         $subvettore_id = {sub[0][0]};
+        sync_pec_subvettore_da_sga($subvettore_id, $pec);
         $intestatario_contratto = recupera_intestatario_contratto($subvettore_id, $email, $ragione_sociale, $phone);
     }
 
@@ -1070,11 +1259,6 @@ foreach ($viaggi_unici as $viaggio) {
         $intestatario_contratto = 'SUBVETTORE_' . $subvettore_id;
     }
     $intestatari_sub[$subvettore_id] = $intestatario_contratto;
-
-    if ($crea_contratto && isset($subvettori_nuovi_run[(int)$subvettore_id])) {
-        // Tipo 1: Accettazione nuovo contratto quadro (subvettore creato in questo run).
-        recupera_contratto_quadro($contratti_batch, $intestatario_contratto, $subvettore_id);
-    }
 
     $tipo_contratto_nuove = tipo_contratto_nuove_tratte($subvettore_id, $subvettori_nuovi_run);
 
@@ -1159,6 +1343,13 @@ foreach ($viaggi_unici as $viaggio) {
         );
 
         if ($has_modifica_tratta) {
+            if (!tariffa_db_valida($importo_unitario)) {
+                log_export_tratte(
+                    'SKIP_UPDATE_TRATTA',
+                    'tratta=' . (int)$tratta_id_esistente .
+                    ' importo_non_valido=' . (string)$importo_unitario
+                );
+            } else {
             $stat_run['tratte_modificate']++;
             $nuova_version = ($version_esistente === null || $version_esistente === '') ? 2 : ((int)$version_esistente + 1);
 
@@ -1184,7 +1375,8 @@ foreach ($viaggi_unici as $viaggio) {
                     $pending_modifiche_tariffa
                 );
             }
-        } elseif ($crea_contratto) {
+            }
+        } elseif ($crea_contratto && tratta_ha_tariffa_valida($tratta_id_esistente)) {
             $stat_run['tratte_invariate']++;
             $contratto_id = contratto_per_assicura($tratta_id_esistente, $tipo_contratto_nuove, $intestatario_contratto, $subvettore_id);
             $version = ($version_esistente === null || $version_esistente === '') ? 1 : (int)$version_esistente;
@@ -1251,7 +1443,7 @@ foreach ($viaggi_unici as $viaggio) {
             ", carico '" . $carico_str .
             "', scarico '" . $scarico_str . "'"
         );
-        if ($crea_contratto) {
+        if ($crea_contratto && tratta_ha_tariffa_valida($tratta_id)) {
             $contratto_id = contratto_per_assicura($tratta_id, $tipo_contratto_nuove, $intestatario_contratto, $subvettore_id);
             if ($contratto_id !== null) {
                 assicura_contratto_tratta(
@@ -1297,13 +1489,20 @@ foreach ($viaggi_unici as $viaggio) {
         $i++;
     }
 
-    if ($crea_contratto) {
+    if ($crea_contratto && tratta_ha_tariffa_valida($tratta_id)) {
         aggiungi_tratta_pending_run(
             $subvettore_id,
             $tratta_id,
             $subvettori_nuovi_run,
             $pending_tratte_tipo1,
             $pending_tratte_tipo2
+        );
+    } elseif ($crea_contratto) {
+        log_export_tratte(
+            'SKIP_PENDING',
+            'tratta=' . (int)$tratta_id .
+            ' subvettore=' . (int)$subvettore_id .
+            ' tariffa_db_non_valida'
         );
     }
 }
@@ -1360,6 +1559,7 @@ log_export_tratte(
     'RIEPILOGO',
     'esito=' . ($ha_novita_import ? 'IMPORT' : 'NESSUNA_NOVITA') .
     ' | viaggi_sga=' . $stat_viaggi_sga .
+    ' | importo_non_valido=' . $stat_importo_non_valido .
     ' | candidati=' . count($viaggi_unici) .
     ' | tratte_nuove=' . $stat_run['tratte_nuove'] .
     ' | tratte_modificate=' . $stat_run['tratte_modificate'] .
@@ -1375,6 +1575,7 @@ log_export_tratte(
     ' | tratte_in_t2=' . $stat_tratte_in_contratto_t2 .
     ' | contratti_t3=' . $stat_contratti_tipo3 .
     ' | tratte_in_t3=' . $stat_tratte_in_contratto_t3 .
+    ' | skip_tratta_importo=' . $stat_skip_tratta_importo .
     ' | nuovi_contratti=' . ($ha_contratti_run ? 'SI' : 'NO')
 );
 
