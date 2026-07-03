@@ -9,6 +9,8 @@
 --   3) Sezione C (sec_settings chiavi modulo 1)
 --   4) Sezione D (fatture_passive + allegati) — quando si attiva get_invoices
 --   5) Sezione E (utenti <-> societa) — segregazione dati
+--   6) Sezione H (ordini + DDT acquisti da webhook)
+--   7) upsert_societa_and_fornitori, poi upsert_ordini_sga
 --
 -- Note:
 --   - Usare CREATE TABLE IF NOT EXISTS dove possibile (idempotente).
@@ -90,7 +92,9 @@ INSERT INTO sec_settings (set_name, set_value) VALUES
     ('zuc_login', ''),
     ('zuc_pswd', ''),
     ('zuc_comp', ''),
-    ('zuc_sync', '20260101000000')
+    ('zuc_sync', '20260101000000'),
+    ('ordini_sync', '1900-01-01 00:00:00'),
+    ('ddt_file_path', '_lib/file/ddt_acquisti')
 ON DUPLICATE KEY UPDATE set_name = set_name;
 
 -- Opzionale: data iniziale sync fatture (formato YmdHis usato da get_invoices)
@@ -197,6 +201,156 @@ CREATE TABLE IF NOT EXISTS sottoconti_flusso (
     UNIQUE KEY uq_sottoconti_flusso (societa_sga, conto_gruppo, conto, sottoconto),
     KEY idx_sottoconti_flusso (flusso_controllo_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COMMENT='Mappatura sottoconto SGA -> flusso controllo fattura';
+
+
+-- =============================================================================
+-- H) ORDINI FORNITORE (SGA) + DDT ACQUISTI (webhook esterno, non da SGA)
+-- =============================================================================
+-- Ordini: import da MaOrdiniForTestata / MaOrdiniForDettagli via upsert_ordini_sga.
+-- DDT: ricevuti via web_hook_ddt_acquisti (JSON + PDF base64), collegamento opzionale
+--      alle righe ordine tramite n_ord / p_ord / ord_anno / ord_filiale negli articoli.
+
+CREATE TABLE IF NOT EXISTS ordini (
+    id INT(11) NOT NULL AUTO_INCREMENT,
+    societa_sga INT(11) NOT NULL,
+    anno SMALLINT NOT NULL,
+    filiale VARCHAR(10) NOT NULL,
+    numero INT(11) NOT NULL,
+    data_ordine DATETIME NOT NULL,
+    fornitore_clifor CHAR(1) NOT NULL DEFAULT 'F',
+    fornitore_codice VARCHAR(50) NOT NULL,
+    fornitore_id INT(11) DEFAULT NULL COMMENT 'FK fornitori.id',
+    aperto CHAR(1) DEFAULT NULL COMMENT 'S/N',
+    confermato CHAR(1) DEFAULT NULL COMMENT 'S/N',
+    saldato CHAR(1) DEFAULT NULL COMMENT 'S/N',
+    riferimento VARCHAR(255) DEFAULT NULL,
+    note TEXT DEFAULT NULL,
+    destinazione_ragione_sociale VARCHAR(255) DEFAULT NULL,
+    destinazione_indirizzo VARCHAR(255) DEFAULT NULL,
+    destinazione_localita VARCHAR(255) DEFAULT NULL,
+    destinazione_cap VARCHAR(20) DEFAULT NULL,
+    destinazione_provincia VARCHAR(10) DEFAULT NULL,
+    destinazione_nazione VARCHAR(10) DEFAULT NULL,
+    contratto_anno SMALLINT DEFAULT NULL,
+    contratto_filiale VARCHAR(10) DEFAULT NULL,
+    contratto_numero INT(11) DEFAULT NULL,
+    confermato_data_ora DATETIME DEFAULT NULL,
+    sga_update_data_ora DATETIME DEFAULT NULL COMMENT 'MaOrdiniForTestata.UPDATE_DATA_ORA',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_ordini_sga (societa_sga, anno, filiale, numero),
+    KEY idx_ordini_fornitore (fornitore_id),
+    KEY idx_ordini_data (data_ordine),
+    KEY idx_ordini_sga_sync (sga_update_data_ora),
+    KEY idx_ordini_forn_cod (societa_sga, fornitore_clifor, fornitore_codice)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COMMENT='Ordini fornitore da MaOrdiniForTestata';
+
+CREATE TABLE IF NOT EXISTS ordini_dettagli (
+    id INT(11) NOT NULL AUTO_INCREMENT,
+    ordine_id INT(11) NOT NULL,
+    societa_sga INT(11) NOT NULL,
+    anno SMALLINT NOT NULL,
+    filiale VARCHAR(10) NOT NULL,
+    numero INT(11) NOT NULL,
+    riga INT(11) NOT NULL,
+    materiale VARCHAR(50) DEFAULT NULL,
+    variante VARCHAR(50) DEFAULT NULL,
+    descrizione VARCHAR(255) DEFAULT NULL,
+    data_consegna DATETIME DEFAULT NULL,
+    quantita DECIMAL(15,3) NOT NULL DEFAULT 0,
+    residuo DECIMAL(15,3) DEFAULT NULL,
+    importo_unitario DECIMAL(15,4) DEFAULT NULL,
+    sconto_1 DECIMAL(8,2) DEFAULT NULL,
+    sconto_2 DECIMAL(8,2) DEFAULT NULL,
+    sconto_3 DECIMAL(8,2) DEFAULT NULL,
+    sconto_4 DECIMAL(8,2) DEFAULT NULL,
+    sconto_5 DECIMAL(8,2) DEFAULT NULL,
+    importo_unitario_netto DECIMAL(15,4) DEFAULT NULL,
+    importo_totale DECIMAL(15,4) DEFAULT NULL,
+    centro_di_costo VARCHAR(50) DEFAULT NULL,
+    voce_controllo_gestione VARCHAR(50) DEFAULT NULL,
+    riferimento VARCHAR(255) DEFAULT NULL,
+    riferimento_interno VARCHAR(255) DEFAULT NULL,
+    saldato CHAR(1) DEFAULT NULL COMMENT 'S/N',
+    competenza_data_inizio DATE DEFAULT NULL,
+    competenza_data_fine DATE DEFAULT NULL,
+    raggruppamento VARCHAR(50) DEFAULT NULL,
+    raggruppamento_categoria VARCHAR(50) DEFAULT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_ordini_det_sga (societa_sga, anno, filiale, numero, riga),
+    KEY idx_ordini_det_ordine (ordine_id),
+    KEY idx_ordini_det_materiale (materiale),
+    CONSTRAINT fk_ordini_det_ordine
+        FOREIGN KEY (ordine_id) REFERENCES ordini(id)
+        ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COMMENT='Righe ordine da MaOrdiniForDettagli';
+
+CREATE TABLE IF NOT EXISTS stati_ddt (
+    id INT(11) NOT NULL AUTO_INCREMENT,
+    nome VARCHAR(255) NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_stati_ddt_nome (nome)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+INSERT INTO stati_ddt (nome) VALUES
+    ('Da revisionare'),
+    ('Validato'),
+    ('Rifiutato')
+ON DUPLICATE KEY UPDATE nome = VALUES(nome);
+
+CREATE TABLE IF NOT EXISTS ddt_acquisti (
+    id INT(11) NOT NULL AUTO_INCREMENT,
+    societa_id INT(11) NOT NULL COMMENT 'FK societa.id (payload id_az)',
+    codice_sede VARCHAR(20) DEFAULT NULL COMMENT 'Payload id_sede',
+    numero_documento VARCHAR(50) NOT NULL,
+    data_documento DATETIME DEFAULT NULL,
+    piva_fornitore VARCHAR(50) DEFAULT NULL,
+    denominazione_fornitore VARCHAR(255) DEFAULT NULL,
+    denominazione_destinatario VARCHAR(255) DEFAULT NULL,
+    destinazione_merce VARCHAR(500) DEFAULT NULL,
+    ragione_sociale VARCHAR(255) DEFAULT NULL COMMENT 'Payload azn',
+    fornitore_id INT(11) DEFAULT NULL COMMENT 'FK fornitori.id (match P.IVA)',
+    nome_file VARCHAR(255) DEFAULT NULL,
+    percorso_file VARCHAR(500) DEFAULT NULL COMMENT 'PDF salvato su filesystem',
+    stato_ddt_id INT(11) NOT NULL DEFAULT 1,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_ddt_soc_piva_num (societa_id, piva_fornitore, numero_documento),
+    KEY idx_ddt_societa (societa_id),
+    KEY idx_ddt_fornitore (fornitore_id),
+    KEY idx_ddt_data (data_documento),
+    KEY idx_ddt_stato (stato_ddt_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COMMENT='DDT acquisto da webhook (non SGA)';
+
+CREATE TABLE IF NOT EXISTS ddt_articoli_acquisti (
+    id INT(11) NOT NULL AUTO_INCREMENT,
+    ddt_id INT(11) NOT NULL,
+    cod_articolo VARCHAR(100) DEFAULT NULL,
+    descrizione VARCHAR(255) DEFAULT NULL,
+    unita_misura VARCHAR(20) DEFAULT NULL,
+    quantita DECIMAL(15,3) NOT NULL DEFAULT 0,
+    ordine_numero VARCHAR(50) DEFAULT NULL COMMENT 'Payload n_ord',
+    ordine_riga INT(11) DEFAULT NULL COMMENT 'Payload p_ord',
+    ordine_anno SMALLINT DEFAULT NULL COMMENT 'Payload ord_anno (opzionale)',
+    ordine_filiale VARCHAR(10) DEFAULT NULL COMMENT 'Payload ord_filiale (opzionale)',
+    ordine_dettaglio_id INT(11) DEFAULT NULL COMMENT 'FK ordini_dettagli.id (match futuro)',
+    data_consegna DATETIME DEFAULT NULL,
+    hash_riga VARCHAR(64) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_ddt_art_hash (hash_riga),
+    KEY idx_ddt_art_ddt (ddt_id),
+    KEY idx_ddt_art_ordine (ordine_anno, ordine_filiale, ordine_numero, ordine_riga),
+    KEY idx_ddt_art_ord_det (ordine_dettaglio_id),
+    CONSTRAINT fk_ddt_art_ddt
+        FOREIGN KEY (ddt_id) REFERENCES ddt_acquisti(id)
+        ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COMMENT='Righe DDT acquisto da webhook';
 
 
 -- =============================================================================

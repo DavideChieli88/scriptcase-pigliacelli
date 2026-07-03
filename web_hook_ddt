@@ -1,0 +1,232 @@
+// Webhook DDT (Modulo 1). POST JSON array — payload OCM: id_az, n_doc, piva_mit, file_name, file_content, articoli[].
+
+function sql_quote($v)
+{
+    if ($v === null || $v === '') {
+        return 'NULL';
+    }
+    return "'" . str_replace("'", "''", (string)$v) . "'";
+}
+
+function sql_num($v)
+{
+    if ($v === null || $v === '') {
+        return 'NULL';
+    }
+    return (string)(0 + $v);
+}
+
+function fallisci($codice, $messaggio)
+{
+    sc_rollback_trans();
+    http_response_code((int)$codice);
+    header('Content-Type: application/json; charset=utf-8');
+    die(json_encode(['error' => $messaggio], JSON_UNESCAPED_UNICODE));
+}
+
+function termina_ok($dati)
+{
+    http_response_code(200);
+    header('Content-Type: application/json; charset=utf-8');
+    die(json_encode(array_merge(['ok' => true], $dati), JSON_UNESCAPED_UNICODE));
+}
+
+$ddts = json_decode(file_get_contents('php://input'), true);
+if (!is_array($ddts)) {
+    http_response_code(400);
+    header('Content-Type: application/json; charset=utf-8');
+    die(json_encode(['error' => 'Payload JSON non valido']));
+}
+
+sc_lookup(rsPath, "SELECT set_value FROM sec_settings WHERE set_name = 'ddt_file_path' LIMIT 1", 'pigliacelli');
+$cartella_pdf = !empty({rsPath}) && trim((string){rsPath[0][0]}) !== ''
+    ? trim((string){rsPath[0][0]})
+    : '_lib/file/ddt_acquisti';
+$doc_root = isset($_SERVER['DOCUMENT_ROOT']) ? rtrim((string)$_SERVER['DOCUMENT_ROOT'], '/\\') : '';
+$dir_pdf = $doc_root !== ''
+    ? $doc_root . '/' . ltrim(str_replace('\\', '/', $cartella_pdf), '/')
+    : $cartella_pdf;
+
+$stats = ['ddt_inseriti' => 0, 'ddt_aggiornati' => 0, 'articoli_upsert' => 0];
+sc_begin_trans();
+
+foreach ($ddts as $i => $ddt) {
+    if (!is_array($ddt) || empty($ddt['id_az']) || empty($ddt['n_doc']) || empty($ddt['file_name']) || !isset($ddt['file_content'])) {
+        fallisci(400, 'DDT incompleto all indice ' . (int)$i);
+    }
+
+    $societa_id = (int)$ddt['id_az'];
+    sc_lookup(rsSoc, "SELECT id, codice_sga FROM societa WHERE id = " . sql_num($societa_id) . " LIMIT 1", 'pigliacelli');
+    if (empty({rsSoc})) {
+        fallisci(400, 'Societa non trovata id_az=' . $societa_id);
+    }
+    $societa_sga = (int){rsSoc[0][1]};
+
+    $n_doc = trim((string)$ddt['n_doc']);
+    $piva = trim((string)($ddt['piva_mit'] ?? ''));
+    $sede = trim((string)($ddt['id_sede'] ?? ''));
+
+    sc_lookup(rsDdt, "
+        SELECT id FROM ddt_acquisti
+        WHERE societa_id = " . sql_num($societa_id) . "
+          AND numero_documento = " . sql_quote($n_doc) . "
+          AND COALESCE(piva_fornitore, '') = " . sql_quote($piva) . "
+        LIMIT 1
+    ", 'pigliacelli');
+    $gia_presente = !empty({rsDdt});
+
+    $fornitore_id = null;
+    $piva_cifre = preg_replace('/\D+/', '', $piva);
+    if ($piva_cifre !== '') {
+        sc_lookup(rsFor, "
+            SELECT id FROM fornitori
+            WHERE societa_sga = " . sql_num($societa_sga) . "
+              AND REPLACE(REPLACE(REPLACE(piva, ' ', ''), '.', ''), '-', '') = " . sql_quote($piva_cifre) . "
+            LIMIT 1
+        ", 'pigliacelli');
+        if (!empty({rsFor})) {
+            $fornitore_id = (int){rsFor[0][0]};
+        }
+    }
+
+    sc_exec_sql("
+        INSERT INTO ddt_acquisti
+          (societa_id, codice_sede, numero_documento, data_documento,
+           piva_fornitore, denominazione_fornitore, denominazione_destinatario,
+           destinazione_merce, ragione_sociale, fornitore_id, nome_file, stato_ddt_id)
+        VALUES
+          (" . sql_num($societa_id) . ",
+           " . sql_quote($sede !== '' ? $sede : null) . ",
+           " . sql_quote($n_doc) . ",
+           " . sql_quote(trim((string)($ddt['dd_doc'] ?? '')) ?: null) . ",
+           " . sql_quote($piva !== '' ? $piva : null) . ",
+           " . sql_quote(trim((string)($ddt['nom_mit'] ?? '')) ?: null) . ",
+           " . sql_quote(trim((string)($ddt['nom_dest'] ?? '')) ?: null) . ",
+           " . sql_quote(trim((string)($ddt['ind_dest'] ?? '')) ?: null) . ",
+           " . sql_quote(trim((string)($ddt['azn'] ?? '')) ?: null) . ",
+           " . sql_num($fornitore_id) . ",
+           " . sql_quote(trim((string)$ddt['file_name'])) . ",
+           1)
+        ON DUPLICATE KEY UPDATE
+          codice_sede = VALUES(codice_sede),
+          data_documento = VALUES(data_documento),
+          denominazione_fornitore = VALUES(denominazione_fornitore),
+          piva_fornitore = VALUES(piva_fornitore),
+          ragione_sociale = VALUES(ragione_sociale),
+          denominazione_destinatario = VALUES(denominazione_destinatario),
+          destinazione_merce = VALUES(destinazione_merce),
+          fornitore_id = VALUES(fornitore_id),
+          nome_file = VALUES(nome_file),
+          stato_ddt_id = 1,
+          updated_at = CURRENT_TIMESTAMP
+    ", 'pigliacelli');
+
+    if ($gia_presente) {
+        $ddt_id = (int){rsDdt[0][0]};
+        $stats['ddt_aggiornati']++;
+    } else {
+        sc_lookup(rsNew, "
+            SELECT id FROM ddt_acquisti
+            WHERE societa_id = " . sql_num($societa_id) . "
+              AND numero_documento = " . sql_quote($n_doc) . "
+              AND COALESCE(piva_fornitore, '') = " . sql_quote($piva) . "
+            LIMIT 1
+        ", 'pigliacelli');
+        if (empty({rsNew})) {
+            fallisci(500, 'ID DDT non recuperato');
+        }
+        $ddt_id = (int){rsNew[0][0]};
+        $stats['ddt_inseriti']++;
+    }
+
+    $pdf = base64_decode((string)$ddt['file_content'], true);
+    if ($pdf === false || $pdf === '') {
+        fallisci(500, 'PDF base64 non valido');
+    }
+    if (!is_dir($dir_pdf) && !@mkdir($dir_pdf, 0755, true) && !is_dir($dir_pdf)) {
+        fallisci(500, 'Directory PDF non disponibile');
+    }
+    $nome_safe = preg_replace('/[^A-Za-z0-9._-]+/', '_', (string)$ddt['file_name']);
+    if ($nome_safe === '') {
+        $nome_safe = 'ddt_' . $ddt_id . '.pdf';
+    }
+    $file_pdf = $ddt_id . '_' . $nome_safe;
+    if (@file_put_contents(rtrim($dir_pdf, '/\\') . '/' . $file_pdf, $pdf) === false) {
+        fallisci(500, 'Salvataggio PDF fallito');
+    }
+    $percorso_pdf = rtrim(str_replace('\\', '/', $cartella_pdf), '/') . '/' . $file_pdf;
+    sc_exec_sql("
+        UPDATE ddt_acquisti
+        SET percorso_file = " . sql_quote($percorso_pdf) . ",
+            nome_file = " . sql_quote(trim((string)$ddt['file_name'])) . "
+        WHERE id = " . sql_num($ddt_id) . "
+    ", 'pigliacelli');
+
+    if (!empty($ddt['articoli']) && is_array($ddt['articoli'])) {
+        $occorrenze = [];
+        foreach ($ddt['articoli'] as $art) {
+            if (!is_array($art)) {
+                continue;
+            }
+            $cod = trim((string)($art['cod_art'] ?? ''));
+            $desc = trim((string)($art['descrizione'] ?? ''));
+            $qta = (float)($art['qta'] ?? 0);
+            $firma = md5($cod . '_' . $desc . '_' . $qta);
+            $occorrenze[$firma] = isset($occorrenze[$firma]) ? $occorrenze[$firma] + 1 : 1;
+            $hash = md5($ddt_id . '_' . $firma . '_' . $occorrenze[$firma]);
+
+            $n_ord = trim((string)($art['n_ord'] ?? ''));
+            $p_ord = (int)($art['p_ord'] ?? 0);
+            $ord_anno = (int)($art['ord_anno'] ?? 0);
+            $ord_filiale = trim((string)($art['ord_filiale'] ?? ''));
+            if ($ord_filiale === '') {
+                $ord_filiale = $sede;
+            }
+
+            $ordine_dettaglio_id = null;
+            if ($n_ord !== '' && $p_ord > 0 && $ord_anno > 0 && $ord_filiale !== '') {
+                sc_lookup(rsOrd, "
+                    SELECT id FROM ordini_dettagli
+                    WHERE societa_sga = " . sql_num($societa_sga) . "
+                      AND anno = " . sql_num($ord_anno) . "
+                      AND filiale = " . sql_quote($ord_filiale) . "
+                      AND numero = " . sql_num((int)$n_ord) . "
+                      AND riga = " . sql_num($p_ord) . "
+                    LIMIT 1
+                ", 'pigliacelli');
+                if (!empty({rsOrd})) {
+                    $ordine_dettaglio_id = (int){rsOrd[0][0]};
+                }
+            }
+
+            sc_exec_sql("
+                INSERT INTO ddt_articoli_acquisti
+                  (ddt_id, cod_articolo, descrizione, unita_misura, quantita,
+                   ordine_numero, ordine_riga, ordine_anno, ordine_filiale,
+                   ordine_dettaglio_id, data_consegna, hash_riga)
+                VALUES
+                  (" . sql_num($ddt_id) . ",
+                   " . sql_quote($cod !== '' ? $cod : null) . ",
+                   " . sql_quote($desc !== '' ? $desc : null) . ",
+                   " . sql_quote(trim((string)($art['um_art'] ?? '')) ?: null) . ",
+                   " . sql_num($qta) . ",
+                   " . sql_quote($n_ord !== '' ? $n_ord : null) . ",
+                   " . sql_num($p_ord > 0 ? $p_ord : null) . ",
+                   " . sql_num($ord_anno > 0 ? $ord_anno : null) . ",
+                   " . sql_quote($ord_filiale !== '' ? $ord_filiale : null) . ",
+                   " . sql_num($ordine_dettaglio_id) . ",
+                   " . sql_quote(trim((string)($art['dd_cons'] ?? '')) ?: null) . ",
+                   " . sql_quote($hash) . ")
+                ON DUPLICATE KEY UPDATE
+                  quantita = VALUES(quantita),
+                  ordine_dettaglio_id = VALUES(ordine_dettaglio_id),
+                  updated_at = CURRENT_TIMESTAMP
+            ", 'pigliacelli');
+            $stats['articoli_upsert']++;
+        }
+    }
+}
+
+sc_commit_trans();
+sc_log_add('WEBHOOK_DDT', 'OK ' . json_encode($stats));
+termina_ok($stats);

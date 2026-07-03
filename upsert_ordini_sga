@@ -1,0 +1,429 @@
+// Import / sync incrementale ordini fornitore da SGA (SQL Server via PDO) verso pigliacelli (MySQL).
+// Sorgente: MaOrdiniForTestata + MaOrdiniForDettagli.
+// Incrementale: sec_settings.ordini_sync (UPDATE_DATA_ORA testata).
+// Prerequisiti: tabelle ordini / ordini_dettagli + fornitori popolati (upsert_societa_and_fornitori).
+
+function log_upsert_ordini($msg)
+{
+    sc_log_add('UPSERT_ORDINI_SGA', (string)$msg);
+}
+
+function sql_quote($v)
+{
+    if ($v === null) {
+        return "NULL";
+    }
+    $v = (string)$v;
+    return "'" . str_replace("'", "''", $v) . "'";
+}
+
+function sql_num($v)
+{
+    if ($v === null || $v === '') {
+        return "NULL";
+    }
+    return (string)(0 + $v);
+}
+
+function valore_o_null($v)
+{
+    if ($v === null) {
+        return null;
+    }
+    $v = trim((string)$v);
+    return $v === '' ? null : $v;
+}
+
+function connetti_pdo_sga($settings)
+{
+    $set_names = ['sgam_user', 'sgam_pswd', 'sgam_db', 'sgam_server'];
+
+    foreach ($set_names as $set_name) {
+        if (!array_key_exists($set_name, $settings) || trim((string)$settings[$set_name]) === '') {
+            sc_error_message("Parametro '" . $set_name . "' non trovato o vuoto in sec_settings.");
+            return null;
+        }
+    }
+
+    try {
+        $dsn_sga = "sqlsrv:Server=" . $settings['sgam_server'] .
+                   ";Database=" . $settings['sgam_db'] .
+                   ";Encrypt=1" .
+                   ";TrustServerCertificate=1";
+
+        return new PDO(
+            $dsn_sga,
+            $settings['sgam_user'],
+            $settings['sgam_pswd'],
+            [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_NUM,
+            ]
+        );
+    } catch (PDOException $e) {
+        sc_error_message("Errore connessione PDO SGA: " . $e->getMessage());
+        return null;
+    }
+}
+
+function risolvi_fornitore_id($societa_sga, $fornitore_codice)
+{
+    $societa_sga = (int)$societa_sga;
+    $codice = trim((string)$fornitore_codice);
+    if ($societa_sga <= 0 || $codice === '') {
+        return null;
+    }
+
+    $varianti = [$codice];
+    if (ctype_digit($codice)) {
+        $senza_zero = ltrim($codice, '0');
+        if ($senza_zero !== '' && $senza_zero !== $codice) {
+            $varianti[] = $senza_zero;
+        }
+        $varianti[] = str_pad($senza_zero !== '' ? $senza_zero : '0', strlen($codice), '0', STR_PAD_LEFT);
+    }
+    $varianti = array_values(array_unique($varianti));
+
+    foreach ($varianti as $codice_try) {
+        sc_lookup(rsFor, "
+            SELECT id
+            FROM fornitori
+            WHERE societa_sga = " . sql_num($societa_sga) . "
+              AND codice_sga = " . sql_quote($codice_try) . "
+            LIMIT 1
+        ", "pigliacelli");
+        if (!empty({rsFor})) {
+            return (int){rsFor[0][0]};
+        }
+    }
+
+    return null;
+}
+
+function recupera_ordine_id($societa_sga, $anno, $filiale, $numero)
+{
+    sc_lookup(rsOrd, "
+        SELECT id
+        FROM ordini
+        WHERE societa_sga = " . sql_num($societa_sga) . "
+          AND anno = " . sql_num($anno) . "
+          AND filiale = " . sql_quote($filiale) . "
+          AND numero = " . sql_num($numero) . "
+        LIMIT 1
+    ", "pigliacelli");
+
+    if (empty({rsOrd})) {
+        return null;
+    }
+
+    return (int){rsOrd[0][0]};
+}
+
+@set_time_limit(0);
+@ini_set('memory_limit', '512M');
+
+log_upsert_ordini('START sync ordini MaOrdiniFor*');
+
+sc_lookup(settingsRows, "
+    SELECT set_name, set_value
+    FROM sec_settings
+    WHERE set_name IN ('sgam_user', 'sgam_pswd', 'sgam_db', 'sgam_server', 'ordini_sync')
+", "pigliacelli");
+
+$settings = [];
+if (!empty({settingsRows})) {
+    foreach ({settingsRows} as $settingRow) {
+        $settings[$settingRow[0]] = $settingRow[1];
+    }
+}
+
+$soglia_data_ora = isset($settings['ordini_sync']) ? trim((string)$settings['ordini_sync']) : '';
+if ($soglia_data_ora === '') {
+    $soglia_data_ora = '1900-01-01 00:00:00';
+}
+
+$pdo_sga = connetti_pdo_sga($settings);
+if ($pdo_sga === null) {
+    log_upsert_ordini('STOP connessione SGA non disponibile');
+    return;
+}
+
+$sql_testate = "
+    SELECT
+      t.SOCIETA,
+      t.ANNO,
+      t.FILIALE,
+      t.NUMERO,
+      t.DATA,
+      t.FORNITORE_CLIFOR,
+      t.FORNITORE,
+      t.APERTO,
+      t.CONFERMATO,
+      t.SALDATO,
+      t.RIFERIMENTO,
+      t.NOTE,
+      t.DESTINAZIONE_RAGIONE_SOCIALE,
+      t.DESTINAZIONE_INDIRIZZO,
+      t.DESTINAZIONE_LOCALITA,
+      t.DESTINAZIONE_CAP,
+      t.DESTINAZIONE_PROVINCIA,
+      t.DESTINAZIONE_NAZIONE,
+      t.CONTRATTO_ANNO,
+      t.CONTRATTO_FILIALE,
+      t.CONTRATTO_NUMERO,
+      t.CONFERMATO_DATA_ORA,
+      COALESCE(t.UPDATE_DATA_ORA, t.INSERT_DATA_ORA, '1900-01-01 00:00:00') AS sync_data_ora
+    FROM MaOrdiniForTestata t
+    WHERE COALESCE(t.UPDATE_DATA_ORA, t.INSERT_DATA_ORA, '1900-01-01 00:00:00') > :soglia_data_ora
+    ORDER BY COALESCE(t.UPDATE_DATA_ORA, t.INSERT_DATA_ORA, '1900-01-01 00:00:00'), t.SOCIETA, t.ANNO, t.FILIALE, t.NUMERO
+";
+
+$sql_dettagli = "
+    SELECT
+      d.RIGA,
+      d.MATERIALE,
+      d.VARIANTE,
+      d.DESCRIZIONE,
+      d.DATA_CONSEGNA,
+      d.QUANTITA,
+      d.RESIDUO,
+      d.IMPORTO_UNITARIO,
+      d.SCONTO_1,
+      d.SCONTO_2,
+      d.SCONTO_3,
+      d.SCONTO_4,
+      d.SCONTO_5,
+      d.IMPORTO_UNITARIO_NETTO,
+      d.IMPORTO_TOTALE,
+      d.CENTRO_DI_COSTO,
+      d.VOCE_CONTROLLO_GESTIONE,
+      d.RIFERIMENTO,
+      d.RIFERIMENTO_INTERNO,
+      d.SALDATO,
+      d.COMPETENZA_DATA_INIZIO,
+      d.COMPETENZA_DATA_FINE,
+      d.RAGGRUPPAMENTO,
+      d.RAGGRUPPAMENTO_CATEGORIA
+    FROM MaOrdiniForDettagli d
+    WHERE d.SOCIETA = :societa
+      AND d.ANNO = :anno
+      AND d.FILIALE = :filiale
+      AND d.NUMERO = :numero
+    ORDER BY d.RIGA
+";
+
+try {
+    $stmt_testate = $pdo_sga->prepare($sql_testate);
+    $stmt_testate->execute(['soglia_data_ora' => $soglia_data_ora]);
+    $rows_testate = $stmt_testate->fetchAll(PDO::FETCH_NUM);
+    $stmt_testate->closeCursor();
+} catch (PDOException $e) {
+    sc_error_message("Errore select MaOrdiniForTestata: " . $e->getMessage());
+    log_upsert_ordini('ERRORE select testate: ' . $e->getMessage());
+    return;
+}
+
+$testate_lette = count($rows_testate);
+$testate_upsert = 0;
+$dettagli_upsert = 0;
+$fornitori_non_trovati = 0;
+$ultima_sync_data_ora = null;
+
+log_upsert_ordini('Testate da elaborare: ' . $testate_lette . ' | soglia=' . $soglia_data_ora);
+
+try {
+    $stmt_dettagli = $pdo_sga->prepare($sql_dettagli);
+
+    foreach ($rows_testate as $row) {
+        $societa_sga = (int)$row[0];
+        $anno = (int)$row[1];
+        $filiale = (string)$row[2];
+        $numero = (int)$row[3];
+        $data_ordine = $row[4];
+        $fornitore_clifor = valore_o_null($row[5]);
+        $fornitore_codice = valore_o_null($row[6]);
+        $sync_data_ora = $row[22];
+
+        if ($fornitore_clifor === null) {
+            $fornitore_clifor = 'F';
+        }
+        if ($fornitore_codice === null) {
+            continue;
+        }
+        if ($sync_data_ora !== null && ($ultima_sync_data_ora === null || $sync_data_ora > $ultima_sync_data_ora)) {
+            $ultima_sync_data_ora = $sync_data_ora;
+        }
+
+        $fornitore_id = risolvi_fornitore_id($societa_sga, $fornitore_codice);
+        if ($fornitore_id === null) {
+            $fornitori_non_trovati++;
+        }
+
+        $ins_testata = "
+            INSERT INTO ordini
+              (societa_sga, anno, filiale, numero, data_ordine,
+               fornitore_clifor, fornitore_codice, fornitore_id,
+               aperto, confermato, saldato, riferimento, note,
+               destinazione_ragione_sociale, destinazione_indirizzo, destinazione_localita,
+               destinazione_cap, destinazione_provincia, destinazione_nazione,
+               contratto_anno, contratto_filiale, contratto_numero,
+               confermato_data_ora, sga_update_data_ora)
+            VALUES
+              (" . sql_num($societa_sga) . ",
+               " . sql_num($anno) . ",
+               " . sql_quote($filiale) . ",
+               " . sql_num($numero) . ",
+               " . sql_quote($data_ordine) . ",
+               " . sql_quote($fornitore_clifor) . ",
+               " . sql_quote($fornitore_codice) . ",
+               " . sql_num($fornitore_id) . ",
+               " . sql_quote(valore_o_null($row[7])) . ",
+               " . sql_quote(valore_o_null($row[8])) . ",
+               " . sql_quote(valore_o_null($row[9])) . ",
+               " . sql_quote(valore_o_null($row[10])) . ",
+               " . sql_quote(valore_o_null($row[11])) . ",
+               " . sql_quote(valore_o_null($row[12])) . ",
+               " . sql_quote(valore_o_null($row[13])) . ",
+               " . sql_quote(valore_o_null($row[14])) . ",
+               " . sql_quote(valore_o_null($row[15])) . ",
+               " . sql_quote(valore_o_null($row[16])) . ",
+               " . sql_quote(valore_o_null($row[17])) . ",
+               " . sql_num(valore_o_null($row[18])) . ",
+               " . sql_quote(valore_o_null($row[19])) . ",
+               " . sql_num(valore_o_null($row[20])) . ",
+               " . sql_quote(valore_o_null($row[21])) . ",
+               " . sql_quote($sync_data_ora) . ")
+            ON DUPLICATE KEY UPDATE
+               data_ordine = VALUES(data_ordine),
+               fornitore_clifor = VALUES(fornitore_clifor),
+               fornitore_codice = VALUES(fornitore_codice),
+               fornitore_id = VALUES(fornitore_id),
+               aperto = VALUES(aperto),
+               confermato = VALUES(confermato),
+               saldato = VALUES(saldato),
+               riferimento = VALUES(riferimento),
+               note = VALUES(note),
+               destinazione_ragione_sociale = VALUES(destinazione_ragione_sociale),
+               destinazione_indirizzo = VALUES(destinazione_indirizzo),
+               destinazione_localita = VALUES(destinazione_localita),
+               destinazione_cap = VALUES(destinazione_cap),
+               destinazione_provincia = VALUES(destinazione_provincia),
+               destinazione_nazione = VALUES(destinazione_nazione),
+               contratto_anno = VALUES(contratto_anno),
+               contratto_filiale = VALUES(contratto_filiale),
+               contratto_numero = VALUES(contratto_numero),
+               confermato_data_ora = VALUES(confermato_data_ora),
+               sga_update_data_ora = VALUES(sga_update_data_ora),
+               updated_at = CURRENT_TIMESTAMP
+        ";
+        sc_exec_sql($ins_testata, "pigliacelli");
+        $testate_upsert++;
+
+        $ordine_id = recupera_ordine_id($societa_sga, $anno, $filiale, $numero);
+        if ($ordine_id === null) {
+            continue;
+        }
+
+        $stmt_dettagli->execute([
+            'societa' => $societa_sga,
+            'anno' => $anno,
+            'filiale' => $filiale,
+            'numero' => $numero,
+        ]);
+
+        while (($det = $stmt_dettagli->fetch(PDO::FETCH_NUM)) !== false) {
+            $riga = (int)$det[0];
+
+            $ins_det = "
+                INSERT INTO ordini_dettagli
+                  (ordine_id, societa_sga, anno, filiale, numero, riga,
+                   materiale, variante, descrizione, data_consegna,
+                   quantita, residuo, importo_unitario,
+                   sconto_1, sconto_2, sconto_3, sconto_4, sconto_5,
+                   importo_unitario_netto, importo_totale,
+                   centro_di_costo, voce_controllo_gestione,
+                   riferimento, riferimento_interno, saldato,
+                   competenza_data_inizio, competenza_data_fine,
+                   raggruppamento, raggruppamento_categoria)
+                VALUES
+                  (" . sql_num($ordine_id) . ",
+                   " . sql_num($societa_sga) . ",
+                   " . sql_num($anno) . ",
+                   " . sql_quote($filiale) . ",
+                   " . sql_num($numero) . ",
+                   " . sql_num($riga) . ",
+                   " . sql_quote(valore_o_null($det[1])) . ",
+                   " . sql_quote(valore_o_null($det[2])) . ",
+                   " . sql_quote(valore_o_null($det[3])) . ",
+                   " . sql_quote(valore_o_null($det[4])) . ",
+                   " . sql_num($det[5]) . ",
+                   " . sql_num(valore_o_null($det[6])) . ",
+                   " . sql_num(valore_o_null($det[7])) . ",
+                   " . sql_num(valore_o_null($det[8])) . ",
+                   " . sql_num(valore_o_null($det[9])) . ",
+                   " . sql_num(valore_o_null($det[10])) . ",
+                   " . sql_num(valore_o_null($det[11])) . ",
+                   " . sql_num(valore_o_null($det[12])) . ",
+                   " . sql_num(valore_o_null($det[13])) . ",
+                   " . sql_num(valore_o_null($det[14])) . ",
+                   " . sql_quote(valore_o_null($det[15])) . ",
+                   " . sql_quote(valore_o_null($det[16])) . ",
+                   " . sql_quote(valore_o_null($det[17])) . ",
+                   " . sql_quote(valore_o_null($det[18])) . ",
+                   " . sql_quote(valore_o_null($det[19])) . ",
+                   " . sql_quote(valore_o_null($det[20])) . ",
+                   " . sql_quote(valore_o_null($det[21])) . ",
+                   " . sql_quote(valore_o_null($det[22])) . ",
+                   " . sql_quote(valore_o_null($det[23])) . ")
+                ON DUPLICATE KEY UPDATE
+                   materiale = VALUES(materiale),
+                   variante = VALUES(variante),
+                   descrizione = VALUES(descrizione),
+                   data_consegna = VALUES(data_consegna),
+                   quantita = VALUES(quantita),
+                   residuo = VALUES(residuo),
+                   importo_unitario = VALUES(importo_unitario),
+                   sconto_1 = VALUES(sconto_1),
+                   sconto_2 = VALUES(sconto_2),
+                   sconto_3 = VALUES(sconto_3),
+                   sconto_4 = VALUES(sconto_4),
+                   sconto_5 = VALUES(sconto_5),
+                   importo_unitario_netto = VALUES(importo_unitario_netto),
+                   importo_totale = VALUES(importo_totale),
+                   centro_di_costo = VALUES(centro_di_costo),
+                   voce_controllo_gestione = VALUES(voce_controllo_gestione),
+                   riferimento = VALUES(riferimento),
+                   riferimento_interno = VALUES(riferimento_interno),
+                   saldato = VALUES(saldato),
+                   competenza_data_inizio = VALUES(competenza_data_inizio),
+                   competenza_data_fine = VALUES(competenza_data_fine),
+                   raggruppamento = VALUES(raggruppamento),
+                   raggruppamento_categoria = VALUES(raggruppamento_categoria),
+                   updated_at = CURRENT_TIMESTAMP
+            ";
+            sc_exec_sql($ins_det, "pigliacelli");
+            $dettagli_upsert++;
+        }
+        $stmt_dettagli->closeCursor();
+    }
+} catch (PDOException $e) {
+    sc_error_message("Errore elaborazione ordini SGA: " . $e->getMessage());
+    log_upsert_ordini('ERRORE elaborazione: ' . $e->getMessage());
+    return;
+}
+
+if ($ultima_sync_data_ora !== null) {
+    sc_exec_sql("
+        UPDATE sec_settings
+        SET set_value = " . sql_quote($ultima_sync_data_ora) . "
+        WHERE set_name = 'ordini_sync'
+    ", "pigliacelli");
+    log_upsert_ordini('ordini_sync aggiornato a ' . $ultima_sync_data_ora);
+}
+
+log_upsert_ordini(
+    'END | testate_lette=' . $testate_lette .
+    ' | testate_upsert=' . $testate_upsert .
+    ' | dettagli_upsert=' . $dettagli_upsert .
+    ' | fornitori_non_trovati=' . $fornitori_non_trovati
+);
