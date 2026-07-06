@@ -413,3 +413,29 @@ INSERT INTO `stati_contratti` (`id`, `nome`) VALUES (NULL, 'Da revisionare');
 CREATE TABLE `pigliacelli`.`tipo_fatture` (`id` INT(11) NOT NULL AUTO_INCREMENT , `nome` VARCHAR(255) NOT NULL , PRIMARY KEY (`id`)) ENGINE = InnoDB;
 
 ALTER TABLE `subvettori` ADD `pec` VARCHAR(255) NULL AFTER `created_at`;
+
+
+-- =============================================================================
+-- I) DOCUMENTI — collegamento diretto al subvettore
+-- =============================================================================
+-- form_documenti: l'operatore sceglie subvettore_id; login resta FK verso sec_users
+-- (intestatario/notifiche) e viene risolto automaticamente dagli eventi form.
+
+ALTER TABLE `documenti`
+    ADD COLUMN `subvettore_id` INT(11) NULL COMMENT 'subvettori.id' AFTER `login`;
+
+UPDATE documenti d
+INNER JOIN sec_users u ON u.login = d.login
+SET d.subvettore_id = u.subvettore_id
+WHERE d.subvettore_id IS NULL
+  AND u.subvettore_id IS NOT NULL;
+
+ALTER TABLE `documenti`
+    ADD INDEX `idx_documenti_subvettore_id` (`subvettore_id`);
+
+-- Eseguire solo se la FK non esiste già (MySQL 8.0.19+ IF NOT EXISTS su FK limitato; adattare in UAT se serve):
+-- ALTER TABLE `documenti` DROP FOREIGN KEY `documenti_subvettori_fk`;
+ALTER TABLE `documenti`
+    ADD CONSTRAINT `documenti_subvettori_fk`
+    FOREIGN KEY (`subvettore_id`) REFERENCES `subvettori`(`id`)
+    ON DELETE RESTRICT ON UPDATE CASCADE;

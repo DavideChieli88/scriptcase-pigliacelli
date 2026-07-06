@@ -1,10 +1,55 @@
-// Campo intestatario/login: lookup SC salva sec_users.login (non sempre un'email).
-// Lookup tipica: SELECT login, name FROM sec_users WHERE subvettore_id IS NOT NULL ORDER BY name
+// login (intestatario): valorizzato in onBeforeInsert da subvettore_id scelto dall'operatore.
+
+if (!function_exists('form_docs_email_pulisci')) {
+    function form_docs_email_pulisci($email)
+    {
+        $email = trim((string)$email);
+        if ($email === '') {
+            return '';
+        }
+
+        $original = $email;
+        static $utf8_invisibili = array(
+            "\xEF\xBB\xBF",
+            "\xE2\x80\x8B",
+            "\xE2\x80\x8C",
+            "\xE2\x80\x8D",
+            "\xE2\x81\xA0",
+            "\xC2\xAD",
+        );
+
+        do {
+            $prev = $email;
+            foreach ($utf8_invisibili as $seq) {
+                if ($seq !== '' && strpos($email, $seq) === 0) {
+                    $email = substr($email, strlen($seq));
+                }
+            }
+            $email = trim($email);
+            foreach ($utf8_invisibili as $seq) {
+                $len = strlen($seq);
+                if ($len > 0 && strlen($email) >= $len && substr($email, -$len) === $seq) {
+                    $email = substr($email, 0, -$len);
+                }
+            }
+            $email = trim($email);
+        } while ($email !== $prev && $email !== '');
+
+        if ($email !== $original
+            && filter_var($original, FILTER_VALIDATE_EMAIL)
+            && !filter_var($email, FILTER_VALIDATE_EMAIL)
+        ) {
+            return trim($original);
+        }
+
+        return $email;
+    }
+}
 
 if (!function_exists('form_docs_email_valida')) {
     function form_docs_email_valida($email)
     {
-        $email = trim((string)$email);
+        $email = form_docs_email_pulisci($email);
         if ($email === '') {
             return false;
         }
@@ -207,7 +252,21 @@ $docNome = isset({rsTipoDoc[0][0]}) ? trim((string){rsTipoDoc[0][0]}) : 'Documen
 
 $docId        = {id};
 $loginField   = trim((string){login});
-$destinatario = $loginField;
+$docSubId     = (int){subvettore_id};
+$destinatario = '';
+
+if ($docSubId > 0) {
+    sc_lookup(rsFdSubMail, "
+        SELECT login_subvettore
+        FROM subvettori
+        WHERE id = $docSubId
+        LIMIT 1
+    ", 'pigliacelli');
+    if (!empty({rsFdSubMail[0][0]}) && form_docs_email_valida({rsFdSubMail[0][0]})) {
+        $destinatario = trim((string){rsFdSubMail[0][0]});
+        sc_log_add('MAIL_DOCS', "onAfterInsert doc=$docId — destinatario SMTP da subvettore_id=$docSubId → $destinatario");
+    }
+}
 
 $loginSql = str_replace("'", "''", $loginField);
 $userLogin        = '';
@@ -242,12 +301,6 @@ if (isset({rsUserDoc[0][0]})) {
     $userEmail       = trim((string){rsUserDoc[0][3]});
     $storedPassword  = trim((string){rsUserDoc[0][4]});
     $hasLoggedFirst  = (int){rsUserDoc[0][5]};
-
-    if ($destinatario === '' || !form_docs_email_valida($destinatario)) {
-        if ($userEmail !== '' && form_docs_email_valida($userEmail)) {
-            $destinatario = $userEmail;
-        }
-    }
 
     $activeNorm = strtoupper($userActive);
     $isActive   = ($activeNorm === 'Y' || $activeNorm === '1' || $activeNorm === 'S' || $activeNorm === 'SI' || $activeNorm === 'YES');
@@ -296,7 +349,7 @@ if (!form_docs_email_valida($destinatario)) {
 }
 
 if ($destinatario === '' || !form_docs_email_valida($destinatario)) {
-    sc_log_add('MAIL_DOCS', "onAfterInsert doc=$docId — email non valida: login/intestatario=[$loginField] dest=[$destinatario]");
+    sc_log_add('MAIL_DOCS', "onAfterInsert doc=$docId — email non valida: subvettore_id=$docSubId login=[$loginField] dest=[$destinatario]");
     return;
 }
 // SMTP + login_url dalla stessa query

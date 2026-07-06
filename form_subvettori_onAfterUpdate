@@ -1,7 +1,5 @@
 // Scriptcase form: form_subvettori → onAfterUpdate
-// Sincronizza sec_users con login_subvettore:
-// - email valida → login = email (crea o sovrascrive utenza tecnica esistente)
-// - no email     → crea SUBVETTORE_{id} solo se manca utenza
+// Email valida garantita da onValidate. INSERT solo se mail cambiata; altrimenti UPDATE anagrafica.
 
 if (!function_exists('form_subvettori_sql_quote')) {
     function form_subvettori_sql_quote($v)
@@ -23,20 +21,267 @@ if (!function_exists('form_subvettori_sql_num')) {
     }
 }
 
+if (!function_exists('form_subvettori_mail_cambiata')) {
+    function form_subvettori_mail_cambiata()
+    {
+        return isset([glo_sub_login_subvettore_changed]) && [glo_sub_login_subvettore_changed] === '1';
+    }
+}
+
+if (!function_exists('form_subvettori_email_pulisci')) {
+    function form_subvettori_email_pulisci($email)
+    {
+        $email = trim((string)$email);
+        if ($email === '') {
+            return '';
+        }
+
+        $original = $email;
+        // Solo sequenze UTF-8 esplicite (no regex con range: rischia di matchare lettere ASCII)
+        static $utf8_invisibili = array(
+            "\xEF\xBB\xBF", // U+FEFF BOM
+            "\xE2\x80\x8B", // U+200B zero-width space
+            "\xE2\x80\x8C", // U+200C
+            "\xE2\x80\x8D", // U+200D
+            "\xE2\x81\xA0", // U+2060 word joiner
+            "\xC2\xAD",     // U+00AD soft hyphen
+        );
+
+        do {
+            $prev = $email;
+            foreach ($utf8_invisibili as $seq) {
+                if ($seq !== '' && strpos($email, $seq) === 0) {
+                    $email = substr($email, strlen($seq));
+                }
+            }
+            $email = trim($email);
+            foreach ($utf8_invisibili as $seq) {
+                $len = strlen($seq);
+                if ($len > 0 && strlen($email) >= $len && substr($email, -$len) === $seq) {
+                    $email = substr($email, 0, -$len);
+                }
+            }
+            $email = trim($email);
+        } while ($email !== $prev && $email !== '');
+
+        if ($email !== $original
+            && filter_var($original, FILTER_VALIDATE_EMAIL)
+            && !filter_var($email, FILTER_VALIDATE_EMAIL)
+        ) {
+            return trim($original);
+        }
+
+        return $email;
+    }
+}
+
 if (!function_exists('form_subvettori_email_valida')) {
     function form_subvettori_email_valida($email)
     {
-        $email = trim((string)$email);
-
+        $email = form_subvettori_email_pulisci($email);
         if ($email === '') {
             return false;
         }
-
         if (strpos($email, ';') !== false || strpos($email, ',') !== false || strpos($email, ' ') !== false) {
             return false;
         }
-
         return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+}
+
+if (!function_exists('form_subvettori_get_setting')) {
+    function form_subvettori_get_setting($name, $default = '')
+    {
+        $key = 'sett_' . $name;
+        if (isset($_SESSION[$key])) {
+            return (string)$_SESSION[$key];
+        }
+        $safeName = str_replace("'", "''", trim((string)$name));
+        sc_lookup(rsSubSet, "SELECT set_value FROM sec_settings WHERE set_name = '$safeName' LIMIT 1", 'pigliacelli');
+        if (isset({rsSubSet[0][0]})) {
+            return (string){rsSubSet[0][0]};
+        }
+        return $default;
+    }
+}
+
+if (!function_exists('form_subvettori_get_smtp_config')) {
+    function form_subvettori_get_smtp_config()
+    {
+        sc_lookup(rsSubSmtp, 'SELECT set_name, set_value FROM sec_settings', 'pigliacelli');
+        if (!empty({rsSubSmtp})) {
+            foreach ({rsSubSmtp} as $f) {
+                $_SESSION['sett_' . $f[0]] = $f[1];
+            }
+        }
+        $smtpApi = isset($_SESSION['sett_smtp_api']) ? (string)$_SESSION['sett_smtp_api'] : '';
+        if ($smtpApi === 'custom') {
+            return array(
+                'settings' => array(
+                    'gateway'       => 'smtp',
+                    'smtp_server'   => (string)($_SESSION['sett_smtp_server'] ?? ''),
+                    'smtp_protocol' => (string)($_SESSION['sett_smtp_security'] ?? ''),
+                    'smtp_port'     => (string)($_SESSION['sett_smtp_port'] ?? ''),
+                    'smtp_user'     => (string)($_SESSION['sett_smtp_user'] ?? ''),
+                    'smtp_password' => (string)($_SESSION['sett_smtp_pass'] ?? ''),
+                    'from_email'    => (string)($_SESSION['sett_smtp_from_email'] ?? ''),
+                    'from_name'     => (string)($_SESSION['sett_smtp_from_name'] ?? ''),
+                ),
+            );
+        }
+        return array('profile' => $smtpApi);
+    }
+}
+
+if (!function_exists('form_subvettori_mail_logo_src')) {
+    function form_subvettori_mail_logo_src()
+    {
+        $rel = '_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png';
+        $dir = realpath(dirname(__FILE__));
+        for ($i = 0; $i < 12 && $dir; $i++) {
+            $try = $dir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel);
+            if (is_readable($try)) {
+                $bin = @file_get_contents($try);
+                if ($bin !== false && $bin !== '' && strlen($bin) < 500000) {
+                    return 'data:image/png;base64,' . base64_encode($bin);
+                }
+            }
+            $p = dirname($dir);
+            if ($p === $dir) {
+                break;
+            }
+            $dir = $p;
+        }
+        $base = rtrim(trim(form_subvettori_get_setting('mail_base_url', '')), '/');
+        if ($base !== '' && preg_match('#^https?://#i', $base) === 1) {
+            return htmlspecialchars(
+                $base . '/_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png',
+                ENT_QUOTES,
+                'UTF-8'
+            );
+        }
+        return '';
+    }
+}
+
+if (!function_exists('form_subvettori_mail_layout')) {
+    function form_subvettori_mail_layout($title, $innerHtml, $mailLogoUrl)
+    {
+        $t = htmlspecialchars((string)$title, ENT_QUOTES, 'UTF-8');
+        $logoTd = '';
+        if ((string)$mailLogoUrl !== '') {
+            $logoTd = '<td align="right" valign="middle" style="width:148px;padding-left:16px;">'
+                . '<img src="' . (string)$mailLogoUrl . '" alt="Pigliacelli" width="140" '
+                . 'style="display:block;max-width:140px;width:140px;height:auto;border:0;" />'
+                . '</td>';
+        }
+        return '<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">'
+            . '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            . '<title>' . $t . '</title></head>'
+            . '<body style="margin:0;padding:0;background:#eef1f4;">'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef1f4;">'
+            . '<tr><td align="center" style="padding:32px 16px;">'
+            . '<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" '
+            . 'style="max-width:600px;width:100%;background:#fff;border-radius:12px;border:1px solid #dde1e6;">'
+            . '<tr><td style="padding:22px 28px 18px;border-bottom:1px solid #e8ebef;background:#fafbfc;">'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
+            . '<td valign="middle" style="font-family:Arial,Helvetica,sans-serif;font-size:19px;font-weight:bold;color:#1a3a5c;line-height:1.3;">' . $t . '</td>'
+            . $logoTd . '</tr></table></td></tr>'
+            . '<tr><td style="padding:26px 28px 22px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#2d3748;">'
+            . $innerHtml . '</td></tr>'
+            . '<tr><td style="padding:14px 28px;background:#f4f6f8;border-top:1px solid #e8ebef;'
+            . 'font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#718096;">'
+            . 'Messaggio automatico &mdash; non rispondere.</td></tr>'
+            . '</table></td></tr></table></body></html>';
+    }
+}
+
+if (!function_exists('form_subvettori_invia_mail_credenziali')) {
+    function form_subvettori_invia_mail_credenziali($subvettore_id, $toEmail, $login, $plainPassword, $displayName)
+    {
+        $subvettore_id = (int)$subvettore_id;
+        $toEmail = form_subvettori_email_pulisci($toEmail);
+        $login = trim((string)$login);
+        $plainPassword = trim((string)$plainPassword);
+        $displayName = trim((string)$displayName);
+
+        if ($subvettore_id <= 0 || !form_subvettori_email_valida($toEmail) || $login === '' || $plainPassword === '') {
+            sc_log_add('SUBVETTORI_USER', 'mail credenziali skip: parametri non validi sub=' . $subvettore_id);
+            return false;
+        }
+
+        if (!function_exists('sc_send_mail_api')) {
+            sc_log_add('SUBVETTORI_USER', 'mail credenziali skip: sc_send_mail_api assente sub=' . $subvettore_id);
+            return false;
+        }
+
+        sc_exec_sql("
+            UPDATE sec_users
+            SET active = 'Y'
+            WHERE login = " . form_subvettori_sql_quote($login) . "
+        ", 'pigliacelli');
+
+        $portalUrl = rtrim(trim(form_subvettori_get_setting('login_url', '')), '/');
+        if ($portalUrl === '') {
+            $portalUrl = rtrim(trim(form_subvettori_get_setting('portal_url', '')), '/');
+        }
+
+        $nome = $displayName !== '' ? $displayName : 'Gentile utente';
+        $titolo = 'Credenziali area riservata';
+        $testo = $nome . ",\n\n"
+            . "E' stata creata una nuova utenza per l'area riservata.\n"
+            . "Puoi accedere con le credenziali seguenti (password temporanea).\n\n"
+            . "Login: " . $login . "\n"
+            . "Password: " . $plainPassword . "\n";
+        if ($portalUrl !== '') {
+            $testo .= "\nArea riservata: " . $portalUrl . "\n";
+        }
+        $testo .= "\nMessaggio automatico — non rispondere.";
+
+        $safeLogin = htmlspecialchars($login, ENT_QUOTES, 'UTF-8');
+        $safePwd = htmlspecialchars($plainPassword, ENT_QUOTES, 'UTF-8');
+        $safeNome = htmlspecialchars($nome, ENT_QUOTES, 'UTF-8');
+        $inner = '<p style="margin:0 0 16px;">' . $safeNome . ',</p>'
+            . '<p style="margin:0 0 20px;">E\' stata creata una nuova utenza per l\'<strong>area riservata</strong>. '
+            . 'Ecco le credenziali di accesso (password temporanea).</p>'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+            . 'style="margin:0 0 20px;background:#f8f9fb;border:1px solid #e2e6ea;border-radius:8px;">'
+            . '<tr><td style="padding:16px 18px;font-size:14px;line-height:1.6;">'
+            . '<strong>Login:</strong> ' . $safeLogin . '<br><strong>Password:</strong> ' . $safePwd
+            . '</td></tr></table>';
+        if ($portalUrl !== '') {
+            $safePortal = htmlspecialchars($portalUrl, ENT_QUOTES, 'UTF-8');
+            $inner .= '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px;"><tr>'
+                . '<td align="center" bgcolor="#1a3a5c" style="border-radius:8px;background-color:#1a3a5c;">'
+                . '<a href="' . $safePortal . '" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:bold;'
+                . 'color:#ffffff;text-decoration:none;">Accedi all\'area riservata</a>'
+                . '</td></tr></table>';
+        }
+        $html = form_subvettori_mail_layout($titolo, $inner, form_subvettori_mail_logo_src());
+
+        try {
+            $mailOk = sc_send_mail_api(array_merge(form_subvettori_get_smtp_config(), array(
+                'message' => array(
+                    'html'    => $html,
+                    'text'    => $testo,
+                    'to'      => $toEmail,
+                    'subject' => $titolo,
+                ),
+            )));
+            if ($mailOk === false || $mailOk === null) {
+                sc_log_add('SUBVETTORI_USER', 'mail credenziali FAIL invio sub=' . $subvettore_id . ' to=' . $toEmail);
+                return false;
+            }
+        } catch (Throwable $e) {
+            sc_log_add('SUBVETTORI_USER', 'mail credenziali EXCEPTION sub=' . $subvettore_id . ' msg=' . $e->getMessage());
+            return false;
+        }
+
+        sc_log_add(
+            'SUBVETTORI_USER',
+            'mail credenziali inviata sub=' . $subvettore_id . ' to=' . $toEmail . ' login=' . $login
+        );
+        return true;
     }
 }
 
@@ -55,56 +300,26 @@ if (!function_exists('form_subvettori_genera_password_temp')) {
     }
 }
 
-if (!function_exists('form_subvettori_login_occupato_da_altro')) {
-    function form_subvettori_login_occupato_da_altro($login, $subvettore_id)
+if (!function_exists('form_subvettori_login_collegato_a_sub')) {
+    function form_subvettori_login_collegato_a_sub($login, $subvettore_id)
     {
-        sc_lookup(rsLoginAltro, "
-            SELECT subvettore_id
+        sc_lookup(rsLoginSub, "
+            SELECT login
             FROM sec_users
             WHERE login = " . form_subvettori_sql_quote($login) . "
+              AND subvettore_id = " . form_subvettori_sql_num($subvettore_id) . "
             LIMIT 1
         ", "pigliacelli");
 
-        if (empty({rsLoginAltro})) {
-            return false;
-        }
-
-        $sub_altro = isset({rsLoginAltro[0][0]}) ? (int){rsLoginAltro[0][0]} : 0;
-        return $sub_altro !== (int)$subvettore_id;
-    }
-}
-
-if (!function_exists('form_subvettori_propaga_login')) {
-    function form_subvettori_propaga_login($login_vecchio, $login_nuovo)
-    {
-        if ($login_vecchio === '' || $login_nuovo === '' || $login_vecchio === $login_nuovo) {
-            return;
-        }
-
-        sc_exec_sql("
-            UPDATE sec_users_groups
-            SET login = " . form_subvettori_sql_quote($login_nuovo) . "
-            WHERE login = " . form_subvettori_sql_quote($login_vecchio) . "
-        ", "pigliacelli");
-
-        sc_exec_sql("
-            UPDATE contratti
-            SET intestatario = " . form_subvettori_sql_quote($login_nuovo) . "
-            WHERE intestatario = " . form_subvettori_sql_quote($login_vecchio) . "
-        ", "pigliacelli");
-
-        sc_exec_sql("
-            UPDATE documenti
-            SET login = " . form_subvettori_sql_quote($login_nuovo) . "
-            WHERE login = " . form_subvettori_sql_quote($login_vecchio) . "
-        ", "pigliacelli");
+        return !empty({rsLoginSub});
     }
 }
 
 if (!function_exists('form_subvettori_crea_utenza')) {
     function form_subvettori_crea_utenza($subvettore_id, $login, $email, $ragione_sociale, $phone)
     {
-        $password_hash = md5(form_subvettori_genera_password_temp());
+        $plainPassword = form_subvettori_genera_password_temp();
+        $password_hash = md5($plainPassword);
 
         sc_exec_sql("
             INSERT INTO sec_users (
@@ -121,7 +336,7 @@ if (!function_exists('form_subvettori_crea_utenza')) {
                 " . form_subvettori_sql_quote($ragione_sociale) . ",
                 " . form_subvettori_sql_quote($email) . ",
                 " . form_subvettori_sql_quote($phone) . ",
-                'N',
+                'Y',
                 " . form_subvettori_sql_num($subvettore_id) . "
             )
         ", "pigliacelli");
@@ -130,23 +345,59 @@ if (!function_exists('form_subvettori_crea_utenza')) {
             INSERT INTO sec_users_groups (login, group_id)
             VALUES (" . form_subvettori_sql_quote($login) . ", 2)
         ", "pigliacelli");
+
+        return array(
+            'login'    => trim((string)$login),
+            'password' => $plainPassword,
+            'email'    => form_subvettori_email_pulisci($email),
+        );
     }
 }
 
-if (!function_exists('form_subvettori_sovrascrivi_login')) {
-    function form_subvettori_sovrascrivi_login($subvettore_id, $login_vecchio, $login_nuovo, $email, $ragione_sociale, $phone)
+if (!function_exists('form_subvettori_aggiorna_anagrafica_utenza')) {
+    function form_subvettori_aggiorna_anagrafica_utenza($subvettore_id, $login, $email, $ragione_sociale, $phone)
     {
         sc_exec_sql("
             UPDATE sec_users
-            SET login = " . form_subvettori_sql_quote($login_nuovo) . ",
-                email = " . form_subvettori_sql_quote($email) . ",
+            SET email = " . form_subvettori_sql_quote($email) . ",
                 name = " . form_subvettori_sql_quote($ragione_sociale) . ",
                 phone = " . form_subvettori_sql_quote($phone) . "
             WHERE subvettore_id = " . form_subvettori_sql_num($subvettore_id) . "
-              AND login = " . form_subvettori_sql_quote($login_vecchio) . "
+              AND login = " . form_subvettori_sql_quote($login) . "
         ", "pigliacelli");
+    }
+}
 
-        form_subvettori_propaga_login($login_vecchio, $login_nuovo);
+if (!function_exists('form_subvettori_disabilita_utenza_precedente')) {
+    function form_subvettori_disabilita_utenza_precedente($subvettore_id, $nuovo_login)
+    {
+        $subvettore_id = (int)$subvettore_id;
+        $nuovo_login = trim((string)$nuovo_login);
+        $vecchio_login = '';
+
+        if (isset([glo_sub_login_subvettore_old])) {
+            $vecchio_login = trim((string)[glo_sub_login_subvettore_old]);
+        }
+
+        if ($subvettore_id <= 0 || $vecchio_login === '') {
+            return;
+        }
+        if ($nuovo_login !== '' && strcasecmp($vecchio_login, $nuovo_login) === 0) {
+            return;
+        }
+
+        sc_exec_sql("
+            UPDATE sec_users
+            SET active = 'N'
+            WHERE login = " . form_subvettori_sql_quote($vecchio_login) . "
+              AND subvettore_id = " . form_subvettori_sql_num($subvettore_id) . "
+        ", 'pigliacelli');
+
+        sc_log_add(
+            'SUBVETTORI_USER',
+            'disabilitata utenza precedente subvettore_id=' . $subvettore_id .
+            ' login=' . $vecchio_login
+        );
     }
 }
 
@@ -163,90 +414,51 @@ if (!function_exists('form_subvettori_sync_sec_user')) {
         $ragione_sociale = trim((string)$ragione_sociale);
         $phone = trim((string)$phone);
 
-        sc_lookup(rsSubUser, "
-            SELECT login
-            FROM sec_users
-            WHERE subvettore_id = " . form_subvettori_sql_num($subvettore_id) . "
-            LIMIT 1
-        ", "pigliacelli");
-
-        $utenza_esistente = !empty({rsSubUser});
-        $login_attuale = $utenza_esistente ? trim((string){rsSubUser[0][0]}) : '';
-
-        if (form_subvettori_email_valida($login_subvettore)) {
-            $login_nuovo = $login_subvettore;
-
-            if (form_subvettori_login_occupato_da_altro($login_nuovo, $subvettore_id)) {
-                sc_log_add(
-                    'SUBVETTORI_USER',
-                    'errore subvettore_id=' . $subvettore_id .
-                    ': email ' . $login_nuovo . ' gia\' usata da altro subvettore'
-                );
-                return;
-            }
-
-            if (!$utenza_esistente) {
-                form_subvettori_crea_utenza($subvettore_id, $login_nuovo, $login_nuovo, $ragione_sociale, $phone);
-                sc_log_add(
-                    'SUBVETTORI_USER',
-                    'creata utenza subvettore_id=' . $subvettore_id . ' login=' . $login_nuovo . ' active=N'
-                );
-                return;
-            }
-
-            if ($login_attuale === $login_nuovo) {
-                sc_exec_sql("
-                    UPDATE sec_users
-                    SET email = " . form_subvettori_sql_quote($login_nuovo) . ",
-                        name = " . form_subvettori_sql_quote($ragione_sociale) . ",
-                        phone = " . form_subvettori_sql_quote($phone) . "
-                    WHERE subvettore_id = " . form_subvettori_sql_num($subvettore_id) . "
-                ", "pigliacelli");
-                sc_log_add('SUBVETTORI_USER', 'aggiornata anagrafica subvettore_id=' . $subvettore_id . ' login=' . $login_nuovo);
-                return;
-            }
-
-            form_subvettori_sovrascrivi_login(
+        if (form_subvettori_login_collegato_a_sub($login_subvettore, $subvettore_id)) {
+            form_subvettori_aggiorna_anagrafica_utenza(
                 $subvettore_id,
-                $login_attuale,
-                $login_nuovo,
-                $login_nuovo,
+                $login_subvettore,
+                $login_subvettore,
                 $ragione_sociale,
                 $phone
             );
             sc_log_add(
                 'SUBVETTORI_USER',
-                'sovrascritto login subvettore_id=' . $subvettore_id .
-                ' da ' . $login_attuale . ' a ' . $login_nuovo
+                'aggiornata anagrafica utenza esistente subvettore_id=' . $subvettore_id .
+                ' login=' . $login_subvettore
             );
+        }
+
+        if (!form_subvettori_mail_cambiata()) {
             return;
         }
 
-        if ($utenza_esistente) {
-            sc_log_add(
-                'SUBVETTORI_USER',
-                'skip subvettore_id=' . $subvettore_id .
-                ': email non valida, utenza esistente login=' . $login_attuale
-            );
+        if (form_subvettori_login_collegato_a_sub($login_subvettore, $subvettore_id)) {
             return;
         }
 
-        $login_tecnico = 'SUBVETTORE_' . $subvettore_id;
-        $email_tecnica = $login_tecnico . '@local.invalid';
-
-        if (form_subvettori_login_occupato_da_altro($login_tecnico, $subvettore_id)) {
-            sc_log_add(
-                'SUBVETTORI_USER',
-                'errore subvettore_id=' . $subvettore_id . ': login tecnico ' . $login_tecnico . ' occupato'
-            );
-            return;
-        }
-
-        form_subvettori_crea_utenza($subvettore_id, $login_tecnico, $email_tecnica, $ragione_sociale, $phone);
+        $created = form_subvettori_crea_utenza(
+            $subvettore_id,
+            $login_subvettore,
+            $login_subvettore,
+            $ragione_sociale,
+            $phone
+        );
         sc_log_add(
             'SUBVETTORI_USER',
-            'creata utenza tecnica subvettore_id=' . $subvettore_id . ' login=' . $login_tecnico . ' active=N'
+            'creata nuova utenza subvettore_id=' . $subvettore_id .
+            ' login=' . $login_subvettore . ' active=Y'
         );
+        if (is_array($created)) {
+            form_subvettori_disabilita_utenza_precedente($subvettore_id, $login_subvettore);
+            form_subvettori_invia_mail_credenziali(
+                $subvettore_id,
+                $created['email'],
+                $created['login'],
+                $created['password'],
+                $ragione_sociale
+            );
+        }
     }
 }
 

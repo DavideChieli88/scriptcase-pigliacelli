@@ -1,0 +1,37 @@
+$subId = (int){subvettore_id};
+if ($subId > 0) {
+    sc_lookup(rsFdLs, "
+        SELECT login_subvettore
+        FROM subvettori
+        WHERE id = $subId
+        LIMIT 1
+    ", 'pigliacelli');
+    $ls = isset({rsFdLs[0][0]}) ? trim((string){rsFdLs[0][0]}) : '';
+    if ($ls !== '') {
+        $lsSql = str_replace("'", "''", $ls);
+        sc_lookup(rsFdUl, "
+            SELECT login
+            FROM sec_users
+            WHERE login = '$lsSql'
+              AND subvettore_id = $subId
+            LIMIT 1
+        ", 'pigliacelli');
+        if (!empty({rsFdUl[0][0]})) {
+            {login} = trim((string){rsFdUl[0][0]});
+        }
+    }
+    if (trim((string){login}) === '') {
+        sc_lookup(rsFdUf, "
+            SELECT login
+            FROM sec_users
+            WHERE subvettore_id = $subId
+            ORDER BY login
+            LIMIT 1
+        ", 'pigliacelli');
+        if (!empty({rsFdUf[0][0]})) {
+            {login} = trim((string){rsFdUf[0][0]});
+        }
+    }
+}
+
+sc_exec_sql("COMMIT");

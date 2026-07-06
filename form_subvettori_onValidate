@@ -1,0 +1,63 @@
+/**
+ * form_subvettori → onValidate
+ *
+ * Se login_subvettore è stato modificato (sc_changed):
+ * - blocca email vuota / non valida
+ * - blocca se la mail è già login di un altro subvettore (o utente senza subvettore_id)
+ *
+ * Su update, se la mail non è cambiata, nessun controllo email.
+ */
+
+$subvettore_id = isset({id}) ? (int){id} : 0;
+$login_subvettore = isset({login_subvettore}) ? trim((string){login_subvettore}) : '';
+
+if ($subvettore_id <= 0) {
+    [glo_sub_login_subvettore_changed] = sc_changed({login_subvettore}) ? '1' : '0';
+}
+
+$mail_modificata = ($subvettore_id > 0 && sc_changed({login_subvettore}))
+    || ($subvettore_id <= 0 && isset([glo_sub_login_subvettore_changed]) && [glo_sub_login_subvettore_changed] === '1');
+
+if (!$mail_modificata) {
+    return;
+}
+
+if ($login_subvettore === '') {
+    sc_error_message('Inserire un indirizzo email valido nel campo Email.');
+    sc_error_exit();
+}
+
+if (strpos($login_subvettore, ';') !== false || strpos($login_subvettore, ',') !== false || strpos($login_subvettore, ' ') !== false) {
+    sc_error_message('Il campo Email non può contenere spazi, virgole o punti e virgola.');
+    sc_error_exit();
+}
+
+if (filter_var($login_subvettore, FILTER_VALIDATE_EMAIL) === false) {
+    sc_error_message('Il campo Email non contiene un indirizzo valido.');
+    sc_error_exit();
+}
+
+$loginSql = str_replace("'", "''", $login_subvettore);
+
+sc_lookup(rsLoginEsistente, "
+    SELECT subvettore_id
+    FROM sec_users
+    WHERE login = '$loginSql'
+    LIMIT 1
+", "pigliacelli");
+
+if (empty({rsLoginEsistente})) {
+    return;
+}
+
+$sub_esistente = isset({rsLoginEsistente[0][0]}) ? {rsLoginEsistente[0][0]} : null;
+
+if ($sub_esistente !== null && $sub_esistente !== '' && $subvettore_id > 0 && (int)$sub_esistente === $subvettore_id) {
+    return;
+}
+
+$msg = "L'indirizzo email \"" . $login_subvettore . "\" è già registrato come login di un altro utente. "
+    . "Impossibile utilizzarlo per questo subvettore.";
+
+sc_error_message($msg);
+sc_error_exit();

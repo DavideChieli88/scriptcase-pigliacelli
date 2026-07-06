@@ -1,46 +1,38 @@
 /**
  * form_documenti → onValidate
- * Solo group_id = 2: file + data_scadenza obbligatori.
- * Document(filename): in update {file} può essere vuoto anche se il file c'è in DB.
+ * group_id = 2: file + data_scadenza obbligatori.
+ * altri gruppi: subvettore_id obbligatorio (login risolto in onBeforeInsert/Update).
  */
 
 sc_lookup(rsGrp, "SELECT group_id FROM sec_users_groups WHERE login = '[usr_login]' LIMIT 1");
+$groupId = !empty({rsGrp[0][0]}) ? (int){rsGrp[0][0]} : 0;
 
-if ((int){rsGrp[0][0]} !== 2) {
+if ($groupId === 2) {
+    $err = array();
+
+    if (empty({data_scadenza}) || {data_scadenza} == 'null') {
+        $err[] = 'data di scadenza';
+    }
+
+    $hasFile = trim((string){file}) !== '';
+    if (!$hasFile && !empty($_FILES)) {
+        foreach ($_FILES as $up) {
+            if (!empty($up['name'])) {
+                $hasFile = true;
+                break;
+            }
+        }
+    }
+    if (!$hasFile) {
+        $err[] = 'file';
+    }
+
+    if (!empty($err)) {
+        sc_error_message('Obbligatorio: ' . implode(' e ', $err) . '.');
+    }
     return;
 }
 
-$err = array();
-
-$ds = trim((string){data_scadenza});
-if ($ds === '' || $ds === '0000-00-00' || $ds === '00/00/0000' || strpos($ds, '0000-00-00') === 0) {
-    $err[] = 'data di scadenza';
-}
-
-$hasFile = trim((string){file}) !== '';
-
-if (!$hasFile && trim((string){file_ul_name}) !== '') {
-    $hasFile = true;
-}
-
-if (!$hasFile && !empty($_FILES)) {
-    foreach ($_FILES as $up) {
-        if (!empty($up['name']) || !empty($up['tmp_name'])) {
-            $hasFile = true;
-            break;
-        }
-    }
-}
-
-if (!$hasFile && (int){id} > 0) {
-    sc_lookup(rsFileDoc, "SELECT file FROM documenti WHERE id = " . (int){id} . " LIMIT 1");
-    $hasFile = trim((string){rsFileDoc[0][0]}) !== '';
-}
-
-if (!$hasFile) {
-    $err[] = 'file';
-}
-
-if (!empty($err)) {
-    sc_error_message('Obbligatorio: ' . implode(' e ', $err) . '.');
+if ((int){subvettore_id} <= 0) {
+    sc_error_message('Obbligatorio: subvettore.');
 }

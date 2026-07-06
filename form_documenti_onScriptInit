@@ -1,0 +1,27 @@
+sc_select(rs, "SELECT group_id FROM sec_users_groups sug INNER JOIN sec_users su ON su.login = sug.login
+  WHERE su.login = '[usr_login]'
+");
+
+// Controllo che la query sia andata a buon fine
+if ({rs} !== false) {
+    // Ciclo sui risultati
+    while (!$rs->EOF) {
+        $group_id = $rs->fields[0];
+
+        // Se il gruppo è subvettore → nascondi il campo e imposta il valore
+        if ($group_id == 2) {
+			sc_btn_display('new', 'off');
+            sc_field_display({login}, 'off');
+			sc_field_display({is_not_ok}, 'off');
+			sc_field_display({subvettore_id}, 'off');
+            {login} = [usr_login];   
+			
+        }
+
+        $rs->MoveNext();
+    }
+    $rs->Close();
+} else {
+    echo "Errore nella query ";
+}
+

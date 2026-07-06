@@ -2,25 +2,15 @@
  * Blank ScriptCase: scarica documenti.file dal server (readfile).
  *
  * Parametro globale: [documentoId]
- * Cerca in templates_path + tutti i path tipici SC (doc/img), poi logga il path usato.
+ * Accesso: utente loggato ScriptCase; visibilità documenti gestita da grid/form/menu.
  */
 $documentoId = (int)[documentoId];
 if ($documentoId <= 0) {
     die('Manca il documentoId');
 }
 
-$usrLogin = trim((string)[usr_login]);
-
-sc_lookup(rsGrp, "
-    SELECT group_id
-    FROM sec_users_groups
-    WHERE login = " . "'" . str_replace("'", "''", $usrLogin) . "'
-    LIMIT 1
-");
-$groupId = !empty({rsGrp[0][0]}) ? (int){rsGrp[0][0]} : 0;
-
 sc_lookup(rsDoc, "
-    SELECT file, login
+    SELECT file
     FROM documenti
     WHERE id = $documentoId
     LIMIT 1
@@ -31,14 +21,9 @@ if (empty({rsDoc})) {
 }
 
 $fileName = trim((string){rsDoc[0][0]});
-$docLogin = trim((string){rsDoc[0][1]});
 
 if ($fileName === '') {
     die('Nessun file allegato al documento.');
-}
-
-if ($groupId === 2 && strcasecmp($usrLogin, $docLogin) !== 0) {
-    die('Non autorizzato a scaricare questo documento.');
 }
 
 $baseName = basename($fileName);

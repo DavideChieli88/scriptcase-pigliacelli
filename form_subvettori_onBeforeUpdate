@@ -1,0 +1,24 @@
+/**
+ * form_subvettori → onBeforeUpdate
+ *
+ * sc_changed non è disponibile in onAfterUpdate: salviamo il flag per gli eventi After.
+ * Se la mail cambia, salviamo il valore precedente (da DB) per disabilitare la vecchia utenza in After.
+ */
+
+[glo_sub_login_subvettore_changed] = sc_changed({login_subvettore}) ? '1' : '0';
+[glo_sub_login_subvettore_old] = '';
+
+if ([glo_sub_login_subvettore_changed] === '1') {
+    $subId = isset({id}) ? (int){id} : 0;
+    if ($subId > 0) {
+        sc_lookup(rsSubMailOld, "
+            SELECT login_subvettore
+            FROM subvettori
+            WHERE id = $subId
+            LIMIT 1
+        ", 'pigliacelli');
+        if (!empty({rsSubMailOld[0][0]})) {
+            [glo_sub_login_subvettore_old] = trim((string){rsSubMailOld[0][0]});
+        }
+    }
+}
