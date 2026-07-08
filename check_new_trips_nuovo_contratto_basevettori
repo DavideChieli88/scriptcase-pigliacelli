@@ -6,7 +6,8 @@
 // Subvettore ESISTENTE: contratto tipo 2 con le nuove tratte (assenti in `tratte`
 // per quel subvettore_id, non globalmente); tipo 3 se variano tariffe su tratte
 // gia' presenti a DB per quel subvettore prima del run.
-// Senza mail automatica.
+// Senza mail automatica (credenziali: app _credenziali).
+// Multi-utenza: email SGA diversa → nuova utenza, disabilita vecchia, aggiorna login_subvettore.
 function sql_quote($v) {
     if ($v === null) return "NULL";
     return "'" . str_replace("'", "''", (string)$v) . "'";
@@ -407,6 +408,56 @@ function log_export_tratte($azione, $messaggio) {
     sc_log_add("EXPORT_TRATTE_" . $azione, $messaggio);
 }
 
+function log_sga_testo_breve($s, $max = 36) {
+    $s = trim((string)$s);
+    if (strlen($s) <= $max) {
+        return $s;
+    }
+    return substr($s, 0, $max - 3) . '...';
+}
+
+function log_sga_viaggio_ref($viaggio) {
+    $anno = isset($viaggio['ANNO']) ? (int)$viaggio['ANNO'] : 0;
+    $numero = isset($viaggio['NUMERO']) ? (int)$viaggio['NUMERO'] : 0;
+    $vet = isset($viaggio['codice_vettore']) ? trim((string)$viaggio['codice_vettore']) : '';
+    return 'a' . $anno . '/n' . $numero . ' vet=' . $vet;
+}
+
+function log_sga_skip($anno, $numero, $codice_vettore, $motivo, $dettaglio = '') {
+    $msg = 'a' . (int)$anno . '/n' . (int)$numero
+        . ' vet=' . trim((string)$codice_vettore)
+        . ' motivo=' . $motivo;
+    if ($dettaglio !== '') {
+        $msg .= ' ' . $dettaglio;
+    }
+    log_export_tratte('SGA_SKIP', $msg);
+}
+
+function log_sga_candidato($viaggio) {
+    $sync = isset($viaggio['sync_data_ora']) ? trim((string)$viaggio['sync_data_ora']) : '';
+    $importo = isset($viaggio['importo_unitario']) ? (string)$viaggio['importo_unitario'] : '';
+    $partenza = isset($viaggio['partenza_data_ora']) ? trim((string)$viaggio['partenza_data_ora']) : '';
+    $carico = log_sga_testo_breve(isset($viaggio['carico_str']) ? $viaggio['carico_str'] : '');
+    $scarico = log_sga_testo_breve(isset($viaggio['scarico_str']) ? $viaggio['scarico_str'] : '');
+    log_export_tratte(
+        'SGA_CAND',
+        log_sga_viaggio_ref($viaggio) .
+        ' sync=' . $sync .
+        ' imp=' . $importo .
+        ' part=' . $partenza .
+        " C='" . $carico . "'" .
+        " S='" . $scarico . "'"
+    );
+}
+
+function log_viaggio_esito($viaggio, $esito, $extra = '') {
+    $msg = log_sga_viaggio_ref($viaggio) . ' esito=' . $esito;
+    if ($extra !== '') {
+        $msg .= ' ' . $extra;
+    }
+    log_export_tratte('VIAGGIO', $msg);
+}
+
 function partenza_data_ora_valida($value) {
     $value = trim((string)$value);
     if ($value === '') {
@@ -707,23 +758,138 @@ function sync_pec_subvettore_da_sga($subvettore_id, $pec_sga) {
     );
 }
 
-function crea_utenza_subvettore($subvettore_id, $email, $ragione_sociale, $phone) {
+function login_collegato_a_sub($login, $subvettore_id) {
+    $login = trim((string)$login);
+    $subvettore_id = (int)$subvettore_id;
+    if ($login === '' || $subvettore_id <= 0) {
+        return false;
+    }
+
+    sc_lookup(rsLoginSub, "
+        SELECT login
+        FROM sec_users
+        WHERE login = " . sql_quote($login) . "
+          AND subvettore_id = " . sql_num($subvettore_id) . "
+        LIMIT 1
+    ", "pigliacelli");
+
+    return !empty({rsLoginSub});
+}
+
+function login_sub_gia_usato_da_altro_sub($login, $subvettore_id) {
+    $login = trim((string)$login);
+    $subvettore_id = (int)$subvettore_id;
+    if ($login === '') {
+        return false;
+    }
+
+    sc_lookup(rsLoginAlt, "
+        SELECT subvettore_id
+        FROM sec_users
+        WHERE login = " . sql_quote($login) . "
+        LIMIT 1
+    ", "pigliacelli");
+
+    if (empty({rsLoginAlt})) {
+        return false;
+    }
+
+    $sub_alt = {rsLoginAlt[0][0]};
+    if ($sub_alt === null || $sub_alt === '') {
+        return true;
+    }
+
+    return (int)$sub_alt !== $subvettore_id;
+}
+
+function aggiorna_anagrafica_utenza_sub($subvettore_id, $login, $email, $ragione_sociale, $phone) {
+    sc_exec_sql("
+        UPDATE sec_users
+        SET email = " . sql_quote($email) . ",
+            name = " . sql_quote($ragione_sociale) . ",
+            phone = " . sql_quote($phone) . "
+        WHERE subvettore_id = " . sql_num($subvettore_id) . "
+          AND login = " . sql_quote($login) . "
+    ", "pigliacelli");
+}
+
+function disabilita_utenza_subvettore($subvettore_id, $vecchio_login) {
+    $subvettore_id = (int)$subvettore_id;
+    $vecchio_login = trim((string)$vecchio_login);
+    if ($subvettore_id <= 0 || $vecchio_login === '') {
+        return;
+    }
+
+    sc_exec_sql("
+        UPDATE sec_users
+        SET active = 'N'
+        WHERE login = " . sql_quote($vecchio_login) . "
+          AND subvettore_id = " . sql_num($subvettore_id) . "
+    ", "pigliacelli");
+
+    log_export_tratte(
+        'SUB_UTENZA',
+        'disabilitata utenza precedente subvettore_id=' . $subvettore_id . ' login=' . $vecchio_login
+    );
+}
+
+function intestatario_primo_utente_sub($subvettore_id) {
+    sc_lookup(rsPrimoUser, "
+        SELECT login
+        FROM sec_users
+        WHERE subvettore_id = " . sql_num($subvettore_id) . "
+        ORDER BY login
+        LIMIT 1
+    ", "pigliacelli");
+
+    if (!empty({rsPrimoUser[0][0]})) {
+        return trim((string){rsPrimoUser[0][0]});
+    }
+
+    return null;
+}
+
+function utenza_ha_mai_acceduto($login, $subvettore_id) {
+    $login = trim((string)$login);
+    $subvettore_id = (int)$subvettore_id;
+    if ($login === '' || $subvettore_id <= 0) {
+        return false;
+    }
+
+    sc_lookup(rsUtenzaUsata, "
+        SELECT COALESCE(hasLoggedFirst, 0)
+        FROM sec_users
+        WHERE login = " . sql_quote($login) . "
+          AND subvettore_id = " . sql_num($subvettore_id) . "
+        LIMIT 1
+    ", "pigliacelli");
+
+    if (empty({rsUtenzaUsata})) {
+        return false;
+    }
+
+    return (int){rsUtenzaUsata[0][0]} === 1;
+}
+
+function crea_utenza_subvettore($subvettore_id, $email, $ragione_sociale, $phone, $active = 'N') {
     $group_id = 2;
     $email = trim((string)$email);
+    $active = strtoupper(trim((string)$active)) === 'N' ? 'N' : 'Y';
 
     if (!emailValidaSingola($email)) {
         return null;
     }
 
-    sc_lookup(check_user, "
-        SELECT login
-        FROM sec_users
-        WHERE login = " . sql_quote($email) . "
-        LIMIT 1
-    ", "pigliacelli");
+    if (login_collegato_a_sub($email, $subvettore_id)) {
+        return $email;
+    }
 
-    if (!empty({check_user})) {
-        return {check_user[0][0]};
+    if (login_sub_gia_usato_da_altro_sub($email, $subvettore_id)) {
+        log_export_tratte(
+            'SUB_UTENZA',
+            'skip crea utenza: email=' . $email . ' gia login di altro subvettore_id'
+        );
+        return null;
     }
 
     $tempPassword = generateTempPassword();
@@ -744,7 +910,7 @@ function crea_utenza_subvettore($subvettore_id, $email, $ragione_sociale, $phone
             " . sql_quote($ragione_sociale) . ",
             " . sql_quote($email) . ",
             " . sql_quote($phone) . ",
-            'N',
+            " . sql_quote($active) . ",
             " . sql_num($subvettore_id) . "
         )
     ", "pigliacelli");
@@ -758,6 +924,11 @@ function crea_utenza_subvettore($subvettore_id, $email, $ragione_sociale, $phone
             " . sql_num($group_id) . "
         )
     ", "pigliacelli");
+
+    log_export_tratte(
+        'SUB_UTENZA',
+        'creata nuova utenza subvettore_id=' . (int)$subvettore_id . ' login=' . $email
+    );
 
     return $email;
 }
@@ -814,23 +985,94 @@ function crea_utenza_tecnica_subvettore($subvettore_id, $ragione_sociale, $phone
 }
 
 function recupera_intestatario_contratto($subvettore_id, $email, $ragione_sociale, $phone) {
-    sc_lookup(userRow, "
-        SELECT login
-        FROM sec_users
-        WHERE subvettore_id = " . sql_num($subvettore_id) . "
+    $subvettore_id = (int)$subvettore_id;
+    $email = trim((string)$email);
+
+    sc_lookup(rsSubMail, "
+        SELECT login_subvettore
+        FROM subvettori
+        WHERE id = " . sql_num($subvettore_id) . "
         LIMIT 1
     ", "pigliacelli");
 
-    if (!empty({userRow})) {
-        return {userRow[0][0]};
+    $login_db = !empty({rsSubMail[0][0]}) ? trim((string){rsSubMail[0][0]}) : '';
+
+    if (!emailValidaSingola($email)) {
+        $login = intestatario_primo_utente_sub($subvettore_id);
+        if ($login !== null) {
+            return $login;
+        }
+        return crea_utenza_tecnica_subvettore($subvettore_id, $ragione_sociale, $phone);
     }
 
-    $login = crea_utenza_subvettore($subvettore_id, $email, $ragione_sociale, $phone);
-    if ($login !== null) {
+    if (login_sub_gia_usato_da_altro_sub($email, $subvettore_id)) {
+        log_export_tratte(
+            'SUB_UTENZA',
+            'email SGA=' . $email . ' gia login altro sub — intestatario fallback subvettore_id=' . $subvettore_id
+        );
+        $login = intestatario_primo_utente_sub($subvettore_id);
+        if ($login !== null) {
+            return $login;
+        }
+        return crea_utenza_tecnica_subvettore($subvettore_id, $ragione_sociale, $phone);
+    }
+
+    if (login_collegato_a_sub($email, $subvettore_id)) {
+        aggiorna_anagrafica_utenza_sub($subvettore_id, $email, $email, $ragione_sociale, $phone);
+        if ($login_db !== '' && strcasecmp($login_db, $email) !== 0) {
+            sc_exec_sql("
+                UPDATE subvettori
+                SET login_subvettore = " . sql_quote($email) . "
+                WHERE id = " . sql_num($subvettore_id) . "
+            ", "pigliacelli");
+        }
+        return $email;
+    }
+
+    if ($login_db !== '' && strcasecmp($login_db, $email) !== 0 && login_collegato_a_sub($login_db, $subvettore_id)) {
+        $vecchio_usato = utenza_ha_mai_acceduto($login_db, $subvettore_id);
+        disabilita_utenza_subvettore($subvettore_id, $login_db);
+        log_export_tratte(
+            'SUB_UTENZA',
+            'cambio_email sub=' . $subvettore_id .
+            ' da=' . $login_db .
+            ' a=' . $email .
+            ' vecchio_usato=' . ($vecchio_usato ? '1' : '0')
+        );
+        $login = crea_utenza_subvettore($subvettore_id, $email, $ragione_sociale, $phone, 'N');
+        if ($login === null) {
+            $login = intestatario_primo_utente_sub($subvettore_id);
+            if ($login !== null) {
+                return $login;
+            }
+            return crea_utenza_tecnica_subvettore($subvettore_id, $ragione_sociale, $phone);
+        }
+
+        sc_exec_sql("
+            UPDATE subvettori
+            SET login_subvettore = " . sql_quote($email) . "
+            WHERE id = " . sql_num($subvettore_id) . "
+        ", "pigliacelli");
+
         return $login;
     }
 
-    return crea_utenza_tecnica_subvettore($subvettore_id, $ragione_sociale, $phone);
+    $login = crea_utenza_subvettore($subvettore_id, $email, $ragione_sociale, $phone, 'N');
+    if ($login === null) {
+        $login = intestatario_primo_utente_sub($subvettore_id);
+        if ($login !== null) {
+            return $login;
+        }
+        return crea_utenza_tecnica_subvettore($subvettore_id, $ragione_sociale, $phone);
+    }
+
+    sc_exec_sql("
+        UPDATE subvettori
+        SET login_subvettore = " . sql_quote($email) . "
+        WHERE id = " . sql_num($subvettore_id) . "
+    ", "pigliacelli");
+
+    return $login;
 }
 
 function data_compare_value($value) {
@@ -1000,7 +1242,7 @@ $sql_viaggi_base = "
       t.PROVINCIA,
       t.TELEFONO,
       t.CELLULARE,
-      NULLIF(RTRIM(t.E_MAIL), '') AS E_MAIL,
+      COALESCE(NULLIF(RTRIM(t.E_MAIL), ''), NULLIF(RTRIM(t.B2B_EMAIL), '')) AS E_MAIL,
       NULLIF(RTRIM(t.E_MAIL_CERTIFICATA), '') AS E_MAIL_CERTIFICATA,
       b.PARTITA_IVA,
       b.CODICE_FISCALE,
@@ -1097,12 +1339,27 @@ try {
         // Mantiene il comportamento dei JOIN della query originale: senza carico o scarico il viaggio non entra.
         if ($carico_str === '' || $scarico_str === '') {
             $stat_senza_localita++;
+            log_sga_skip(
+                $anno,
+                $numero,
+                $codice_vettore,
+                'senza_localita',
+                'C=' . ($carico_str === '' ? 'VUOTO' : 'ok') . ' S=' . ($scarico_str === '' ? 'VUOTO' : 'ok')
+            );
             continue;
         }
 
+        $importo_raw_sga = $importo_unitario;
         $importo_unitario = importo_unitario_normalizzato($importo_unitario);
         if ($importo_unitario === null) {
             $stat_importo_non_valido++;
+            log_sga_skip(
+                $anno,
+                $numero,
+                $codice_vettore,
+                'importo_invalido',
+                'imp_raw=' . (string)$importo_raw_sga
+            );
             continue;
         }
 
@@ -1181,6 +1438,7 @@ $stat_run = array(
 
 foreach ($viaggi_unici as $viaggio) {
     $stat_run['elaborati']++;
+    log_sga_candidato($viaggio);
     $codice_vettore   = $viaggio['codice_vettore'];
     $ragione_sociale  = $viaggio['ragione_sociale'];
     $indirizzo        = $viaggio['indirizzo'];
@@ -1188,6 +1446,7 @@ foreach ($viaggi_unici as $viaggio) {
     $sede_prov        = $viaggio['sede_prov'];
     $phone            = $viaggio['phone'];
     $cellphone        = $viaggio['cellphone'];
+    $phone_utenza     = trim((string)$phone) !== '' ? trim((string)$phone) : trim((string)$cellphone);
     $email            = $viaggio['email'];
     $pec              = trim((string)($viaggio['pec'] ?? ''));
     $piva             = $viaggio['piva'];
@@ -1242,17 +1501,20 @@ foreach ($viaggi_unici as $viaggio) {
 
         sc_lookup(lastSubId, "SELECT LAST_INSERT_ID()", "pigliacelli");
         if (empty({lastSubId})) {
+            log_viaggio_esito($viaggio, 'errore_sub_insert');
             continue;
         }
         $subvettore_id = {lastSubId[0][0]};
         $stat_run['subvettori_creati']++;
         $subvettori_nuovi_run[(int)$subvettore_id] = true;
+        log_viaggio_esito($viaggio, 'sub_nuovo', 'sub=' . (int)$subvettore_id . ' mail=' . trim((string)$email));
 
-        $intestatario_contratto = recupera_intestatario_contratto($subvettore_id, $email, $ragione_sociale, $phone);
+        $intestatario_contratto = recupera_intestatario_contratto($subvettore_id, $email, $ragione_sociale, $phone_utenza);
     } else {
         $subvettore_id = {sub[0][0]};
         sync_pec_subvettore_da_sga($subvettore_id, $pec);
-        $intestatario_contratto = recupera_intestatario_contratto($subvettore_id, $email, $ragione_sociale, $phone);
+        log_viaggio_esito($viaggio, 'sub_esistente', 'sub=' . (int)$subvettore_id);
+        $intestatario_contratto = recupera_intestatario_contratto($subvettore_id, $email, $ragione_sociale, $phone_utenza);
     }
 
     if ($intestatario_contratto === null) {
@@ -1307,6 +1569,14 @@ foreach ($viaggi_unici as $viaggio) {
             }
         }
         log_tratta_senza_localita($tratta_id_esistente, $subvettore_id, $hash, $carico_str, $scarico_str);
+        log_viaggio_esito(
+            $viaggio,
+            'hash_gia_presente',
+            'sub=' . (int)$subvettore_id .
+            ' tratta=' . (int)$tratta_id_esistente .
+            ' tipo_ct=' . (int)$tipo_contratto_nuove .
+            ' contr=' . ($crea_contratto ? 'si' : 'no')
+        );
         continue;
     }
 
@@ -1349,6 +1619,11 @@ foreach ($viaggi_unici as $viaggio) {
                     'tratta=' . (int)$tratta_id_esistente .
                     ' importo_non_valido=' . (string)$importo_unitario
                 );
+                log_viaggio_esito(
+                    $viaggio,
+                    'tratta_modifica_skip',
+                    'sub=' . (int)$subvettore_id . ' tratta=' . (int)$tratta_id_esistente
+                );
             } else {
             $stat_run['tratte_modificate']++;
             $nuova_version = ($version_esistente === null || $version_esistente === '') ? 2 : ((int)$version_esistente + 1);
@@ -1375,12 +1650,24 @@ foreach ($viaggi_unici as $viaggio) {
                     $pending_modifiche_tariffa
                 );
             }
+            log_viaggio_esito(
+                $viaggio,
+                'tratta_modificata',
+                'sub=' . (int)$subvettore_id .
+                ' tratta=' . (int)$tratta_id_esistente .
+                ' tipo_ct=3 pending=' . ($crea_contratto ? 'si' : 'no')
+            );
             }
         } elseif ($crea_contratto && tratta_ha_tariffa_valida($tratta_id_esistente)) {
             $stat_run['tratte_invariate']++;
             $contratto_id = contratto_per_assicura($tratta_id_esistente, $tipo_contratto_nuove, $intestatario_contratto, $subvettore_id);
             $version = ($version_esistente === null || $version_esistente === '') ? 1 : (int)$version_esistente;
             if ($contratto_id === null) {
+                log_viaggio_esito(
+                    $viaggio,
+                    'tratta_invariata_no_contratto',
+                    'sub=' . (int)$subvettore_id . ' tratta=' . (int)$tratta_id_esistente
+                );
                 continue;
             }
             assicura_contratto_tratta(
@@ -1394,6 +1681,21 @@ foreach ($viaggi_unici as $viaggio) {
                 $extra_totale,
                 $totale,
                 $hash
+            );
+            log_viaggio_esito(
+                $viaggio,
+                'tratta_invariata',
+                'sub=' . (int)$subvettore_id .
+                ' tratta=' . (int)$tratta_id_esistente .
+                ' contr=' . (int)$contratto_id
+            );
+        } else {
+            log_viaggio_esito(
+                $viaggio,
+                'tratta_loc_esistente',
+                'sub=' . (int)$subvettore_id .
+                ' tratta=' . (int)$tratta_id_esistente .
+                ' contr=' . ($crea_contratto ? 'no' : 'skip_viaggio')
             );
         }
 
@@ -1420,6 +1722,7 @@ foreach ($viaggi_unici as $viaggio) {
     sc_lookup(lastId, "SELECT LAST_INSERT_ID(), ROW_COUNT()", "pigliacelli");
     if (empty({lastId}) || {lastId[0][0]} === null || {lastId[0][0]} === '') {
         $stat_run['errori']++;
+        log_viaggio_esito($viaggio, 'errore_tratta_insert', 'sub=' . (int)$subvettore_id);
         log_export_tratte(
             "ERROR",
             "Impossibile recuperare LAST_INSERT_ID per subvettore " . $subvettore_id .
@@ -1461,6 +1764,11 @@ foreach ($viaggi_unici as $viaggio) {
             }
         }
         log_tratta_senza_localita($tratta_id, $subvettore_id, $hash, $carico_str, $scarico_str);
+        log_viaggio_esito(
+            $viaggio,
+            'tratta_dup_concorrente',
+            'sub=' . (int)$subvettore_id . ' tratta=' . (int)$tratta_id
+        );
         continue;
     }
 
@@ -1497,12 +1805,33 @@ foreach ($viaggi_unici as $viaggio) {
             $pending_tratte_tipo1,
             $pending_tratte_tipo2
         );
+        log_viaggio_esito(
+            $viaggio,
+            'tratta_nuova',
+            'sub=' . (int)$subvettore_id .
+            ' tratta=' . (int)$tratta_id .
+            ' tipo_ct=' . (int)$tipo_contratto_nuove .
+            ' pending=si'
+        );
     } elseif ($crea_contratto) {
         log_export_tratte(
             'SKIP_PENDING',
             'tratta=' . (int)$tratta_id .
             ' subvettore=' . (int)$subvettore_id .
             ' tariffa_db_non_valida'
+        );
+        log_viaggio_esito(
+            $viaggio,
+            'tratta_nuova_no_pending',
+            'sub=' . (int)$subvettore_id . ' tratta=' . (int)$tratta_id
+        );
+    } else {
+        log_viaggio_esito(
+            $viaggio,
+            'tratta_nuova_no_contratto',
+            'sub=' . (int)$subvettore_id .
+            ' tratta=' . (int)$tratta_id .
+            ' motivo=' . ($motivo_skip_contratto !== '' ? $motivo_skip_contratto : 'viaggio_non_ammesso')
         );
     }
 }

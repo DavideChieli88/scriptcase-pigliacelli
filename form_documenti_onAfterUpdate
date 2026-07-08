@@ -244,6 +244,47 @@ if (!function_exists('form_docs_mail_btn')) {
     }
 }
 
+if (!function_exists('form_docs_ragione_sociale_sub')) {
+    function form_docs_ragione_sociale_sub($subvettore_id)
+    {
+        $subvettore_id = (int)$subvettore_id;
+        if ($subvettore_id <= 0) {
+            return '';
+        }
+
+        sc_lookup(rsFdSubRs, "
+            SELECT COALESCE(ragione_sociale, '')
+            FROM subvettori
+            WHERE id = $subvettore_id
+            LIMIT 1
+        ", 'pigliacelli');
+
+        return !empty({rsFdSubRs[0][0]}) ? trim((string){rsFdSubRs[0][0]}) : '';
+    }
+}
+
+if (!function_exists('form_docs_etichetta_subvettore')) {
+    function form_docs_etichetta_subvettore($subvettore_id, $fallback = '')
+    {
+        $ragione = form_docs_ragione_sociale_sub($subvettore_id);
+        if ($ragione !== '') {
+            return $ragione;
+        }
+        return trim((string)$fallback);
+    }
+}
+
+if (!function_exists('form_docs_saluto_subvettore')) {
+    function form_docs_saluto_subvettore($subvettore_id)
+    {
+        $ragione = form_docs_ragione_sociale_sub($subvettore_id);
+        if ($ragione !== '') {
+            return 'Gentile ' . $ragione;
+        }
+        return 'Gentile subvettore';
+    }
+}
+
 $tipo_documento = {tipo_documento_id};
 sc_lookup(rs, "SELECT nome FROM tipi_documento WHERE id = $tipo_documento");
 $nome_documento = {rs[0][0]};
@@ -303,6 +344,8 @@ $isUploadSubvettore = (
 );
 
 if ($isUploadSubvettore) {
+
+    $subEtichetta = form_docs_etichetta_subvettore($docSubId, $intestatario);
 
     // group_id: 1 = admin, 2 = subvettore, 3 = operatore
     sc_lookup(rsOps, "
@@ -389,20 +432,20 @@ if ($isUploadSubvettore) {
 
         $soggetto     = "Documento caricato — " . $nome_documento . " (#$docId)";
         $safeDocId    = (int)$docId;
-        $safeSub      = htmlspecialchars(trim((string)$intestatario), ENT_QUOTES, 'UTF-8');
+        $safeSub      = htmlspecialchars($subEtichetta, ENT_QUOTES, 'UTF-8');
 
         $testoPlain = "Gentile operatore,\n\n"
-            . "il subvettore $intestatario ha caricato il seguente documento:\n\n"
+            . "il subvettore $subEtichetta ha caricato il seguente documento:\n\n"
             . "Tipo documento: $nome_documento\n"
             . "Riferimento: #$safeDocId\n"
-            . "Subvettore: $intestatario\n\n"
+            . "Subvettore: $subEtichetta\n\n"
             . "Per verificarlo, acceda all'area di gestione:\n" . $loginUrl . "\n\n"
             . "Messaggio automatico — non rispondere.";
 
         $mailLogoUrl = form_docs_mail_logo_src();
         $mailInfoRows = form_docs_mail_detail_line('Tipo documento', $nome_documento)
             . form_docs_mail_detail_line('Riferimento', '#' . $safeDocId)
-            . form_docs_mail_detail_line('Subvettore', $intestatario);
+            . form_docs_mail_detail_line('Subvettore', $subEtichetta);
         $mailInner = '<p style="margin:0 0 12px;">Gentile operatore,</p>'
             . '<p style="margin:0 0 12px;">il subvettore <strong>' . $safeSub . '</strong> ha caricato un documento in attesa di verifica.</p>'
             . form_docs_mail_info_box($mailInfoRows)
@@ -455,7 +498,7 @@ if ($isUploadSubvettore) {
         $notifyLink   = isset($loginUrl) && $loginUrl !== '' ? $loginUrl : 'app_Login';
         $notifyExpire = date('Y-m-d H:i:s', strtotime('+30 days'));
         $notifyTitle  = 'Documento caricato — ' . $nome_documento . ' (#' . (int)$docId . ')';
-        $notifyMsg    = 'Il subvettore ' . trim((string)$intestatario)
+        $notifyMsg    = 'Il subvettore ' . $subEtichetta
             . ' ha caricato il documento "' . $nome_documento . '" (#' . (int)$docId . '). Verificare in griglia documenti.';
 
         $fdScNotifySend   = true;
@@ -577,7 +620,10 @@ if ((int){is_not_ok} === 1 && (int)$group_id !== 2 && (int)$statoDoc !== 3) {
         $soggettoRev     = "Documento da correggere — " . $nome_documento . " (#$docId)";
         $safeDocIdRev    = (int)$docId;
 
-        $testoPlainRev = "Gentile subvettore,\n\n"
+        $salutoSubRev     = form_docs_saluto_subvettore($docSubId);
+        $safeSalutoSubRev = htmlspecialchars($salutoSubRev, ENT_QUOTES, 'UTF-8');
+
+        $testoPlainRev = $salutoSubRev . ",\n\n"
             . "il documento seguente risulta errato e deve essere sostituito o corretto:\n\n"
             . "Tipo documento: $nome_documento\n"
             . "Riferimento: #$safeDocIdRev\n\n"
@@ -588,7 +634,7 @@ if ((int){is_not_ok} === 1 && (int)$group_id !== 2 && (int)$statoDoc !== 3) {
         $mailLogoUrlRev = form_docs_mail_logo_src();
         $mailInfoRowsRev = form_docs_mail_detail_line('Tipo documento', $nome_documento)
             . form_docs_mail_detail_line('Riferimento', '#' . $safeDocIdRev);
-        $mailInnerRev = '<p style="margin:0 0 12px;">Gentile subvettore,</p>'
+        $mailInnerRev = '<p style="margin:0 0 12px;">' . $safeSalutoSubRev . ',</p>'
             . '<p style="margin:0 0 12px;">il documento indicato risulta <strong>errato</strong> e deve essere sostituito o corretto. '
             . 'Si richiede di effettuare l\'upload di una versione aggiornata.</p>'
             . form_docs_mail_info_box($mailInfoRowsRev)

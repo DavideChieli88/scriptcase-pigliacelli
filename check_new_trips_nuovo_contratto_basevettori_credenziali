@@ -645,6 +645,119 @@ function import_cred_applica_mail_override($to) {
     return trim((string)$to);
 }
 
+function login_collegato_a_sub($login, $subvettore_id) {
+    $login = trim((string)$login);
+    $subvettore_id = (int)$subvettore_id;
+    if ($login === '' || $subvettore_id <= 0) {
+        return false;
+    }
+
+    sc_lookup(rsLoginSub, "
+        SELECT login
+        FROM sec_users
+        WHERE login = " . sql_quote($login) . "
+          AND subvettore_id = " . sql_num($subvettore_id) . "
+        LIMIT 1
+    ", "pigliacelli");
+
+    return !empty({rsLoginSub});
+}
+
+function login_sub_gia_usato_da_altro_sub($login, $subvettore_id) {
+    $login = trim((string)$login);
+    $subvettore_id = (int)$subvettore_id;
+    if ($login === '') {
+        return false;
+    }
+
+    sc_lookup(rsLoginAlt, "
+        SELECT subvettore_id
+        FROM sec_users
+        WHERE login = " . sql_quote($login) . "
+        LIMIT 1
+    ", "pigliacelli");
+
+    if (empty({rsLoginAlt})) {
+        return false;
+    }
+
+    $sub_alt = {rsLoginAlt[0][0]};
+    if ($sub_alt === null || $sub_alt === '') {
+        return true;
+    }
+
+    return (int)$sub_alt !== $subvettore_id;
+}
+
+function aggiorna_anagrafica_utenza_sub($subvettore_id, $login, $email, $ragione_sociale, $phone) {
+    sc_exec_sql("
+        UPDATE sec_users
+        SET email = " . sql_quote($email) . ",
+            name = " . sql_quote($ragione_sociale) . ",
+            phone = " . sql_quote($phone) . "
+        WHERE subvettore_id = " . sql_num($subvettore_id) . "
+          AND login = " . sql_quote($login) . "
+    ", "pigliacelli");
+}
+
+function disabilita_utenza_subvettore($subvettore_id, $vecchio_login) {
+    $subvettore_id = (int)$subvettore_id;
+    $vecchio_login = trim((string)$vecchio_login);
+    if ($subvettore_id <= 0 || $vecchio_login === '') {
+        return;
+    }
+
+    sc_exec_sql("
+        UPDATE sec_users
+        SET active = 'N'
+        WHERE login = " . sql_quote($vecchio_login) . "
+          AND subvettore_id = " . sql_num($subvettore_id) . "
+    ", "pigliacelli");
+
+    log_export_tratte(
+        'SUB_UTENZA',
+        'disabilitata utenza precedente subvettore_id=' . $subvettore_id . ' login=' . $vecchio_login
+    );
+}
+
+function intestatario_primo_utente_sub($subvettore_id) {
+    sc_lookup(rsPrimoUser, "
+        SELECT login
+        FROM sec_users
+        WHERE subvettore_id = " . sql_num($subvettore_id) . "
+        ORDER BY login
+        LIMIT 1
+    ", "pigliacelli");
+
+    if (!empty({rsPrimoUser[0][0]})) {
+        return trim((string){rsPrimoUser[0][0]});
+    }
+
+    return null;
+}
+
+function utenza_ha_mai_acceduto($login, $subvettore_id) {
+    $login = trim((string)$login);
+    $subvettore_id = (int)$subvettore_id;
+    if ($login === '' || $subvettore_id <= 0) {
+        return false;
+    }
+
+    sc_lookup(rsUtenzaUsata, "
+        SELECT COALESCE(hasLoggedFirst, 0)
+        FROM sec_users
+        WHERE login = " . sql_quote($login) . "
+          AND subvettore_id = " . sql_num($subvettore_id) . "
+        LIMIT 1
+    ", "pigliacelli");
+
+    if (empty({rsUtenzaUsata})) {
+        return false;
+    }
+
+    return (int){rsUtenzaUsata[0][0]} === 1;
+}
+
 function crea_utenza_subvettore($subvettore_id, $email, $ragione_sociale, $phone) {
     $group_id = 2;
     $email = trim((string)$email);
@@ -653,15 +766,16 @@ function crea_utenza_subvettore($subvettore_id, $email, $ragione_sociale, $phone
         return null;
     }
 
-    sc_lookup(check_user, "
-        SELECT login
-        FROM sec_users
-        WHERE login = " . sql_quote($email) . "
-        LIMIT 1
-    ", "pigliacelli");
+    if (login_collegato_a_sub($email, $subvettore_id)) {
+        return $email;
+    }
 
-    if (!empty({check_user})) {
-        return {check_user[0][0]};
+    if (login_sub_gia_usato_da_altro_sub($email, $subvettore_id)) {
+        log_export_tratte(
+            'SUB_UTENZA',
+            'skip crea utenza: email=' . $email . ' gia login di altro subvettore_id'
+        );
+        return null;
     }
 
     $tempPassword = generateTempPassword();
@@ -696,6 +810,11 @@ function crea_utenza_subvettore($subvettore_id, $email, $ragione_sociale, $phone
             " . sql_num($group_id) . "
         )
     ", "pigliacelli");
+
+    log_export_tratte(
+        'SUB_UTENZA',
+        'creata nuova utenza subvettore_id=' . (int)$subvettore_id . ' login=' . $email
+    );
 
     return $email;
 }
@@ -752,23 +871,94 @@ function crea_utenza_tecnica_subvettore($subvettore_id, $ragione_sociale, $phone
 }
 
 function recupera_intestatario_contratto($subvettore_id, $email, $ragione_sociale, $phone) {
-    sc_lookup(userRow, "
-        SELECT login
-        FROM sec_users
-        WHERE subvettore_id = " . sql_num($subvettore_id) . "
+    $subvettore_id = (int)$subvettore_id;
+    $email = trim((string)$email);
+
+    sc_lookup(rsSubMail, "
+        SELECT login_subvettore
+        FROM subvettori
+        WHERE id = " . sql_num($subvettore_id) . "
         LIMIT 1
     ", "pigliacelli");
 
-    if (!empty({userRow})) {
-        return {userRow[0][0]};
+    $login_db = !empty({rsSubMail[0][0]}) ? trim((string){rsSubMail[0][0]}) : '';
+
+    if (!emailValidaSingola($email)) {
+        $login = intestatario_primo_utente_sub($subvettore_id);
+        if ($login !== null) {
+            return $login;
+        }
+        return crea_utenza_tecnica_subvettore($subvettore_id, $ragione_sociale, $phone);
     }
 
-    $login = crea_utenza_subvettore($subvettore_id, $email, $ragione_sociale, $phone);
-    if ($login !== null) {
+    if (login_sub_gia_usato_da_altro_sub($email, $subvettore_id)) {
+        log_export_tratte(
+            'SUB_UTENZA',
+            'email SGA=' . $email . ' gia login altro sub — intestatario fallback subvettore_id=' . $subvettore_id
+        );
+        $login = intestatario_primo_utente_sub($subvettore_id);
+        if ($login !== null) {
+            return $login;
+        }
+        return crea_utenza_tecnica_subvettore($subvettore_id, $ragione_sociale, $phone);
+    }
+
+    if (login_collegato_a_sub($email, $subvettore_id)) {
+        aggiorna_anagrafica_utenza_sub($subvettore_id, $email, $email, $ragione_sociale, $phone);
+        if ($login_db !== '' && strcasecmp($login_db, $email) !== 0) {
+            sc_exec_sql("
+                UPDATE subvettori
+                SET login_subvettore = " . sql_quote($email) . "
+                WHERE id = " . sql_num($subvettore_id) . "
+            ", "pigliacelli");
+        }
+        return $email;
+    }
+
+    if ($login_db !== '' && strcasecmp($login_db, $email) !== 0 && login_collegato_a_sub($login_db, $subvettore_id)) {
+        $vecchio_usato = utenza_ha_mai_acceduto($login_db, $subvettore_id);
+        disabilita_utenza_subvettore($subvettore_id, $login_db);
+        log_export_tratte(
+            'SUB_UTENZA',
+            'cambio_email sub=' . $subvettore_id .
+            ' da=' . $login_db .
+            ' a=' . $email .
+            ' vecchio_usato=' . ($vecchio_usato ? '1' : '0')
+        );
+        $login = crea_utenza_subvettore($subvettore_id, $email, $ragione_sociale, $phone);
+        if ($login === null) {
+            $login = intestatario_primo_utente_sub($subvettore_id);
+            if ($login !== null) {
+                return $login;
+            }
+            return crea_utenza_tecnica_subvettore($subvettore_id, $ragione_sociale, $phone);
+        }
+
+        sc_exec_sql("
+            UPDATE subvettori
+            SET login_subvettore = " . sql_quote($email) . "
+            WHERE id = " . sql_num($subvettore_id) . "
+        ", "pigliacelli");
+
         return $login;
     }
 
-    return crea_utenza_tecnica_subvettore($subvettore_id, $ragione_sociale, $phone);
+    $login = crea_utenza_subvettore($subvettore_id, $email, $ragione_sociale, $phone);
+    if ($login === null) {
+        $login = intestatario_primo_utente_sub($subvettore_id);
+        if ($login !== null) {
+            return $login;
+        }
+        return crea_utenza_tecnica_subvettore($subvettore_id, $ragione_sociale, $phone);
+    }
+
+    sc_exec_sql("
+        UPDATE subvettori
+        SET login_subvettore = " . sql_quote($email) . "
+        WHERE id = " . sql_num($subvettore_id) . "
+    ", "pigliacelli");
+
+    return $login;
 }
 
 function import_cred_user_active_is_yes($active) {
@@ -1904,6 +2094,7 @@ $notifica_subvettore_area_riservata_tipo23 = function (
         SELECT login, active, email
         FROM sec_users
         WHERE subvettore_id = " . sql_num($subvettore_id) . "
+          AND login = " . sql_quote($loginSub) . "
         LIMIT 1
     ", "pigliacelli");
 
@@ -1977,7 +2168,7 @@ $notifica_subvettore_area_riservata_tipo23 = function (
         WHERE subvettore_id = " . sql_num($subvettore_id) . "
           AND login = " . sql_quote($userLogin) . "
     ", "pigliacelli");
-    $loginInvio = $userLogin !== '' ? $userLogin : $loginSub;
+    $loginInvio = $loginSub;
     if ($import_cred_send_mail_credenziali($contratto_id, $toEmail, $loginInvio, $plainPassword, $displayName)) {
         return 'credenziali';
     }

@@ -8,7 +8,7 @@
   * Parametri: [contrattoId], [subvettoreId], [tipoContrattoId] (GET o globali SC).
   *
   * ajax=ping   diagnostica leggera
-  * ajax=status stato PDF (db + disco sotto DOCUMENT_ROOT)
+  * ajax=status stato PDF (db + disco, path allineato ai report)
   * ajax=diag   diagnostica path (opzionale)
   */
 
@@ -110,6 +110,98 @@
       }
   }
 
+  if (!function_exists('finalize_contratti_detect_workspace_root')) {
+      function finalize_contratti_detect_workspace_root($anchorFile = null)
+      {
+          if ($anchorFile === null || $anchorFile === '') {
+              $anchorFile = __FILE__;
+          }
+          if (is_dir($anchorFile)) {
+              $dir = realpath($anchorFile);
+          } else {
+              $dir = dirname($anchorFile);
+              $resolved = realpath($dir);
+              if ($resolved !== false) {
+                  $dir = $resolved;
+              }
+          }
+          if ($dir === false || $dir === '') {
+              return '';
+          }
+          $current = $dir;
+          for ($i = 0; $i < 12; $i++) {
+              if (is_file($current . DIRECTORY_SEPARATOR . 'index.php')
+                  && (is_dir($current . DIRECTORY_SEPARATOR . '_lib') || is_dir($current . DIRECTORY_SEPARATOR . 'grid_contratti'))) {
+                  return $current;
+              }
+              $parent = dirname($current);
+              if ($parent === $current) {
+                  break;
+              }
+              $current = $parent;
+          }
+          $parent = dirname($dir);
+          return ($parent !== '' && $parent !== $dir) ? $parent : $dir;
+      }
+  }
+
+  if (!function_exists('finalize_resolve_contratti_base_dir')) {
+      function finalize_resolve_contratti_base_dir($configuredPath, $anchorFile = null, $useDocumentRoot = false)
+      {
+          $configuredPath = trim((string)$configuredPath);
+          if ($configuredPath === '') {
+              return '';
+          }
+          $normalized = str_replace('\\', '/', $configuredPath);
+          if ($normalized !== '' && $normalized[0] === '/') {
+              $resolved = @realpath($configuredPath);
+              if ($resolved !== false) {
+                  return $resolved;
+              }
+              if (@mkdir($configuredPath, 0775, true) || is_dir($configuredPath)) {
+                  $resolved = @realpath($configuredPath);
+                  return $resolved !== false ? $resolved : rtrim($configuredPath, "/\\");
+              }
+              return rtrim($configuredPath, "/\\");
+          }
+          if (preg_match('#^[A-Za-z]:/#', $normalized) || preg_match('#^[A-Za-z]:\\\\#', $configuredPath)) {
+              $resolved = @realpath($configuredPath);
+              if ($resolved !== false) {
+                  return $resolved;
+              }
+              if (@mkdir($configuredPath, 0775, true) || is_dir($configuredPath)) {
+                  $resolved = @realpath($configuredPath);
+                  return $resolved !== false ? $resolved : rtrim($configuredPath, "/\\");
+              }
+              return rtrim($configuredPath, "/\\");
+          }
+          if ($useDocumentRoot && !empty($_SERVER['DOCUMENT_ROOT'])) {
+              $docRoot = @realpath((string)$_SERVER['DOCUMENT_ROOT']);
+              if ($docRoot !== false && $docRoot !== '') {
+                  $docCand = $docRoot . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, trim($normalized, '/'));
+                  if (is_dir($docCand)) {
+                      $resolved = @realpath($docCand);
+                      return $resolved !== false ? $resolved : $docCand;
+                  }
+                  if (@mkdir($docCand, 0775, true) || is_dir($docCand)) {
+                      $resolved = @realpath($docCand);
+                      return $resolved !== false ? $resolved : $docCand;
+                  }
+              }
+          }
+          if ($anchorFile === null || $anchorFile === '') {
+              $anchorFile = __FILE__;
+          }
+          $root = finalize_contratti_detect_workspace_root($anchorFile);
+          if ($root === '') {
+              return '';
+          }
+          $full = $root . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, trim($normalized, '/'));
+          $resolved = @realpath($full);
+          return $resolved !== false ? $resolved : $full;
+      }
+  }
+
   if (!function_exists('finalize_resolve_doc_pdf_dir')) {
     function finalize_resolve_doc_pdf_dir()
     {
@@ -126,34 +218,55 @@
       if ($rel === '') {
         return '';
       }
-      $rel = trim(str_replace('\\', '/', $rel), '/');
-      if (!empty($_SERVER['DOCUMENT_ROOT'])) {
-        $docRoot = @realpath((string)$_SERVER['DOCUMENT_ROOT']);
-        if ($docRoot !== false && $docRoot !== '') {
-          $cand = $docRoot . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel);
-          if (is_dir($cand)) {
-            $resolved = @realpath($cand);
-            return ($resolved !== false) ? $resolved : $cand;
-          }
-        }
-      }
-      return '';
+      $useDocumentRoot = (
+          str_replace('\\', '/', trim($rel)) === 'scriptcase/app/pigliacelli_workspace/_lib/file/doc'
+      );
+      return finalize_resolve_contratti_base_dir($rel, __FILE__, $useDocumentRoot);
     }
+  }
+
+  if (!function_exists('finalize_pdf_try_paths')) {
+      function finalize_pdf_try_paths($baseDir, $fileVal, $contrattoId = 0)
+      {
+          $paths = array();
+          $fileVal = trim((string)$fileVal);
+          $contrattoId = (int)$contrattoId;
+          if ($baseDir === '') {
+              return $paths;
+          }
+          if ($fileVal !== '' && stripos($fileVal, '.pdf') !== false) {
+              $basename = basename(str_replace('\\', '/', $fileVal));
+              $paths[] = $baseDir . DIRECTORY_SEPARATOR . $basename;
+              $paths[] = $baseDir . DIRECTORY_SEPARATOR . 'contratti' . DIRECTORY_SEPARATOR . $basename;
+          }
+          if ($contrattoId > 0) {
+              $glob = @glob($baseDir . DIRECTORY_SEPARATOR . 'contratto_' . $contrattoId . '_*.pdf');
+              if (is_array($glob)) {
+                  rsort($glob);
+                  foreach ($glob as $g) {
+                      $paths[] = (string)$g;
+                  }
+              }
+              $globSub = @glob($baseDir . DIRECTORY_SEPARATOR . 'contratti' . DIRECTORY_SEPARATOR . 'contratto_' . $contrattoId . '_*.pdf');
+              if (is_array($globSub)) {
+                  rsort($globSub);
+                  foreach ($globSub as $g) {
+                      $paths[] = (string)$g;
+                  }
+              }
+          }
+          return array_values(array_unique($paths));
+      }
   }
 
   if (!function_exists('finalize_pdf_on_disk')) {
     function finalize_pdf_on_disk($fileVal, $contrattoId = 0)
     {
       $fileVal = trim((string)$fileVal);
+      $contrattoId = (int)$contrattoId;
       $out = array('found' => false, 'path' => '', 'baseDir' => '');
-      if ($fileVal === '') {
-        return $out;
-      }
-      if (strncmp($fileVal, '%PDF', 4) === 0) {
+      if ($fileVal !== '' && strncmp($fileVal, '%PDF', 4) === 0) {
         $out['found'] = true;
-        return $out;
-      }
-      if (stripos($fileVal, '.pdf') === false) {
         return $out;
       }
       $baseDir = finalize_resolve_doc_pdf_dir();
@@ -161,22 +274,10 @@
       if ($baseDir === '') {
         return $out;
       }
-      $basename = basename(str_replace('\\', '/', $fileVal));
-      $paths = array(
-        $baseDir . DIRECTORY_SEPARATOR . $basename,
-        $baseDir . DIRECTORY_SEPARATOR . 'contratti' . DIRECTORY_SEPARATOR . $basename,
-      );
-      $contrattoId = (int)$contrattoId;
-      if ($contrattoId > 0) {
-        $glob = @glob($baseDir . DIRECTORY_SEPARATOR . 'contratto_' . $contrattoId . '_*.pdf');
-        if (is_array($glob)) {
-          rsort($glob);
-          foreach ($glob as $g) {
-            $paths[] = (string)$g;
-          }
-        }
+      if ($fileVal !== '' && stripos($fileVal, '.pdf') === false) {
+        return $out;
       }
-      foreach ($paths as $try) {
+      foreach (finalize_pdf_try_paths($baseDir, $fileVal, $contrattoId) as $try) {
         if (!@is_readable($try)) {
           continue;
         }
@@ -262,11 +363,12 @@
       $disk = finalize_pdf_on_disk($fileVal, $cid);
       $dbReady = ($fileVal !== '' && (strncmp($fileVal, '%PDF', 4) === 0 || stripos($fileVal, '.pdf') !== false));
       $diskReady = !empty($disk['found']);
+      $ready = $dbReady || $diskReady;
 
       finalize_json_out(array(
           'ok' => true,
           'contrattoId' => $cid,
-          'ready' => $diskReady,
+          'ready' => $ready,
           'dbReady' => $dbReady,
           'diskReady' => $diskReady,
           'file' => $fileVal,
@@ -306,7 +408,6 @@
   }
 
   sc_exec_sql("UPDATE contratti SET file = '' WHERE id = " . (int)$contrattoId);
-  sc_log_add('FINALIZE', "contratto=$contrattoId file reset prima generazione PDF");
 
   $_SESSION['pdf_auto_save'] = 'S';
   $_SESSION['pdf_redirect_after'] = '';
@@ -324,6 +425,12 @@
           sc_error_message('tipoContrattoId non gestito: ' . $tipoContrattoId);
           return;
   }
+
+  sc_log_add(
+      'FINALIZE',
+      "contratto=$contrattoId file reset prima generazione PDF report=$reportApp pdfDir="
+      . finalize_resolve_doc_pdf_dir()
+  );
 
   $reportUrl = '../' . $reportApp . '/?subvector=' . (int)$subvettoreId
       . '&contratto=' . (int)$contrattoId
@@ -431,7 +538,7 @@
     const gridUrl   = "{$gridUrlEsc}";
     const isAdminFlow = {$isAdminFlowJs};
     const t0 = Date.now();
-    const timeoutMs = 30000;
+    const timeoutMs = 90000;
     const intervalMs = 1500;
     let redirected = false;
     let adminWorkflowDone = false;

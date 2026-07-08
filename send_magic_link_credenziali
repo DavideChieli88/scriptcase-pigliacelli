@@ -8,6 +8,7 @@
  *
  * MAIL CREDENZIALI (solo contratti tipo 2 o 3, mai crea utenze — le crea il job import):
  *   Destinatario: subvettori.login_subvettore (invariato).
+ *   - cambio email + vecchia utenza con hasLoggedFirst=1 → mail credenziali aggiornate (testo dedicato)
  *   - utenza valida in sec_users + active=Y → mail “accedi con le tue credenziali”
  *   - utenza valida + active=N → riattiva (UPDATE), nuova password + mail credenziali
  *   - nessuna utenza / SUBVETTORE_* / tipo ≠ 2,3 → skip mail credenziali (magic link comunque se PEC ok)
@@ -98,6 +99,34 @@ if (!function_exists('smlc_utenza_valida')) {
             return true;
         }
         return smlc_email_valida($login);
+    }
+}
+
+if (!function_exists('smlc_rilevato_cambio_email_utenza_usata')) {
+    function smlc_rilevato_cambio_email_utenza_usata($subvettore_id, $nuovo_login)
+    {
+        $subvettore_id = (int)$subvettore_id;
+        $nuovo_login = trim((string)$nuovo_login);
+        if ($subvettore_id <= 0 || $nuovo_login === '') {
+            return '';
+        }
+
+        sc_lookup(rsCambioMail, "
+            SELECT login
+            FROM sec_users
+            WHERE subvettore_id = " . smlc_sql_num($subvettore_id) . "
+              AND login <> " . smlc_sql_quote($nuovo_login) . "
+              AND UPPER(TRIM(COALESCE(active, ''))) = 'N'
+              AND COALESCE(hasLoggedFirst, 0) = 1
+            ORDER BY login DESC
+            LIMIT 1
+        ", 'pigliacelli');
+
+        if (!empty({rsCambioMail[0][0]})) {
+            return trim((string){rsCambioMail[0][0]});
+        }
+
+        return '';
     }
 }
 
@@ -504,6 +533,99 @@ $smlc_send_mail_credenziali = function ($contratto_id, $to, $login, $plainPasswo
     return true;
 };
 
+$smlc_send_mail_credenziali_cambio_email = function (
+    $contratto_id,
+    $to,
+    $login,
+    $plainPassword,
+    $displayName,
+    $vecchio_login
+) use ($mailOverrideAttivo, $smlc_get_smtp_config, $smlc_portal_url, $mailLogoUrl) {
+    $toOrig = trim((string)$to);
+    $to = ($mailOverrideAttivo !== '') ? $mailOverrideAttivo : $toOrig;
+    if ($mailOverrideAttivo !== '' && strcasecmp($to, $mailOverrideAttivo) !== 0) {
+        sc_log_add('MAGIC_LINK_CRED', 'MAIL_CAMBIO BLOCCO sicurezza to!=override contratto=' . (int)$contratto_id);
+        return false;
+    }
+    $login = trim((string)$login);
+    $vecchio_login = trim((string)$vecchio_login);
+    if (!smlc_email_valida($to) || $login === '' || $plainPassword === '') {
+        return false;
+    }
+    $portalUrl = $smlc_portal_url();
+    $nome = trim((string)$displayName);
+    if ($nome === '') {
+        $nome = 'Gentile utente';
+    }
+    $titolo = 'Nuove credenziali area riservata — aggiornamento email';
+    if ($mailOverrideAttivo !== '') {
+        $titolo = '(UAT) ' . $titolo;
+    }
+    $testo = $nome . ",\n\n"
+        . "E' stato rilevato un aggiornamento dell'indirizzo email associato al subvettore";
+    if ($vecchio_login !== '') {
+        $testo .= " (precedente: " . $vecchio_login . ")";
+    }
+    $testo .= ".\n"
+        . "Per il nuovo contratto #" . (int)$contratto_id . " ti inviamo le credenziali aggiornate per l'area riservata.\n"
+        . "La precedente utenza non e' piu' attiva.\n\n"
+        . "Login: " . $login . "\n"
+        . "Password: " . $plainPassword . "\n";
+    if ($portalUrl !== '') {
+        $testo .= "\nArea riservata: " . $portalUrl . "\n";
+    }
+    $testo .= "\nMessaggio automatico — non rispondere.";
+    $safeLogin = htmlspecialchars($login, ENT_QUOTES, 'UTF-8');
+    $safePwd = htmlspecialchars($plainPassword, ENT_QUOTES, 'UTF-8');
+    $safeNome = htmlspecialchars($nome, ENT_QUOTES, 'UTF-8');
+    $safeVecchio = htmlspecialchars($vecchio_login, ENT_QUOTES, 'UTF-8');
+    $inner = '<p style="margin:0 0 16px;">' . $safeNome . ',</p>'
+        . '<p style="margin:0 0 20px;">E\' stato rilevato un <strong>aggiornamento dell\'indirizzo email</strong> associato al subvettore';
+    if ($vecchio_login !== '') {
+        $inner .= ' (precedente: <strong>' . $safeVecchio . '</strong>)';
+    }
+    $inner .= '.</p>'
+        . '<p style="margin:0 0 20px;">Per il nuovo contratto <strong>#' . (int)$contratto_id . '</strong> '
+        . 'ti inviamo le <strong>credenziali aggiornate</strong> per l\'area riservata. '
+        . 'La precedente utenza non e\' piu\' attiva.</p>'
+        . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+        . 'style="margin:0 0 20px;background:#f8f9fb;border:1px solid #e2e6ea;border-radius:8px;">'
+        . '<tr><td style="padding:16px 18px;font-size:14px;line-height:1.6;">'
+        . '<strong>Login:</strong> ' . $safeLogin . '<br><strong>Password:</strong> ' . $safePwd
+        . '</td></tr></table>';
+    if ($portalUrl !== '') {
+        $safePortal = htmlspecialchars($portalUrl, ENT_QUOTES, 'UTF-8');
+        $inner .= '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px;"><tr>'
+            . '<td align="center" bgcolor="#5b2d8e" style="border-radius:8px;background-color:#5b2d8e;">'
+            . '<a href="' . $safePortal . '" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:bold;'
+            . 'color:#ffffff;text-decoration:none;">Accedi all\'area riservata</a>'
+            . '</td></tr></table>';
+    }
+    $html = pigliacelli_mail_layout($titolo, $inner, $mailLogoUrl);
+    try {
+        sc_send_mail_api(array_merge($smlc_get_smtp_config(), array(
+            'message' => array(
+                'html'    => $html,
+                'text'    => $testo,
+                'to'      => $to,
+                'subject' => $titolo,
+            ),
+        )));
+    } catch (Throwable $e) {
+        sc_log_add('MAGIC_LINK_CRED', 'MAIL_CAMBIO EXCEPTION contratto=' . (int)$contratto_id . ' msg=' . $e->getMessage());
+        return false;
+    }
+    sc_log_add(
+        'MAGIC_LINK_CRED',
+        'MAIL_CAMBIO inviate credenziali cambio email contratto=' . (int)$contratto_id
+        . ' to=' . $to
+        . ($toOrig !== $to ? ' orig=' . $toOrig : '')
+        . ' login=' . $login
+        . ' vecchio=' . $vecchio_login
+    );
+    return true;
+};
+
 $smlc_send_mail_area_riservata = function ($contratto_id, $to, $displayName)
     use ($mailOverrideAttivo, $sc_setting, $smlc_get_smtp_config, $mailLogoUrl) {
     $toOrig = trim((string)$to);
@@ -586,12 +708,23 @@ if (!in_array($tipoContrattoId, array(2, 3), true)) {
 } else {
     $toEmailCred = smlc_email_valida($loginSub) ? $loginSub : '';
 
-    sc_lookup(rsUserCred, "
-        SELECT login, active, email
-        FROM sec_users
-        WHERE subvettore_id = " . smlc_sql_num($subvettoreId) . "
-        LIMIT 1
-    ", 'pigliacelli');
+    if (smlc_email_valida($loginSub)) {
+        sc_lookup(rsUserCred, "
+            SELECT login, active, email
+            FROM sec_users
+            WHERE subvettore_id = " . smlc_sql_num($subvettoreId) . "
+              AND login = " . smlc_sql_quote($loginSub) . "
+            LIMIT 1
+        ", 'pigliacelli');
+    } else {
+        sc_lookup(rsUserCred, "
+            SELECT login, active, email
+            FROM sec_users
+            WHERE subvettore_id = " . smlc_sql_num($subvettoreId) . "
+            ORDER BY login
+            LIMIT 1
+        ", 'pigliacelli');
+    }
 
     $userLogin = '';
     $userActive = '';
@@ -632,8 +765,35 @@ if (!in_array($tipoContrattoId, array(2, 3), true)) {
         $esitoCred = ($userLogin !== '' && smlc_login_is_tecnico($userLogin)) ? 'skip_tecnico' : 'skip_no_utenza';
     } else {
         $toEmailCred = smlc_email_valida($userEmail) ? $userEmail : $loginSub;
+        $vecchioLoginUsato = smlc_rilevato_cambio_email_utenza_usata($subvettoreId, $loginSub);
 
-        if (smlc_user_active_is_yes($userActive)) {
+        if ($vecchioLoginUsato !== '') {
+            $plainPassword = smlc_generate_temp_password();
+            $pswHash = md5($plainPassword);
+            sc_exec_sql("
+                UPDATE sec_users
+                SET active = 'Y',
+                    pswd = " . smlc_sql_quote($pswHash) . ",
+                    email = " . smlc_sql_quote($loginSub) . ",
+                    name = " . smlc_sql_quote($ragioneSociale) . ",
+                    phone = " . smlc_sql_quote($phoneSub) . "
+                WHERE subvettore_id = " . smlc_sql_num($subvettoreId) . "
+                  AND login = " . smlc_sql_quote($userLogin) . "
+            ", 'pigliacelli');
+            $loginInvio = $userLogin !== '' ? $userLogin : $loginSub;
+            if ($smlc_send_mail_credenziali_cambio_email(
+                $contrattoId,
+                $toEmailCred,
+                $loginInvio,
+                $plainPassword,
+                $displayNameCred,
+                $vecchioLoginUsato
+            )) {
+                $esitoCred = 'credenziali_cambio_email';
+            } else {
+                $esitoCred = 'errore';
+            }
+        } elseif (smlc_user_active_is_yes($userActive)) {
             if ($smlc_send_mail_area_riservata($contrattoId, $toEmailCred, $displayNameCred)) {
                 $esitoCred = 'area_riservata';
             } else {
@@ -649,7 +809,8 @@ if (!in_array($tipoContrattoId, array(2, 3), true)) {
                     email = " . smlc_sql_quote($loginSub) . ",
                     name = " . smlc_sql_quote($ragioneSociale) . ",
                     phone = " . smlc_sql_quote($phoneSub) . "
-                WHERE login = " . smlc_sql_quote($userLogin) . "
+                WHERE subvettore_id = " . smlc_sql_num($subvettoreId) . "
+                  AND login = " . smlc_sql_quote($userLogin) . "
             ", 'pigliacelli');
             $loginInvio = $userLogin !== '' ? $userLogin : $loginSub;
             if ($smlc_send_mail_credenziali($contrattoId, $toEmailCred, $loginInvio, $plainPassword, $displayNameCred)) {
@@ -756,6 +917,8 @@ if (!empty({rsStInviato[0][0]})) {
 $msgOk = 'Magic link inviato a ' . $toEmailMagic . ' (PEC subvettore)';
 if ($esitoCred === 'credenziali') {
     $msgOk .= '; credenziali area riservata inviate (utenza riattivata)';
+} elseif ($esitoCred === 'credenziali_cambio_email') {
+    $msgOk .= '; credenziali aggiornate inviate (cambio email rilevato, utenza precedente gia\' utilizzata)';
 } elseif ($esitoCred === 'area_riservata') {
     $msgOk .= '; notifica area riservata inviata (usa le credenziali gia\' in tuo possesso)';
 } elseif ($esitoCred === 'skip_tipo') {

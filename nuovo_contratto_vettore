@@ -1171,7 +1171,9 @@ $contrattiAttachEasygnSignMeta($pdf, $easygnSignVisuals);
 // --- Output: anteprima browser (default) oppure salvataggio per campo Document filename ---
 $autoSavePdf = (
     (isset($_SESSION['pdf_auto_save']) && strtoupper(trim((string)$_SESSION['pdf_auto_save'])) === 'S') ||
-    (isset([auto_save_pdf]) && strtoupper(trim((string)[auto_save_pdf])) === 'S')
+    (isset([auto_save_pdf]) && strtoupper(trim((string)[auto_save_pdf])) === 'S') ||
+    (isset($_GET['auto_save_pdf']) && strtoupper(trim((string)$_GET['auto_save_pdf'])) === 'S') ||
+    (isset($_REQUEST['auto_save_pdf']) && strtoupper(trim((string)$_REQUEST['auto_save_pdf'])) === 'S')
 );
 if ($autoSavePdf) {
     $sqlQuote = function ($v) {
