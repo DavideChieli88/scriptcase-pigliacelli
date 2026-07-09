@@ -7,46 +7,44 @@ $group_id = {grId[0][0]};
 if (!function_exists('form_docs_email_pulisci')) {
     function form_docs_email_pulisci($email)
     {
-        $email = trim((string)$email);
+        $email = (string)$email;
         if ($email === '') {
             return '';
         }
 
-        $original = $email;
         static $utf8_invisibili = array(
-            "\xEF\xBB\xBF",
-            "\xE2\x80\x8B",
-            "\xE2\x80\x8C",
-            "\xE2\x80\x8D",
-            "\xE2\x81\xA0",
-            "\xC2\xAD",
+            "\xEF\xBB\xBF", // BOM
+            "\xE2\x80\x8B", // ZWSP
+            "\xE2\x80\x8C", // ZWNJ
+            "\xE2\x80\x8D", // ZWJ
+            "\xE2\x81\xA0", // U+2060 word joiner
+            "\xC2\xAD",     // soft hyphen
+            "\xC2\xA0",     // NBSP
+            "\xE2\x80\x89", // thin space
+            "\xE2\x80\x8E", // LRM
+            "\xE2\x80\x8F", // RLM
         );
 
         do {
             $prev = $email;
-            foreach ($utf8_invisibili as $seq) {
-                if ($seq !== '' && strpos($email, $seq) === 0) {
-                    $email = substr($email, strlen($seq));
-                }
-            }
-            $email = trim($email);
-            foreach ($utf8_invisibili as $seq) {
-                $len = strlen($seq);
-                if ($len > 0 && strlen($email) >= $len && substr($email, -$len) === $seq) {
-                    $email = substr($email, 0, -$len);
-                }
-            }
+            $email = str_replace($utf8_invisibili, '', $email);
             $email = trim($email);
         } while ($email !== $prev && $email !== '');
 
-        if ($email !== $original
-            && filter_var($original, FILTER_VALIDATE_EMAIL)
-            && !filter_var($email, FILTER_VALIDATE_EMAIL)
-        ) {
-            return trim($original);
-        }
-
         return $email;
+    }
+}
+
+if (!function_exists('form_docs_resolve_operator_email')) {
+    function form_docs_resolve_operator_email($loginRaw, $emailRaw)
+    {
+        foreach (array($emailRaw, $loginRaw) as $cand) {
+            $clean = strtolower(form_docs_email_pulisci($cand));
+            if (form_docs_email_valida($clean)) {
+                return $clean;
+            }
+        }
+        return '';
     }
 }
 
@@ -367,26 +365,25 @@ if ($isUploadSubvettore) {
     $emailScartate   = array();
     if (isset({rsOps[0][0]})) {
         foreach ({rsOps} as $row) {
-            $loginOp = trim((string)$row[0]);
-            $email   = strtolower(form_docs_email_pulisci($row[1]));
+            $loginOpRaw = trim((string)$row[0]);
+            $loginOp    = form_docs_email_pulisci($loginOpRaw);
 
             if ($loginOp === '' || strcasecmp($loginOp, 'Guest') === 0) {
                 continue;
             }
-            if ($email === '') {
+
+            $emailDest = form_docs_resolve_operator_email($loginOpRaw, $row[1]);
+            if ($emailDest === '') {
+                $emailScartate[] = strtolower(form_docs_email_pulisci($row[1])) . ' (formato non valido)';
                 continue;
             }
-            if (!form_docs_email_valida($email)) {
-                $emailScartate[] = $email . ' (formato non valido)';
-                continue;
-            }
-            if (in_array($email, $emailPlaceholder, true)) {
-                $emailScartate[] = $email . ' (email predefinita non utilizzabile)';
+            if (in_array($emailDest, $emailPlaceholder, true)) {
+                $emailScartate[] = $emailDest . ' (email predefinita non utilizzabile)';
                 continue;
             }
 
-            $destinatari[]    = $email;
-            $operatorLogins[] = $loginOp;
+            $destinatari[]    = $emailDest;
+            $operatorLogins[] = $loginOpRaw;
         }
     }
     $destinatari    = array_values(array_unique($destinatari));

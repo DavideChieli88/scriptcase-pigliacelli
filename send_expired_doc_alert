@@ -1,13 +1,23 @@
+/**
+ * Scriptcase scheduled blank: send_expired_doc_alert
+ *
+ * Job giornaliero: documenti con data_scadenza <= oggi (stato caricato / da revisionare) — alert documento scaduto.
+ * - Mail + notifica SC al subvettore
+ * - Mail + notifica SC ad admin/operatori (group 1 e 3)
+ *
+ * Verificare che il job sia schedulato in Scriptcase (es. 1x al giorno, mattina).
+ */
+
 $check_sql = "SELECT set_name, set_value FROM sec_settings";
-sc_lookup(rs_smtp, $check_sql);
+sc_lookup(rs_smtp, $check_sql, 'pigliacelli');
 
 if (isset({rs_smtp[0][0]})) {
-    foreach({rs_smtp} as $f) {
+    foreach ({rs_smtp} as $f) {
         $_SESSION['sett_' . $f[0]] = $f[1];
     }
 }
 
-if ($_SESSION['sett_smtp_api'] == 'custom') {
+if (isset($_SESSION['sett_smtp_api']) && $_SESSION['sett_smtp_api'] == 'custom') {
     [sett_smtp] = array(
         'settings' => array(
             'gateway'       => 'smtp',
@@ -21,13 +31,44 @@ if ($_SESSION['sett_smtp_api'] == 'custom') {
         )
     );
 } else {
-    [sett_smtp] = array('profile' => $_SESSION['sett_smtp_api']);
+    [sett_smtp] = array('profile' => isset($_SESSION['sett_smtp_api']) ? $_SESSION['sett_smtp_api'] : '');
+}
+
+if (!function_exists('send_expired_doc_email_pulisci')) {
+    function send_expired_doc_email_pulisci($email)
+    {
+        $email = (string)$email;
+        if ($email === '') {
+            return '';
+        }
+
+        static $utf8_invisibili = array(
+            "\xEF\xBB\xBF",
+            "\xE2\x80\x8B",
+            "\xE2\x80\x8C",
+            "\xE2\x80\x8D",
+            "\xE2\x81\xA0",
+            "\xC2\xAD",
+            "\xC2\xA0",
+            "\xE2\x80\x89",
+            "\xE2\x80\x8E",
+            "\xE2\x80\x8F",
+        );
+
+        do {
+            $prev = $email;
+            $email = str_replace($utf8_invisibili, '', $email);
+            $email = trim($email);
+        } while ($email !== $prev && $email !== '');
+
+        return $email;
+    }
 }
 
 if (!function_exists('send_expired_doc_email_valida')) {
     function send_expired_doc_email_valida($email)
     {
-        $email = trim((string)$email);
+        $email = send_expired_doc_email_pulisci($email);
 
         if ($email === '') {
             return false;
@@ -41,7 +82,312 @@ if (!function_exists('send_expired_doc_email_valida')) {
     }
 }
 
+if (!function_exists('send_expired_doc_resolve_operator_email')) {
+    function send_expired_doc_resolve_operator_email($loginRaw, $emailRaw)
+    {
+        foreach (array($emailRaw, $loginRaw) as $cand) {
+            $clean = strtolower(send_expired_doc_email_pulisci($cand));
+            if (send_expired_doc_email_valida($clean)) {
+                return $clean;
+            }
+        }
+        return '';
+    }
+}
+
+if (!function_exists('send_expired_doc_resolve_email')) {
+    function send_expired_doc_resolve_email($login, $emailSub)
+    {
+        $emailSub = send_expired_doc_email_pulisci($emailSub);
+        if (send_expired_doc_email_valida($emailSub)) {
+            return strtolower($emailSub);
+        }
+
+        $login = send_expired_doc_email_pulisci($login);
+        if ($login === '') {
+            return '';
+        }
+
+        $loginSql = str_replace("'", "''", $login);
+        sc_lookup(rsExpUserMail, "
+            SELECT COALESCE(email, '')
+            FROM sec_users
+            WHERE login = '$loginSql'
+            LIMIT 1
+        ", 'pigliacelli');
+        if (!empty({rsExpUserMail[0][0]}) && send_expired_doc_email_valida({rsExpUserMail[0][0]})) {
+            return trim((string){rsExpUserMail[0][0]});
+        }
+
+        if (send_expired_doc_email_valida($login)) {
+            return $login;
+        }
+
+        return '';
+    }
+}
+
+if (!function_exists('send_expired_doc_load_operatori')) {
+  /** @return array{emails: string[], logins: string[]} */
+    function send_expired_doc_load_operatori()
+    {
+        $destinatari = array();
+        $logins = array();
+        $emailPlaceholder = array('admin@admin.com', 'admin@localhost', 'admin@example.com');
+
+        sc_lookup(rsExpOps, "
+            SELECT DISTINCT su.login, su.email
+            FROM sec_users su
+            INNER JOIN sec_users_groups sug ON sug.login = su.login
+            WHERE su.active = 'Y'
+              AND su.login IS NOT NULL
+              AND TRIM(su.login) <> ''
+              AND su.email IS NOT NULL
+              AND TRIM(su.email) <> ''
+              AND sug.group_id IN (1, 3)
+        ", 'pigliacelli');
+
+        if (!empty({rsExpOps})) {
+            foreach ({rsExpOps} as $row) {
+                $loginOpRaw = trim((string)$row[0]);
+                $loginOp    = send_expired_doc_email_pulisci($loginOpRaw);
+
+                if ($loginOp === '' || strcasecmp($loginOp, 'Guest') === 0) {
+                    continue;
+                }
+
+                $emailDest = send_expired_doc_resolve_operator_email($loginOpRaw, $row[1]);
+                if ($emailDest === '' || in_array($emailDest, $emailPlaceholder, true)) {
+                    continue;
+                }
+
+                $destinatari[] = $emailDest;
+                $logins[] = $loginOpRaw;
+            }
+        }
+
+        return array(
+            'emails' => array_values(array_unique($destinatari)),
+            'logins' => array_values(array_unique($logins)),
+        );
+    }
+}
+
+if (!function_exists('send_expired_doc_mail_setting')) {
+    function send_expired_doc_mail_setting($name, $default = '')
+    {
+        $key = 'sett_' . $name;
+        if (isset($_SESSION[$key])) {
+            return (string)$_SESSION[$key];
+        }
+        $safeName = str_replace("'", "''", trim((string)$name));
+        sc_lookup(rsExpMailSet, "SELECT set_value FROM sec_settings WHERE set_name = '$safeName' LIMIT 1", 'pigliacelli');
+        if (isset({rsExpMailSet[0][0]})) {
+            return (string){rsExpMailSet[0][0]};
+        }
+        return $default;
+    }
+}
+
+if (!function_exists('send_expired_doc_mail_logo_read_embed')) {
+    function send_expired_doc_mail_logo_read_embed($anchorFile = null)
+    {
+        $rel = '_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png';
+        $dir = realpath(dirname($anchorFile ?: __FILE__));
+        for ($i = 0; $i < 12 && $dir; $i++) {
+            $try = $dir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel);
+            if (is_readable($try)) {
+                $bin = @file_get_contents($try);
+                if ($bin !== false && $bin !== '' && strlen($bin) < 500000) {
+                    return 'data:image/png;base64,' . base64_encode($bin);
+                }
+            }
+            $p = dirname($dir);
+            if ($p === $dir) {
+                break;
+            }
+            $dir = $p;
+        }
+        return '';
+    }
+}
+
+if (!function_exists('send_expired_doc_mail_logo_src')) {
+    function send_expired_doc_mail_logo_src()
+    {
+        $embed = send_expired_doc_mail_logo_read_embed();
+        if ($embed !== '') {
+            return $embed;
+        }
+        $base = rtrim(trim(send_expired_doc_mail_setting('mail_base_url', '')), '/');
+        if ($base !== '' && preg_match('#^https?://#i', $base) === 1) {
+            return htmlspecialchars(
+                $base . '/_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png',
+                ENT_QUOTES,
+                'UTF-8'
+            );
+        }
+        return '';
+    }
+}
+
+if (!function_exists('send_expired_doc_mail_layout')) {
+    function send_expired_doc_mail_layout($title, $innerHtml, $mailLogoUrl)
+    {
+        $t = htmlspecialchars((string)$title, ENT_QUOTES, 'UTF-8');
+        $logoTd = '';
+        if ((string)$mailLogoUrl !== '') {
+            $logoTd = '<td align="right" valign="middle" style="width:148px;padding-left:16px;">'
+                . '<img src="' . (string)$mailLogoUrl . '" alt="Pigliacelli" width="140" '
+                . 'style="display:block;max-width:140px;width:140px;height:auto;border:0;" />'
+                . '</td>';
+        }
+        return '<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">'
+            . '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            . '<title>' . $t . '</title></head>'
+            . '<body style="margin:0;padding:0;background:#eef1f4;">'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef1f4;">'
+            . '<tr><td align="center" style="padding:32px 16px;">'
+            . '<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" '
+            . 'style="max-width:600px;width:100%;background:#fff;border-radius:12px;border:1px solid #dde1e6;">'
+            . '<tr><td style="padding:22px 28px 18px;border-bottom:1px solid #e8ebef;background:#fafbfc;">'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
+            . '<td valign="middle" style="font-family:Arial,Helvetica,sans-serif;font-size:19px;font-weight:bold;color:#1a3a5c;line-height:1.3;">' . $t . '</td>'
+            . $logoTd . '</tr></table></td></tr>'
+            . '<tr><td style="padding:26px 28px 22px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#2d3748;">'
+            . $innerHtml . '</td></tr>'
+            . '<tr><td style="padding:14px 28px;background:#f4f6f8;border-top:1px solid #e8ebef;'
+            . 'font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#718096;">'
+            . 'Messaggio automatico &mdash; non rispondere.</td></tr>'
+            . '</table></td></tr></table></body></html>';
+    }
+}
+
+if (!function_exists('send_expired_doc_mail_info_box')) {
+    function send_expired_doc_mail_info_box($rowsHtml)
+    {
+        return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+            . 'style="margin:16px 0;background:#f7f9fb;border:1px solid #e2e8f0;border-radius:8px;">'
+            . '<tr><td style="padding:14px 18px;font-size:14px;line-height:1.7;color:#2d3748;">'
+            . $rowsHtml . '</td></tr></table>';
+    }
+}
+
+if (!function_exists('send_expired_doc_mail_detail_line')) {
+    function send_expired_doc_mail_detail_line($label, $value)
+    {
+        return '<strong style="color:#1a3a5c;">'
+            . htmlspecialchars((string)$label, ENT_QUOTES, 'UTF-8') . ':</strong> '
+            . htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8') . '<br>';
+    }
+}
+
+if (!function_exists('send_expired_doc_mail_btn')) {
+    function send_expired_doc_mail_btn($href, $label)
+    {
+        $href = trim((string)$href);
+        if ($href === '') {
+            return '';
+        }
+        $safeHref = htmlspecialchars($href, ENT_QUOTES, 'UTF-8');
+        $safeLabel = htmlspecialchars((string)$label, ENT_QUOTES, 'UTF-8');
+        return '<p style="margin:24px 0 8px;text-align:center;">'
+            . '<a href="' . $safeHref . '" style="display:inline-block;padding:12px 26px;'
+            . 'background:#1a3a5c;color:#ffffff;text-decoration:none;border-radius:8px;'
+            . 'font-weight:bold;font-size:15px;">' . $safeLabel . '</a></p>';
+    }
+}
+
+if (!function_exists('send_expired_doc_saluto_sub')) {
+    function send_expired_doc_saluto_sub($ragione_sociale)
+    {
+        $ragione = trim((string)$ragione_sociale);
+        return $ragione !== '' ? 'Gentile ' . $ragione : 'Gentile subvettore';
+    }
+}
+
+if (!function_exists('send_expired_doc_build_mails')) {
+    /**
+     * @return array{htmlSub: string, textSub: string, htmlOp: string, textOp: string, subjectSub: string, subjectOp: string}
+     */
+    function send_expired_doc_build_mails($documento_id, $nome_documento, $data_scadenza, $subvettore_label, $ragione_label, $loginUrl)
+    {
+        $mailLogoUrl = send_expired_doc_mail_logo_src();
+        $salutoSub = send_expired_doc_saluto_sub($ragione_label);
+        $safeSalutoSub = htmlspecialchars($salutoSub, ENT_QUOTES, 'UTF-8');
+        $subEtichetta = $ragione_label !== 'n/d'
+            ? $ragione_label . ' (ID ' . $subvettore_label . ')'
+            : 'ID ' . $subvettore_label;
+
+        $subjectSub = 'Documento scaduto — ' . $nome_documento . ' (#' . (int)$documento_id . ')';
+        $subjectOp  = $subjectSub;
+
+        $textSub = $salutoSub . ",\n\n"
+            . "il seguente documento è scaduto:\n\n"
+            . "Tipo documento: $nome_documento\n"
+            . "Riferimento: #" . (int)$documento_id . "\n"
+            . "Scaduto il: $data_scadenza\n\n"
+            . "Si richiede di effettuare l'upload di una versione aggiornata.\n"
+            . ($loginUrl !== '' ? "Per procedere, acceda alla sua area riservata:\n$loginUrl\n\n" : '')
+            . "Messaggio automatico — non rispondere.";
+
+        $textOp = "Gentile operatore,\n\n"
+            . "il seguente documento è scaduto:\n\n"
+            . "Tipo documento: $nome_documento\n"
+            . "Riferimento: #" . (int)$documento_id . "\n"
+            . "Subvettore: $subEtichetta\n"
+            . "Scaduto il: $data_scadenza\n\n"
+            . ($loginUrl !== '' ? "Per verificarlo, acceda all'area di gestione:\n$loginUrl\n\n" : '')
+            . "Messaggio automatico — non rispondere.";
+
+        $infoSub = send_expired_doc_mail_detail_line('Tipo documento', $nome_documento)
+            . send_expired_doc_mail_detail_line('Riferimento', '#' . (int)$documento_id)
+            . send_expired_doc_mail_detail_line('Scaduto il', $data_scadenza);
+
+        $innerSub = '<p style="margin:0 0 12px;">' . $safeSalutoSub . ',</p>'
+            . '<p style="margin:0 0 12px;">il seguente documento è scaduto. '
+            . 'La preghiamo di accedere alla sua <strong>area riservata</strong> per caricare una versione aggiornata.</p>'
+            . send_expired_doc_mail_info_box($infoSub)
+            . send_expired_doc_mail_btn($loginUrl, 'Accedi all\'area riservata');
+
+        $infoOp = send_expired_doc_mail_detail_line('Tipo documento', $nome_documento)
+            . send_expired_doc_mail_detail_line('Riferimento', '#' . (int)$documento_id)
+            . send_expired_doc_mail_detail_line('Subvettore', $subEtichetta)
+            . send_expired_doc_mail_detail_line('Scaduto il', $data_scadenza);
+
+        $safeSub = htmlspecialchars($subEtichetta, ENT_QUOTES, 'UTF-8');
+        $innerOp = '<p style="margin:0 0 12px;">Gentile operatore,</p>'
+            . '<p style="margin:0 0 12px;">il documento del subvettore <strong>' . $safeSub . '</strong> '
+            . 'è scaduto. Verificare in griglia documenti.</p>'
+            . send_expired_doc_mail_info_box($infoOp)
+            . send_expired_doc_mail_btn($loginUrl, 'Accedi all\'area di gestione');
+
+        return array(
+            'htmlSub'    => send_expired_doc_mail_layout('Documento scaduto', $innerSub, $mailLogoUrl),
+            'textSub'    => $textSub,
+            'htmlOp'     => send_expired_doc_mail_layout('Documento scaduto', $innerOp, $mailLogoUrl),
+            'textOp'     => $textOp,
+            'subjectSub' => $subjectSub,
+            'subjectOp'  => $subjectOp,
+        );
+    }
+}
+
+$loginUrl = isset($_SESSION['sett_login_url']) ? trim((string)$_SESSION['sett_login_url']) : '';
+if ($loginUrl === '') {
+    $loginUrl = rtrim(trim(send_expired_doc_mail_setting('login_url', '')), '/');
+}
+
 $oggi = date('Y-m-d');
+$notifyExpire = date('Y-m-d H:i:s', strtotime('+30 days'));
+$notifyFrom = 'admin';
+$notifyProfile = 'Pigliacelli_Notifications';
+
+sc_log_add('MAIL_DOCS_EXPIRE', 'START job scadenze oggi=' . $oggi);
+
+$operatori = send_expired_doc_load_operatori();
+$operatorEmails = $operatori['emails'];
+$operatorLogins = $operatori['logins'];
 
 $sql = "
     SELECT
@@ -51,121 +397,162 @@ $sql = "
         d.login,
         d.subvettore_id,
         COALESCE(s.login_subvettore, '') AS email_sub,
-        COALESCE(s.ragione_sociale, '') AS ragione_sociale
+        COALESCE(s.ragione_sociale, '') AS ragione_sociale,
+        d.stato_documento_id
     FROM documenti d
     INNER JOIN tipi_documento td
         ON td.id = d.tipo_documento_id
     LEFT JOIN subvettori s
         ON s.id = d.subvettore_id
-    WHERE DATE(d.data_scadenza) <= '$oggi'
+    WHERE d.data_scadenza IS NOT NULL
+      AND DATE(d.data_scadenza) <= '$oggi'
+      AND d.stato_documento_id IN (2, 3)
+    ORDER BY d.data_scadenza, d.id
 ";
 
-sc_select(ds, $sql);
+sc_select(ds, $sql, 'pigliacelli');
 
-if ({ds} !== false)
-{
-    while (!$ds->EOF)
-    {
-        $documento_id     = $ds->fields[0];
-        $nome_documento   = $ds->fields[1];
-        $data_scadenza    = date('d/m/Y', strtotime($ds->fields[2]));
-        $login            = trim((string)$ds->fields[3]);
-        $subvettore_id    = (int)$ds->fields[4];
-        $emailSub         = trim((string)$ds->fields[5]);
-        $ragione_sociale  = trim((string)$ds->fields[6]);
+$statLetti = 0;
+$statMailSub = 0;
+$statMailOp = 0;
+$statNotifSub = 0;
+$statNotifOp = 0;
+$statSkipEmail = 0;
 
-        $email = send_expired_doc_email_valida($emailSub) ? $emailSub : '';
+if ({ds} !== false) {
+    while (!{ds}->EOF) {
+        $statLetti++;
+        $documento_id    = (int){ds}->fields[0];
+        $nome_documento  = trim((string){ds}->fields[1]);
+        $data_scadenza   = date('d/m/Y', strtotime((string){ds}->fields[2]));
+        $login           = trim((string){ds}->fields[3]);
+        $subvettore_id   = (int){ds}->fields[4];
+        $emailSub        = trim((string){ds}->fields[5]);
+        $ragione_sociale = trim((string){ds}->fields[6]);
 
-        if ($email === '' && $login !== '') {
-            $loginSql = str_replace("'", "''", $login);
-            sc_lookup(rsExpUserMail, "
-                SELECT COALESCE(email, '')
-                FROM sec_users
-                WHERE login = '$loginSql'
-                LIMIT 1
-            ", 'pigliacelli');
-            if (!empty({rsExpUserMail[0][0]}) && send_expired_doc_email_valida({rsExpUserMail[0][0]})) {
-                $email = trim((string){rsExpUserMail[0][0]});
+        $emailSubvettore = send_expired_doc_resolve_email($login, $emailSub);
+
+        $subvettore_label = $subvettore_id > 0 ? (string)$subvettore_id : 'n/d';
+        $ragione_label = $ragione_sociale !== '' ? $ragione_sociale : 'n/d';
+
+        $mails = send_expired_doc_build_mails(
+            $documento_id,
+            $nome_documento,
+            $data_scadenza,
+            $subvettore_label,
+            $ragione_label,
+            $loginUrl
+        );
+
+        $titoloSub = $mails['subjectSub'];
+        $titoloOp  = $mails['subjectOp'];
+        $messaggioSub = $mails['textSub'];
+        $messaggioOp  = $mails['textOp'];
+        $htmlSub = $mails['htmlSub'];
+        $htmlOp  = $mails['htmlOp'];
+
+        if ($login !== '' && function_exists('sc_send_notification')) {
+            try {
+                sc_send_notification(array(
+                    'title'        => $titoloSub,
+                    'message'      => $messaggioSub,
+                    'destiny_type' => 'user',
+                    'to'           => $login,
+                    'from'         => $notifyFrom,
+                    'link'         => 'grid_documenti',
+                    'dtexpire'     => $notifyExpire,
+                    'profile'      => $notifyProfile,
+                ));
+                $statNotifSub++;
+                sc_log_add('MAIL_DOCS_EXPIRE', "notifica SC sub OK doc=$documento_id to=$login");
+            } catch (Throwable $e) {
+                sc_log_add('MAIL_DOCS_EXPIRE', "notifica SC sub ERRORE doc=$documento_id — " . $e->getMessage());
+            }
+        } else {
+            sc_log_add('MAIL_DOCS_EXPIRE', "notifica SC sub SKIP doc=$documento_id login vuoto");
+        }
+
+        if (!empty($operatorLogins) && function_exists('sc_send_notification')) {
+            try {
+                sc_send_notification(array(
+                    'title'        => $titoloOp,
+                    'message'      => $messaggioOp,
+                    'destiny_type' => 'user',
+                    'to'           => implode(';', $operatorLogins),
+                    'from'         => $notifyFrom,
+                    'link'         => 'grid_documenti',
+                    'dtexpire'     => $notifyExpire,
+                    'profile'      => $notifyProfile,
+                ));
+                $statNotifOp++;
+                sc_log_add('MAIL_DOCS_EXPIRE', "notifica SC operatori OK doc=$documento_id");
+            } catch (Throwable $e) {
+                sc_log_add('MAIL_DOCS_EXPIRE', "notifica SC operatori ERRORE doc=$documento_id — " . $e->getMessage());
             }
         }
 
-        $subvettore_label = $subvettore_id > 0
-            ? (string)$subvettore_id
-            : 'n/d';
-        $ragione_label = $ragione_sociale !== ''
-            ? $ragione_sociale
-            : 'n/d';
-
-        $titolo = "Documento $nome_documento in scadenza";
-
-        $messaggio = "Il documento '$nome_documento' è in scadenza il $data_scadenza.\n"
-            . "Subvettore ID: $subvettore_label\n"
-            . "Ragione sociale: $ragione_label\n\n"
-            . "Si richiede di effettuare l'upload di una versione aggiornata.";
-
-        $ragione_sociale_html = htmlspecialchars($ragione_label, ENT_QUOTES, 'UTF-8');
-
-        if ($login !== '') {
-            sc_send_notification([
-                'title'        => $titolo,
-                'message'      => $messaggio,
-                'destiny_type' => 'user',
-                'to'           => $login,
-                'from'         => '',
-                'link'         => '',
-                'dtexpire'     => '',
-                'profile'      => 'Pigliacelli_Notifications'
-            ]);
-        }
-
-        if ($email === '') {
+        if ($emailSubvettore !== '') {
+            try {
+                $mailOk = sc_send_mail_api(array_merge([sett_smtp], array(
+                    'message' => array(
+                        'html'    => $htmlSub,
+                        'text'    => $messaggioSub,
+                        'to'      => $emailSubvettore,
+                        'subject' => $titoloSub,
+                    ),
+                )));
+                if ($mailOk === false || $mailOk === null) {
+                    sc_log_add('MAIL_DOCS_EXPIRE', "mail sub FALLITA doc=$documento_id dest=$emailSubvettore");
+                } else {
+                    $statMailSub++;
+                    sc_log_add('MAIL_DOCS_EXPIRE', "mail sub OK doc=$documento_id dest=$emailSubvettore");
+                }
+            } catch (Throwable $e) {
+                sc_log_add('MAIL_DOCS_EXPIRE', "mail sub ERRORE doc=$documento_id — " . $e->getMessage());
+            }
+        } else {
+            $statSkipEmail++;
             sc_log_add(
                 'MAIL_DOCS_EXPIRE',
-                "skip doc=$documento_id — email assente subvettore_id=$subvettore_id login=[$login]"
+                "mail sub SKIP doc=$documento_id — email assente subvettore_id=$subvettore_id login=[$login]"
             );
-            $ds->MoveNext();
-            continue;
         }
 
-		$htmlContent = "
-		<html>
-		<head>
-			<style>
-				body {font-family: Arial; background:#f4f4f4; padding:20px;}
-				.box {background:#fff; padding:20px; border-radius:8px;}
-				.title {font-size:18px; font-weight:bold; color:#004080;}
-			</style>
-		</head>
-		<body>
-			<div class='box'>
-				<div class='title'>$titolo</div>
-				<p>Il documento <strong>$nome_documento</strong> è in scadenza il <strong>$data_scadenza</strong>.</p>
-				<p>
-					<strong>Subvettore ID:</strong> $subvettore_label<br>
-					<strong>Ragione sociale:</strong> $ragione_sociale_html
-				</p>
-				<p>Si richiede di effettuare l'upload di una versione aggiornata.</p>
-			</div>
-		</body>
-		</html>
-		";
+        foreach ($operatorEmails as $emailOp) {
+            try {
+                $mailOkOp = sc_send_mail_api(array_merge([sett_smtp], array(
+                    'message' => array(
+                        'html'    => $htmlOp,
+                        'text'    => $messaggioOp,
+                        'to'      => $emailOp,
+                        'subject' => $titoloOp,
+                    ),
+                )));
+                if ($mailOkOp === false || $mailOkOp === null) {
+                    sc_log_add('MAIL_DOCS_EXPIRE', "mail operatore FALLITA doc=$documento_id dest=$emailOp");
+                } else {
+                    $statMailOp++;
+                }
+            } catch (Throwable $e) {
+                sc_log_add('MAIL_DOCS_EXPIRE', "mail operatore ERRORE doc=$documento_id dest=$emailOp — " . $e->getMessage());
+            }
+        }
 
-		sc_send_mail_api(array_merge([sett_smtp], array(
-			'message' => [
-				'html'    => $htmlContent,
-				'text'    => $messaggio,
-				'to'      => $email,
-				'subject' => $titolo
-			]
-		)));
-
-
-        $ds->MoveNext();
+        {ds}->MoveNext();
     }
 
-    $ds->Close();
+    {ds}->Close();
+} else {
+    sc_log_add('MAIL_DOCS_EXPIRE', 'ERRORE query documenti in scadenza');
 }
-else
-{
-    sc_log_add("Errore invio notifica scadenza", "Errore nella query documenti");
-}
+
+sc_log_add(
+    'MAIL_DOCS_EXPIRE',
+    'END letti=' . $statLetti
+    . ' mail_sub=' . $statMailSub
+    . ' mail_op=' . $statMailOp
+    . ' notif_sub=' . $statNotifSub
+    . ' notif_op=' . $statNotifOp
+    . ' skip_email_sub=' . $statSkipEmail
+    . ' operatori=' . count($operatorLogins)
+);

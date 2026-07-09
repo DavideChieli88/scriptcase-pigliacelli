@@ -1,0 +1,232 @@
+// Scriptcase blank: sync_subvettori_pec_da_sga
+// Backfill pec su subvettori già importati: legge E_MAIL_CERTIFICATA da T2BaseVettori (SGA)
+// e aggiorna solo righe con pec NULL/vuota in pigliacelli (match su codice_sga = CODICE).
+//
+// Stesso filtro vettori di insert_new_subvectors_basevettori (T0).
+// Non inserisce subvettori nuovi, non tocca pec già valorizzate.
+//
+// UAT: ?dry_run=1 → solo log, nessun UPDATE.
+
+function sync_pec_log($msg)
+{
+    sc_log_add('SYNC_PEC_SGA', (string)$msg);
+}
+
+function sync_pec_sql_quote($v)
+{
+    if ($v === null) {
+        return "NULL";
+    }
+    return "'" . str_replace("'", "''", (string)$v) . "'";
+}
+
+function sync_pec_email_valida($email)
+{
+    $email = trim((string)$email);
+    if ($email === '') {
+        return false;
+    }
+    if (strpos($email, ';') !== false || strpos($email, ',') !== false || strpos($email, ' ') !== false) {
+        return false;
+    }
+    return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+}
+
+function sync_pec_connetti_sga($settings)
+{
+    $set_names = ['sgam_user', 'sgam_pswd', 'sgam_db', 'sgam_server'];
+
+    foreach ($set_names as $set_name) {
+        if (!array_key_exists($set_name, $settings) || trim((string)$settings[$set_name]) === '') {
+            sync_pec_log("ERRORE sec_settings mancante: $set_name");
+            sc_error_message("Parametro '" . $set_name . "' non trovato o vuoto in sec_settings.");
+            return null;
+        }
+    }
+
+    try {
+        $dsn = "sqlsrv:Server=" . $settings['sgam_server']
+            . ";Database=" . $settings['sgam_db']
+            . ";Encrypt=1"
+            . ";TrustServerCertificate=1";
+
+        return new PDO(
+            $dsn,
+            $settings['sgam_user'],
+            $settings['sgam_pswd'],
+            [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_NUM,
+            ]
+        );
+    } catch (PDOException $e) {
+        sync_pec_log('ERRORE connessione SGA: ' . $e->getMessage());
+        sc_error_message('Errore connessione PDO SGA: ' . $e->getMessage());
+        return null;
+    }
+}
+
+$dry_run = false;
+if (isset($_GET['dry_run']) && (string)$_GET['dry_run'] === '1') {
+    $dry_run = true;
+}
+
+sync_pec_log('START backfill pec da SGA' . ($dry_run ? ' [DRY_RUN]' : ''));
+
+sc_lookup(settingsRows, "
+    SELECT set_name, set_value
+    FROM sec_settings
+    WHERE set_name IN ('sgam_user', 'sgam_pswd', 'sgam_db', 'sgam_server')
+", 'pigliacelli');
+
+$settings = [];
+if (!empty({settingsRows})) {
+    foreach ({settingsRows} as $settingRow) {
+        $settings[$settingRow[0]] = $settingRow[1];
+    }
+}
+
+$pdo_sga = sync_pec_connetti_sga($settings);
+if ($pdo_sga === null) {
+    sync_pec_log('STOP connessione SGA non disponibile');
+    return;
+}
+
+// Subvettori con pec mancante, indicizzati per codice_sga
+$target_by_codice = [];
+sc_lookup(subPecVuote, "
+    SELECT id, codice_sga, COALESCE(pec, '')
+    FROM subvettori
+    WHERE codice_sga IS NOT NULL
+      AND TRIM(codice_sga) <> ''
+      AND (pec IS NULL OR TRIM(pec) = '')
+", 'pigliacelli');
+
+if (!empty({subPecVuote})) {
+    foreach ({subPecVuote} as $row) {
+        $target_by_codice[(string)$row[1]] = [
+            'id' => (int)$row[0],
+            'pec_db' => trim((string)$row[2]),
+        ];
+    }
+}
+
+$target_count = count($target_by_codice);
+sync_pec_log('Subvettori con pec NULL/vuota e codice_sga: ' . $target_count);
+
+if ($target_count === 0) {
+    sync_pec_log('END nessun subvettore da aggiornare');
+    sc_alert('Nessun subvettore con pec NULL da aggiornare.');
+    return;
+}
+
+// Stessa query/filtro import T0 (solo campi necessari per il backfill)
+$sql_sga = "
+    SELECT
+        tbvt.CODICE,
+        NULLIF(RTRIM(tbvt.E_MAIL_CERTIFICATA), '') AS E_MAIL_CERTIFICATA
+    FROM T2BaseVettori tbvt
+    WHERE
+        tbvt.SOCIETA = 1
+        AND (
+            (
+                EXISTS (
+                    SELECT 1
+                    FROM T2ViaggiVettori tvv
+                    WHERE tvv.VETTORE = tbvt.CODICE
+                      AND tvv.ANNO >= 2024
+                      AND tvv.SOCIETA = 1
+                )
+                AND tbvt.CODICE NOT IN (
+                    94, 213, 648, 694, 980, 1072, 1480, 1541, 1989, 2408, 3115, 3644, 3752,
+                    4010, 4169, 4364, 4390, 4407, 4429, 4785, 5055, 5252, 5439, 5469, 5490,
+                    5607, 5611, 5799, 5878, 5885, 5914, 5963, 5976, 5990, 6042, 6051, 6086,
+                    6154, 6160, 6167, 6169, 6173, 6177, 6179, 6180, 6191, 6192, 6200, 6223,
+                    6225, 6227, 6237, 6250, 6251, 6254, 6271, 6279, 6289, 6291, 6293, 6312, 6363
+                )
+            )
+            OR tbvt.CODICE IN (4152, 5911, 5967)
+        )
+    ORDER BY tbvt.CODICE
+";
+
+$letti_sga = 0;
+$aggiornati = 0;
+$senza_pec_sga = 0;
+$pec_non_valida = 0;
+$non_in_target = 0;
+$errori = 0;
+
+try {
+    $stmt = $pdo_sga->query($sql_sga);
+    while (($row = $stmt->fetch(PDO::FETCH_NUM)) !== false) {
+        $letti_sga++;
+        $codice_sga = (string)$row[0];
+        $pec_sga = trim((string)($row[1] ?? ''));
+
+        if (!isset($target_by_codice[$codice_sga])) {
+            $non_in_target++;
+            continue;
+        }
+
+        if ($pec_sga === '') {
+            $senza_pec_sga++;
+            continue;
+        }
+
+        if (!sync_pec_email_valida($pec_sga)) {
+            $pec_non_valida++;
+            sync_pec_log('SKIP pec non valida codice_sga=' . $codice_sga . ' pec=[' . $pec_sga . ']');
+            continue;
+        }
+
+        $sub_id = (int)$target_by_codice[$codice_sga]['id'];
+
+        if ($dry_run) {
+            $aggiornati++;
+            sync_pec_log('DRY_RUN UPDATE sub=' . $sub_id . ' codice_sga=' . $codice_sga . ' pec=' . $pec_sga);
+            unset($target_by_codice[$codice_sga]);
+            continue;
+        }
+
+        $upd = "
+            UPDATE subvettori
+            SET pec = " . sync_pec_sql_quote($pec_sga) . "
+            WHERE id = " . (int)$sub_id . "
+              AND (pec IS NULL OR TRIM(pec) = '')
+        ";
+
+        try {
+            sc_exec_sql($upd, 'pigliacelli');
+            $aggiornati++;
+            sync_pec_log('UPDATE sub=' . $sub_id . ' codice_sga=' . $codice_sga . ' pec=' . $pec_sga);
+            unset($target_by_codice[$codice_sga]);
+        } catch (Exception $e) {
+            $errori++;
+            sync_pec_log('ERRORE UPDATE sub=' . $sub_id . ' codice_sga=' . $codice_sga . ' — ' . $e->getMessage());
+        } catch (Throwable $e) {
+            $errori++;
+            sync_pec_log('ERRORE UPDATE sub=' . $sub_id . ' codice_sga=' . $codice_sga . ' — ' . $e->getMessage());
+        }
+    }
+    $stmt->closeCursor();
+} catch (PDOException $e) {
+    sync_pec_log('ERRORE SELECT SGA: ' . $e->getMessage());
+    sc_error_message('Errore select T2BaseVettori: ' . $e->getMessage());
+    return;
+}
+
+$rimasti_senza_pec = count($target_by_codice);
+
+$riepilogo = 'END letti_sga=' . $letti_sga
+    . ' target_iniziali=' . $target_count
+    . ' aggiornati=' . $aggiornati
+    . ' rimasti_senza_pec=' . $rimasti_senza_pec
+    . ' senza_pec_sga=' . $senza_pec_sga
+    . ' pec_non_valida=' . $pec_non_valida
+    . ' codici_sga_fuori_target=' . $non_in_target
+    . ' errori=' . $errori
+    . ($dry_run ? ' [DRY_RUN]' : '');
+
+sync_pec_log($riepilogo);
+sc_alert($riepilogo);

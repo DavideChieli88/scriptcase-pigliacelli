@@ -439,3 +439,14 @@ ALTER TABLE `documenti`
     ADD CONSTRAINT `documenti_subvettori_fk`
     FOREIGN KEY (`subvettore_id`) REFERENCES `subvettori`(`id`)
     ON DELETE RESTRICT ON UPDATE CASCADE;
+
+    ALTER TABLE `documenti` DROP FOREIGN KEY `documenti_sec_users_fk`; ALTER TABLE `documenti` ADD CONSTRAINT `documenti_sec_users_fk` FOREIGN KEY (`login`) REFERENCES `sec_users`(`login`) ON DELETE RESTRICT ON UPDATE RESTRICT; ALTER TABLE `documenti` DROP FOREIGN KEY `documenti_subvettori_fk`; ALTER TABLE `documenti` ADD CONSTRAINT `documenti_subvettori_fk` FOREIGN KEY (`subvettore_id`) REFERENCES `subvettori`(`id`) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+    ALTER TABLE `sec_users_groups` DROP FOREIGN KEY `sec_user_groups_sec_users_fk`; ALTER TABLE `sec_users_groups` ADD CONSTRAINT `sec_user_groups_sec_users_fk` FOREIGN KEY (`login`) REFERENCES `sec_users`(`login`) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+    ALTER TABLE `documenti` DROP FOREIGN KEY `documenti_tipi_documento_fk`;
+ALTER TABLE `documenti`
+  ADD CONSTRAINT `documenti_tipi_documento_fk`
+  FOREIGN KEY (`tipo_documento_id`) REFERENCES `tipi_documento`(`id`)
+  ON DELETE RESTRICT
+  ON UPDATE RESTRICT;

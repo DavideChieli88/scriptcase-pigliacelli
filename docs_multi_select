@@ -1,0 +1,1381 @@
+/**
+ * Scriptcase blank: docs_multi_select
+ *
+ * Creazione multipla documenti: subvettore + N tipi_documento.
+ * Versione standalone: nessuna Internal Library richiesta.
+ * Invio mail: una sola email riepilogativa per batch (non N mail separate).
+ *
+ * Parametro GET opzionale: subvettore_id (passato da form_documenti).
+ */
+
+if (!function_exists('docs_multi_email_pulisci')) {
+    function docs_multi_email_pulisci($email)
+    {
+        $email = trim((string)$email);
+        if ($email === '') {
+            return '';
+        }
+
+        $original = $email;
+        static $utf8_invisibili = array(
+            "\xEF\xBB\xBF",
+            "\xE2\x80\x8B",
+            "\xE2\x80\x8C",
+            "\xE2\x80\x8D",
+            "\xE2\x81\xA0",
+            "\xC2\xAD",
+        );
+
+        do {
+            $prev = $email;
+            foreach ($utf8_invisibili as $seq) {
+                if ($seq !== '' && strpos($email, $seq) === 0) {
+                    $email = substr($email, strlen($seq));
+                }
+            }
+            $email = trim($email);
+            foreach ($utf8_invisibili as $seq) {
+                $len = strlen($seq);
+                if ($len > 0 && strlen($email) >= $len && substr($email, -$len) === $seq) {
+                    $email = substr($email, 0, -$len);
+                }
+            }
+            $email = trim($email);
+        } while ($email !== $prev && $email !== '');
+
+        if ($email !== $original
+            && filter_var($original, FILTER_VALIDATE_EMAIL)
+            && !filter_var($email, FILTER_VALIDATE_EMAIL)
+        ) {
+            return trim($original);
+        }
+
+        return $email;
+    }
+}
+
+if (!function_exists('docs_multi_email_valida')) {
+    function docs_multi_email_valida($email)
+    {
+        $email = docs_multi_email_pulisci($email);
+        if ($email === '') {
+            return false;
+        }
+        if (strpos($email, ';') !== false || strpos($email, ',') !== false || strpos($email, ' ') !== false) {
+            return false;
+        }
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+}
+
+if (!function_exists('docs_multi_user_is_subvettore_group')) {
+    function docs_multi_user_is_subvettore_group()
+    {
+        sc_lookup(rsDocsMultiGrp, "
+            SELECT 1
+            FROM sec_users_groups
+            WHERE login = '[usr_login]'
+              AND group_id = 2
+            LIMIT 1
+        ", 'pigliacelli');
+
+        return !empty({rsDocsMultiGrp[0][0]});
+    }
+}
+
+if (!function_exists('docs_multi_resolve_login_from_subvettore')) {
+    function docs_multi_resolve_login_from_subvettore($subvettore_id)
+    {
+        $subId = (int)$subvettore_id;
+        if ($subId <= 0) {
+            return '';
+        }
+
+        sc_lookup(rsFdLs, "
+            SELECT login_subvettore
+            FROM subvettori
+            WHERE id = $subId
+            LIMIT 1
+        ", 'pigliacelli');
+        $ls = isset({rsFdLs[0][0]}) ? trim((string){rsFdLs[0][0]}) : '';
+        if ($ls !== '') {
+            $lsSql = str_replace("'", "''", $ls);
+            sc_lookup(rsFdUl, "
+                SELECT login
+                FROM sec_users
+                WHERE login = '$lsSql'
+                  AND subvettore_id = $subId
+                LIMIT 1
+            ", 'pigliacelli');
+            if (!empty({rsFdUl[0][0]})) {
+                return trim((string){rsFdUl[0][0]});
+            }
+        }
+
+        sc_lookup(rsFdUf, "
+            SELECT login
+            FROM sec_users
+            WHERE subvettore_id = $subId
+            ORDER BY login
+            LIMIT 1
+        ", 'pigliacelli');
+        if (!empty({rsFdUf[0][0]})) {
+            return trim((string){rsFdUf[0][0]});
+        }
+
+        return '';
+    }
+}
+
+if (!function_exists('docs_multi_resolve_destinatario')) {
+    function docs_multi_resolve_destinatario($loginField)
+    {
+        $loginField = trim((string)$loginField);
+        if ($loginField === '') {
+            return '';
+        }
+        if (docs_multi_email_valida($loginField)) {
+            return $loginField;
+        }
+
+        $loginSql = str_replace("'", "''", $loginField);
+        sc_lookup(rsFdUser, "
+            SELECT email, subvettore_id
+            FROM sec_users
+            WHERE login = '$loginSql'
+            LIMIT 1
+        ", 'pigliacelli');
+
+        if (!empty({rsFdUser[0][0]})) {
+            $emailUser = trim((string){rsFdUser[0][0]});
+            if (docs_multi_email_valida($emailUser)) {
+                return $emailUser;
+            }
+            $subId = (int){rsFdUser[0][1]};
+            if ($subId > 0) {
+                sc_lookup(rsFdSub, "
+                    SELECT login_subvettore
+                    FROM subvettori
+                    WHERE id = $subId
+                    LIMIT 1
+                ", 'pigliacelli');
+                if (!empty({rsFdSub[0][0]})) {
+                    $emailSub = trim((string){rsFdSub[0][0]});
+                    if (docs_multi_email_valida($emailSub)) {
+                        return $emailSub;
+                    }
+                }
+            }
+        }
+
+        sc_lookup(rsFdUserEmail, "
+            SELECT email
+            FROM sec_users
+            WHERE email = '$loginSql'
+            LIMIT 1
+        ", 'pigliacelli');
+        if (!empty({rsFdUserEmail[0][0]}) && docs_multi_email_valida({rsFdUserEmail[0][0]})) {
+            return trim((string){rsFdUserEmail[0][0]});
+        }
+
+        return '';
+    }
+}
+
+if (!function_exists('docs_multi_mail_setting')) {
+    function docs_multi_mail_setting($name, $default = '')
+    {
+        $key = 'sett_' . $name;
+        if (isset($_SESSION[$key])) {
+            return (string)$_SESSION[$key];
+        }
+        $safeName = str_replace("'", "''", trim((string)$name));
+        sc_lookup(rsFdMailSet, "SELECT set_value FROM sec_settings WHERE set_name = '$safeName' LIMIT 1");
+        if (isset({rsFdMailSet[0][0]})) {
+            return (string){rsFdMailSet[0][0]};
+        }
+        return $default;
+    }
+}
+
+if (!function_exists('docs_multi_mail_logo_read_embed')) {
+    function docs_multi_mail_logo_read_embed($anchorFile = null)
+    {
+        $rel = '_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png';
+        $dir = realpath(dirname($anchorFile ?: __FILE__));
+        for ($i = 0; $i < 12 && $dir; $i++) {
+            $try = $dir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel);
+            if (is_readable($try)) {
+                $bin = @file_get_contents($try);
+                if ($bin !== false && $bin !== '' && strlen($bin) < 500000) {
+                    return 'data:image/png;base64,' . base64_encode($bin);
+                }
+            }
+            $p = dirname($dir);
+            if ($p === $dir) {
+                break;
+            }
+            $dir = $p;
+        }
+        return '';
+    }
+}
+
+if (!function_exists('docs_multi_mail_logo_src')) {
+    function docs_multi_mail_logo_src()
+    {
+        $embed = docs_multi_mail_logo_read_embed();
+        if ($embed !== '') {
+            return $embed;
+        }
+        $base = rtrim(trim(docs_multi_mail_setting('mail_base_url', '')), '/');
+        if ($base !== '' && preg_match('#^https?://#i', $base) === 1) {
+            return htmlspecialchars(
+                $base . '/_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png',
+                ENT_QUOTES,
+                'UTF-8'
+            );
+        }
+        return '';
+    }
+}
+
+if (!function_exists('docs_multi_mail_layout')) {
+    function docs_multi_mail_layout($title, $innerHtml, $mailLogoUrl)
+    {
+        $t = htmlspecialchars((string)$title, ENT_QUOTES, 'UTF-8');
+        $logoTd = '';
+        if ((string)$mailLogoUrl !== '') {
+            $logoTd = '<td align="right" valign="middle" style="width:148px;padding-left:16px;">'
+                . '<img src="' . (string)$mailLogoUrl . '" alt="Pigliacelli" width="140" '
+                . 'style="display:block;max-width:140px;width:140px;height:auto;border:0;" />'
+                . '</td>';
+        }
+        return '<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">'
+            . '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            . '<title>' . $t . '</title></head>'
+            . '<body style="margin:0;padding:0;background:#eef1f4;">'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef1f4;">'
+            . '<tr><td align="center" style="padding:32px 16px;">'
+            . '<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" '
+            . 'style="max-width:600px;width:100%;background:#fff;border-radius:12px;border:1px solid #dde1e6;">'
+            . '<tr><td style="padding:22px 28px 18px;border-bottom:1px solid #e8ebef;background:#fafbfc;">'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
+            . '<td valign="middle" style="font-family:Arial,Helvetica,sans-serif;font-size:19px;font-weight:bold;color:#1a3a5c;line-height:1.3;">' . $t . '</td>'
+            . $logoTd . '</tr></table></td></tr>'
+            . '<tr><td style="padding:26px 28px 22px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#2d3748;">'
+            . $innerHtml . '</td></tr>'
+            . '<tr><td style="padding:14px 28px;background:#f4f6f8;border-top:1px solid #e8ebef;'
+            . 'font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#718096;">'
+            . 'Messaggio automatico &mdash; non rispondere.</td></tr>'
+            . '</table></td></tr></table></body></html>';
+    }
+}
+
+if (!function_exists('docs_multi_mail_info_box')) {
+    function docs_multi_mail_info_box($rowsHtml)
+    {
+        return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+            . 'style="margin:16px 0;background:#f7f9fb;border:1px solid #e2e8f0;border-radius:8px;">'
+            . '<tr><td style="padding:14px 18px;font-size:14px;line-height:1.7;color:#2d3748;">'
+            . $rowsHtml . '</td></tr></table>';
+    }
+}
+
+if (!function_exists('docs_multi_mail_detail_line')) {
+    function docs_multi_mail_detail_line($label, $value)
+    {
+        return '<strong style="color:#1a3a5c;">'
+            . htmlspecialchars((string)$label, ENT_QUOTES, 'UTF-8') . ':</strong> '
+            . htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8') . '<br>';
+    }
+}
+
+if (!function_exists('docs_multi_mail_btn')) {
+    function docs_multi_mail_btn($href, $label)
+    {
+        $href = trim((string)$href);
+        if ($href === '') {
+            return '';
+        }
+        $safeHref = htmlspecialchars($href, ENT_QUOTES, 'UTF-8');
+        $safeLabel = htmlspecialchars((string)$label, ENT_QUOTES, 'UTF-8');
+        return '<p style="margin:24px 0 8px;text-align:center;">'
+            . '<a href="' . $safeHref . '" style="display:inline-block;padding:12px 26px;'
+            . 'background:#1a3a5c;color:#ffffff;text-decoration:none;border-radius:8px;'
+            . 'font-weight:bold;font-size:15px;">' . $safeLabel . '</a></p>';
+    }
+}
+
+if (!function_exists('docs_multi_saluto_subvettore')) {
+    function docs_multi_saluto_subvettore($subvettore_id)
+    {
+        $subvettore_id = (int)$subvettore_id;
+        if ($subvettore_id <= 0) {
+            return 'Gentile subvettore';
+        }
+
+        sc_lookup(rsFdSubSaluto, "
+            SELECT COALESCE(ragione_sociale, '')
+            FROM subvettori
+            WHERE id = $subvettore_id
+            LIMIT 1
+        ", 'pigliacelli');
+
+        $ragione = !empty({rsFdSubSaluto[0][0]}) ? trim((string){rsFdSubSaluto[0][0]}) : '';
+        if ($ragione !== '') {
+            return 'Gentile ' . $ragione;
+        }
+
+        return 'Gentile subvettore';
+    }
+}
+
+if (!function_exists('docs_multi_tipo_nome')) {
+    function docs_multi_tipo_nome($tipo_documento_id)
+    {
+        sc_lookup(rsTipoDoc, "
+            SELECT nome
+            FROM tipi_documento
+            WHERE id = " . (int)$tipo_documento_id . "
+            LIMIT 1
+        ", 'pigliacelli');
+
+        return isset({rsTipoDoc[0][0]}) ? trim((string){rsTipoDoc[0][0]}) : 'Documento';
+    }
+}
+
+if (!function_exists('docs_multi_validate_destinatario')) {
+    /** Verifica destinatario mail senza effetti collaterali (no attivazione utente). */
+    function docs_multi_validate_destinatario($subvettore_id, $loginField)
+    {
+        $docSubId = (int)$subvettore_id;
+        $loginField = trim((string)$loginField);
+        if ($loginField === '' || $docSubId <= 0) {
+            return '';
+        }
+
+        $destinatario = '';
+        sc_lookup(rsFdSubMailVal, "
+            SELECT login_subvettore
+            FROM subvettori
+            WHERE id = $docSubId
+            LIMIT 1
+        ", 'pigliacelli');
+        if (!empty({rsFdSubMailVal[0][0]}) && docs_multi_email_valida({rsFdSubMailVal[0][0]})) {
+            $destinatario = trim((string){rsFdSubMailVal[0][0]});
+        }
+
+        if (!docs_multi_email_valida($destinatario)) {
+            $destinatarioResolved = docs_multi_resolve_destinatario($loginField);
+            if ($destinatarioResolved !== '') {
+                $destinatario = $destinatarioResolved;
+            }
+        }
+
+        return docs_multi_email_valida($destinatario) ? $destinatario : '';
+    }
+}
+
+if (!function_exists('docs_multi_prepare_mail_context')) {
+    /**
+     * Risolve destinatario, attiva utente se serve e prepara SMTP (una volta per batch).
+     *
+     * @return array|false
+     */
+    function docs_multi_prepare_mail_context($subvettore_id, $loginField)
+    {
+        $loginField = trim((string)$loginField);
+        $docSubId = (int)$subvettore_id;
+        $logCtx = 'docs_multi_prepare_mail_context';
+
+        if ($loginField === '' || $docSubId <= 0) {
+            sc_log_add('MAIL_DOCS', "$logCtx — login o subvettore_id mancante");
+            return false;
+        }
+
+        $destinatario = '';
+        if ($docSubId > 0) {
+            sc_lookup(rsFdSubMailCtx, "
+                SELECT login_subvettore
+                FROM subvettori
+                WHERE id = $docSubId
+                LIMIT 1
+            ", 'pigliacelli');
+            if (!empty({rsFdSubMailCtx[0][0]}) && docs_multi_email_valida({rsFdSubMailCtx[0][0]})) {
+                $destinatario = trim((string){rsFdSubMailCtx[0][0]});
+            }
+        }
+
+        $loginSql = str_replace("'", "''", $loginField);
+        $userLogin = '';
+        $userDisplayName = '';
+        $plainPassword = '';
+        $sendCredentials = false;
+        $hasLoggedFirst = 0;
+
+        sc_lookup(rsUserDocCtx, "
+            SELECT login, active, name, email, pswd, COALESCE(hasLoggedFirst, 0)
+            FROM sec_users
+            WHERE login = '$loginSql'
+            LIMIT 1
+        ", 'pigliacelli');
+
+        if (!isset({rsUserDocCtx[0][0]}) && docs_multi_email_valida($loginField)) {
+            sc_lookup(rsUserDocCtx, "
+                SELECT login, active, name, email, pswd, COALESCE(hasLoggedFirst, 0)
+                FROM sec_users
+                WHERE email = '$loginSql'
+                LIMIT 1
+            ", 'pigliacelli');
+        }
+
+        if (isset({rsUserDocCtx[0][0]})) {
+            $userLogin = trim((string){rsUserDocCtx[0][0]});
+            $userActive = trim((string){rsUserDocCtx[0][1]});
+            $userDisplayName = trim((string){rsUserDocCtx[0][2]});
+            $storedPassword = trim((string){rsUserDocCtx[0][4]});
+            $hasLoggedFirst = (int){rsUserDocCtx[0][5]};
+
+            $activeNorm = strtoupper($userActive);
+            $isActive = ($activeNorm === 'Y' || $activeNorm === '1' || $activeNorm === 'S' || $activeNorm === 'SI' || $activeNorm === 'YES');
+            $wasInactive = !$isActive;
+
+            if ($wasInactive) {
+                $loginUpd = str_replace("'", "''", $userLogin);
+                sc_exec_sql("UPDATE sec_users SET active = 'Y' WHERE login = '$loginUpd'", 'pigliacelli');
+                sc_log_add('MAIL_DOCS', "$logCtx — attivato sec_users login=$userLogin (era inactive)");
+            }
+
+            if ($wasInactive && $hasLoggedFirst === 0) {
+                $pswLooksMd5 = ($storedPassword !== '' && preg_match('/^[a-f0-9]{32}$/i', $storedPassword));
+
+                if ($storedPassword !== '' && !$pswLooksMd5) {
+                    $plainPassword = $storedPassword;
+                    $sendCredentials = true;
+                    sc_log_add('MAIL_DOCS', "$logCtx — credenziali da pswd in chiaro login=$userLogin");
+                } else {
+                    $chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_!+-*';
+                    $charsLen = strlen($chars);
+                    for ($i = 0; $i < 12; $i++) {
+                        $plainPassword .= $chars[random_int(0, $charsLen - 1)];
+                    }
+
+                    $pswHash = str_replace("'", "''", md5($plainPassword));
+                    $loginUpd = str_replace("'", "''", $userLogin);
+                    sc_exec_sql("UPDATE sec_users SET pswd = '$pswHash' WHERE login = '$loginUpd'", 'pigliacelli');
+                    $sendCredentials = true;
+                    sc_log_add('MAIL_DOCS', "$logCtx — nuova password temporanea login=$userLogin (hasLoggedFirst=0, pswd DB era hash)");
+                }
+            } elseif ($isActive) {
+                sc_log_add('MAIL_DOCS', "$logCtx — login=$userLogin già attivo (active=Y), mail credenziali non inviata");
+            } elseif (isset({rsUserDocCtx[0][0]})) {
+                sc_log_add('MAIL_DOCS', "$logCtx — login=$userLogin già loggato (hasLoggedFirst=1), mail credenziali non inviata");
+            }
+        }
+
+        if (!docs_multi_email_valida($destinatario)) {
+            $destinatarioResolved = docs_multi_resolve_destinatario($loginField);
+            if ($destinatarioResolved !== '') {
+                $destinatario = $destinatarioResolved;
+            }
+        }
+
+        if ($destinatario === '' || !docs_multi_email_valida($destinatario)) {
+            sc_log_add('MAIL_DOCS', "$logCtx — email non valida: subvettore_id=$docSubId login=[$loginField] dest=[$destinatario]");
+            return false;
+        }
+
+        sc_lookup(rs_smtp_ctx, "SELECT set_name, set_value FROM sec_settings");
+        $loginUrl = '';
+        if (isset({rs_smtp_ctx[0][0]})) {
+            foreach ({rs_smtp_ctx} as $f) {
+                $_SESSION['sett_' . $f[0]] = $f[1];
+                if ($f[0] === 'login_url') {
+                    $loginUrl = trim((string)$f[1]);
+                }
+            }
+        }
+
+        if (isset($_SESSION['sett_smtp_api']) && $_SESSION['sett_smtp_api'] == 'custom') {
+            $sett_smtp = array(
+                'settings' => array(
+                    'gateway'       => 'smtp',
+                    'smtp_server'   => $_SESSION['sett_smtp_server'],
+                    'smtp_protocol' => $_SESSION['sett_smtp_security'],
+                    'smtp_port'     => $_SESSION['sett_smtp_port'],
+                    'smtp_user'     => $_SESSION['sett_smtp_user'],
+                    'smtp_password' => $_SESSION['sett_smtp_pass'],
+                    'from_email'    => $_SESSION['sett_smtp_from_email'],
+                    'from_name'     => $_SESSION['sett_smtp_from_name'],
+                ),
+            );
+        } else {
+            $sett_smtp = array(
+                'profile' => isset($_SESSION['sett_smtp_api']) ? $_SESSION['sett_smtp_api'] : ''
+            );
+        }
+
+        return array(
+            'destinatario'    => $destinatario,
+            'loginField'      => $loginField,
+            'userLogin'       => $userLogin,
+            'userDisplayName' => $userDisplayName,
+            'plainPassword'   => $plainPassword,
+            'sendCredentials' => $sendCredentials,
+            'hasLoggedFirst'  => $hasLoggedFirst,
+            'loginUrl'        => $loginUrl,
+            'sett_smtp'       => $sett_smtp,
+        );
+    }
+}
+
+if (!function_exists('docs_multi_send_batch_summary')) {
+    /** Una sola mail (e una notifica SC) con l'elenco dei documenti creati. */
+    function docs_multi_send_batch_summary($mailCtx, $createdDocs, $subvettore_id)
+    {
+        if (empty($mailCtx) || !is_array($mailCtx) || empty($createdDocs)) {
+            return false;
+        }
+
+        $docSubId = (int)$subvettore_id;
+        $destinatario = trim((string)$mailCtx['destinatario']);
+        $loginField = trim((string)$mailCtx['loginField']);
+        $userLogin = trim((string)$mailCtx['userLogin']);
+        $plainPassword = trim((string)$mailCtx['plainPassword']);
+        $sendCredentials = !empty($mailCtx['sendCredentials']) && $plainPassword !== '';
+        $loginUrl = trim((string)$mailCtx['loginUrl']);
+        $sett_smtp = $mailCtx['sett_smtp'];
+        $logCtx = 'docs_multi_send_batch_summary';
+        $count = count($createdDocs);
+
+        $plainLines = array();
+        $htmlLines = '';
+        foreach ($createdDocs as $row) {
+            $nome = isset($row['nome']) ? trim((string)$row['nome']) : 'Documento';
+            $docId = isset($row['docId']) ? (int)$row['docId'] : 0;
+            $plainLines[] = '- ' . $nome . ' (#' . $docId . ')';
+            $htmlLines .= '<li>' . htmlspecialchars($nome, ENT_QUOTES, 'UTF-8')
+                . ' <span style="color:#718096;">(#' . $docId . ')</span></li>';
+        }
+
+        $soggetto = $count === 1
+            ? 'Richiesta documento — ' . $createdDocs[0]['nome'] . ' (#' . (int)$createdDocs[0]['docId'] . ')'
+            : 'Richiesta documenti — ' . $count . ' documenti';
+
+        $credBlockPlain = '';
+        $credBlockHtml = '';
+        if ($sendCredentials) {
+            $safeCredLogin = htmlspecialchars($userLogin, ENT_QUOTES, 'UTF-8');
+            $safeCredPwd = htmlspecialchars($plainPassword, ENT_QUOTES, 'UTF-8');
+            $soggetto = $count === 1
+                ? 'Richiesta documento e credenziali — ' . $createdDocs[0]['nome']
+                : 'Richiesta documenti e credenziali — ' . $count . ' documenti';
+
+            $credBlockPlain = "\n\nIl suo account è stato attivato. Credenziali area riservata (password temporanea):\n"
+                . "Login: $userLogin\n"
+                . "Password: $plainPassword\n";
+
+            $credBlockHtml = '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+                . 'style="margin:16px 0;background:#f8f9fb;border:1px solid #e2e6ea;border-radius:8px;">'
+                . '<tr><td style="padding:16px 18px;font-size:14px;line-height:1.6;">'
+                . '<p style="margin:0 0 10px;"><strong>Account attivato</strong> — credenziali per l\'area riservata (password temporanea):</p>'
+                . '<strong>Login:</strong> ' . $safeCredLogin . '<br>'
+                . '<strong>Password:</strong> ' . $safeCredPwd
+                . '</td></tr></table>';
+        }
+
+        $salutoSub = docs_multi_saluto_subvettore($docSubId);
+        $safeSalutoSub = htmlspecialchars($salutoSub, ENT_QUOTES, 'UTF-8');
+        $docListPlain = implode("\n", $plainLines);
+
+        $introPlain = $count === 1
+            ? "è stato richiesto l'inserimento del seguente documento:\n\n"
+            : "è stato richiesto l'inserimento dei seguenti documenti:\n\n";
+
+        $testoPlain = $salutoSub . ",\n\n"
+            . $introPlain
+            . $docListPlain . "\n\n"
+            . "Per procedere, acceda alla sua area riservata:\n" . $loginUrl
+            . $credBlockPlain
+            . "\n\nMessaggio automatico — non rispondere.";
+
+        $mailTitolo = $sendCredentials
+            ? ($count === 1 ? 'Richiesta documento e credenziali' : 'Richiesta documenti e credenziali')
+            : ($count === 1 ? 'Richiesta inserimento documento' : 'Richiesta inserimento documenti');
+
+        $introHtml = $count === 1
+            ? 'è stato richiesto l\'inserimento del seguente documento.'
+            : 'è stato richiesto l\'inserimento dei seguenti documenti.';
+
+        $mailLogoUrl = docs_multi_mail_logo_src();
+        $mailListHtml = '<ul style="margin:8px 0 0 18px;padding:0;line-height:1.7;">' . $htmlLines . '</ul>';
+        $mailInner = '<p style="margin:0 0 12px;">' . $safeSalutoSub . ',</p>'
+            . '<p style="margin:0 0 12px;">' . $introHtml . ' '
+            . 'La preghiamo di accedere alla sua <strong>area riservata</strong> per procedere con il caricamento.</p>'
+            . docs_multi_mail_info_box($mailListHtml)
+            . $credBlockHtml
+            . docs_multi_mail_btn($loginUrl, 'Accedi all\'area riservata');
+        $testoHtml = docs_multi_mail_layout($mailTitolo, $mailInner, $mailLogoUrl);
+
+        sc_log_add(
+            'MAIL_DOCS',
+            "$logCtx — preparazione mail batch dest=$destinatario count=$count sendCredentials="
+            . ($sendCredentials ? '1' : '0') . " oggetto=[$soggetto]"
+        );
+
+        try {
+            $mailOk = sc_send_mail_api(array_merge($sett_smtp, array(
+                'message' => array(
+                    'to'      => $destinatario,
+                    'subject' => $soggetto,
+                    'html'    => $testoHtml,
+                    'text'    => $testoPlain,
+                ),
+            )));
+
+            if ($mailOk === false || $mailOk === null) {
+                sc_log_add('MAIL_DOCS', "ERRORE $logCtx — invio mail batch fallito (dest: $destinatario)");
+            } else {
+                $credNote = $sendCredentials ? ' con credenziali' : '';
+                sc_log_add('MAIL_DOCS', "$logCtx — mail batch inviata a $destinatario ($count documenti)$credNote");
+            }
+        } catch (Exception $e) {
+            sc_log_add('MAIL_DOCS', "ERRORE $logCtx — mail batch a $destinatario: " . $e->getMessage());
+        } catch (Throwable $e) {
+            sc_log_add('MAIL_DOCS', "ERRORE $logCtx — mail batch a $destinatario: " . $e->getMessage());
+        }
+
+        $notifyLogin = $userLogin !== '' ? $userLogin : $loginField;
+        $notifyFrom = trim((string)[usr_login]);
+        if ($notifyFrom === '') {
+            $notifyFrom = 'admin';
+        }
+        if ($notifyLogin !== '' && $notifyFrom !== '') {
+            $notifyParts = array();
+            foreach ($createdDocs as $row) {
+                $notifyParts[] = $row['nome'] . ' (#' . (int)$row['docId'] . ')';
+            }
+            $notifyTitolo = $count === 1 ? 'Nuovo documento richiesto' : 'Nuovi documenti richiesti';
+            $notifyMessaggio = $count === 1
+                ? 'È stato richiesto l\'inserimento di: ' . $notifyParts[0]
+                : 'Sono stati richiesti ' . $count . ' documenti: ' . implode(', ', $notifyParts);
+
+            try {
+                sc_send_notification(array(
+                    'title'        => $notifyTitolo,
+                    'message'      => $notifyMessaggio,
+                    'destiny_type' => 'user',
+                    'to'           => $notifyLogin,
+                    'from'         => $notifyFrom,
+                    'link'         => $loginUrl !== '' ? $loginUrl : 'app_Login',
+                    'dtexpire'     => date('Y-m-d H:i:s', strtotime('+30 days')),
+                    'profile'      => 'Pigliacelli_Notifications',
+                ));
+                sc_log_add('MAIL_DOCS', "$logCtx — notifica SC batch inviata a $notifyLogin from=$notifyFrom");
+            } catch (Exception $e) {
+                sc_log_add('MAIL_DOCS', "ERRORE $logCtx — notifica SC batch a $notifyLogin: " . $e->getMessage());
+            } catch (Throwable $e) {
+                sc_log_add('MAIL_DOCS', "ERRORE $logCtx — notifica SC batch a $notifyLogin: " . $e->getMessage());
+            }
+        }
+
+        return true;
+    }
+}
+
+if (!function_exists('docs_multi_process_after_insert')) {
+    function docs_multi_process_after_insert($docId, $tipo_documento_id, $loginField, $subvettore_id)
+    {
+        $docId = (int)$docId;
+        $tipo_documento_id = (int)$tipo_documento_id;
+        $loginField = trim((string)$loginField);
+        $docSubId = (int)$subvettore_id;
+        $logCtx = "docs_multi_process_after_insert doc=$docId";
+
+        if ($docId <= 0) {
+            sc_log_add('MAIL_DOCS', "$logCtx — saltato: docId non valido");
+            return false;
+        }
+
+        $docNome = docs_multi_tipo_nome($tipo_documento_id);
+        $destinatario = '';
+
+        if ($docSubId > 0) {
+            sc_lookup(rsFdSubMail, "
+                SELECT login_subvettore
+                FROM subvettori
+                WHERE id = $docSubId
+                LIMIT 1
+            ", 'pigliacelli');
+            if (!empty({rsFdSubMail[0][0]}) && docs_multi_email_valida({rsFdSubMail[0][0]})) {
+                $destinatario = trim((string){rsFdSubMail[0][0]});
+                sc_log_add('MAIL_DOCS', "$logCtx — destinatario SMTP da subvettore_id=$docSubId → $destinatario");
+            }
+        }
+
+        $loginSql = str_replace("'", "''", $loginField);
+        $userLogin = '';
+        $userActive = '';
+        $userDisplayName = '';
+        $storedPassword = '';
+        $hasLoggedFirst = 0;
+        $plainPassword = '';
+        $sendCredentials = false;
+
+        sc_lookup(rsUserDoc, "
+            SELECT login, active, name, email, pswd, COALESCE(hasLoggedFirst, 0)
+            FROM sec_users
+            WHERE login = '$loginSql'
+            LIMIT 1
+        ", 'pigliacelli');
+
+        if (!isset({rsUserDoc[0][0]}) && docs_multi_email_valida($loginField)) {
+            sc_lookup(rsUserDoc, "
+                SELECT login, active, name, email, pswd, COALESCE(hasLoggedFirst, 0)
+                FROM sec_users
+                WHERE email = '$loginSql'
+                LIMIT 1
+            ", 'pigliacelli');
+        }
+
+        if (isset({rsUserDoc[0][0]})) {
+            $userLogin = trim((string){rsUserDoc[0][0]});
+            $userActive = trim((string){rsUserDoc[0][1]});
+            $userDisplayName = trim((string){rsUserDoc[0][2]});
+            $storedPassword = trim((string){rsUserDoc[0][4]});
+            $hasLoggedFirst = (int){rsUserDoc[0][5]};
+
+            $activeNorm = strtoupper($userActive);
+            $isActive = ($activeNorm === 'Y' || $activeNorm === '1' || $activeNorm === 'S' || $activeNorm === 'SI' || $activeNorm === 'YES');
+            $wasInactive = !$isActive;
+
+            if ($wasInactive) {
+                $loginUpd = str_replace("'", "''", $userLogin);
+                sc_exec_sql("UPDATE sec_users SET active = 'Y' WHERE login = '$loginUpd'", 'pigliacelli');
+                sc_log_add('MAIL_DOCS', "$logCtx — attivato sec_users login=$userLogin (era inactive)");
+            }
+
+            if ($wasInactive && $hasLoggedFirst === 0) {
+                $pswLooksMd5 = ($storedPassword !== '' && preg_match('/^[a-f0-9]{32}$/i', $storedPassword));
+
+                if ($storedPassword !== '' && !$pswLooksMd5) {
+                    $plainPassword = $storedPassword;
+                    $sendCredentials = true;
+                    sc_log_add('MAIL_DOCS', "$logCtx — credenziali da pswd in chiaro login=$userLogin");
+                } else {
+                    $chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_!+-*';
+                    $charsLen = strlen($chars);
+                    for ($i = 0; $i < 12; $i++) {
+                        $plainPassword .= $chars[random_int(0, $charsLen - 1)];
+                    }
+
+                    $pswHash = str_replace("'", "''", md5($plainPassword));
+                    $loginUpd = str_replace("'", "''", $userLogin);
+                    sc_exec_sql("UPDATE sec_users SET pswd = '$pswHash' WHERE login = '$loginUpd'", 'pigliacelli');
+                    $sendCredentials = true;
+                    sc_log_add('MAIL_DOCS', "$logCtx — nuova password temporanea login=$userLogin (hasLoggedFirst=0, pswd DB era hash)");
+                }
+            } elseif ($isActive) {
+                sc_log_add('MAIL_DOCS', "$logCtx — login=$userLogin già attivo (active=Y), mail credenziali non inviata");
+            } else {
+                sc_log_add('MAIL_DOCS', "$logCtx — login=$userLogin già loggato (hasLoggedFirst=1), mail credenziali non inviata");
+            }
+        }
+
+        if (!docs_multi_email_valida($destinatario)) {
+            $destinatarioResolved = docs_multi_resolve_destinatario($loginField);
+            if ($destinatarioResolved !== '') {
+                $destinatario = $destinatarioResolved;
+                sc_log_add('MAIL_DOCS', "$logCtx — destinatario da lookup login=[$loginField] → $destinatario");
+            }
+        }
+
+        if ($destinatario === '' || !docs_multi_email_valida($destinatario)) {
+            sc_log_add('MAIL_DOCS', "$logCtx — email non valida: subvettore_id=$docSubId login=[$loginField] dest=[$destinatario]");
+            return false;
+        }
+
+        sc_lookup(rs_smtp, "SELECT set_name, set_value FROM sec_settings");
+        $loginUrl = '';
+        if (isset({rs_smtp[0][0]})) {
+            foreach ({rs_smtp} as $f) {
+                $_SESSION['sett_' . $f[0]] = $f[1];
+                if ($f[0] === 'login_url') {
+                    $loginUrl = trim((string)$f[1]);
+                }
+            }
+        }
+
+        if (isset($_SESSION['sett_smtp_api']) && $_SESSION['sett_smtp_api'] == 'custom') {
+            $sett_smtp = array(
+                'settings' => array(
+                    'gateway'       => 'smtp',
+                    'smtp_server'   => $_SESSION['sett_smtp_server'],
+                    'smtp_protocol' => $_SESSION['sett_smtp_security'],
+                    'smtp_port'     => $_SESSION['sett_smtp_port'],
+                    'smtp_user'     => $_SESSION['sett_smtp_user'],
+                    'smtp_password' => $_SESSION['sett_smtp_pass'],
+                    'from_email'    => $_SESSION['sett_smtp_from_email'],
+                    'from_name'     => $_SESSION['sett_smtp_from_name'],
+                ),
+            );
+        } else {
+            $sett_smtp = array(
+                'profile' => isset($_SESSION['sett_smtp_api']) ? $_SESSION['sett_smtp_api'] : ''
+            );
+        }
+
+        $soggetto = "Richiesta documento — " . $docNome . " (#$docId)";
+        $safeDocId = (int)$docId;
+
+        $credBlockPlain = '';
+        $credBlockHtml = '';
+        if ($sendCredentials && $plainPassword !== '') {
+            $safeCredLogin = htmlspecialchars($userLogin, ENT_QUOTES, 'UTF-8');
+            $safeCredPwd = htmlspecialchars($plainPassword, ENT_QUOTES, 'UTF-8');
+
+            $soggetto = "Richiesta documento e credenziali — " . $docNome . " (#$docId)";
+
+            $credBlockPlain = "\n\nIl suo account è stato attivato. Credenziali area riservata (password temporanea):\n"
+                . "Login: $userLogin\n"
+                . "Password: $plainPassword\n";
+
+            $credBlockHtml = '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+                . 'style="margin:16px 0;background:#f8f9fb;border:1px solid #e2e6ea;border-radius:8px;">'
+                . '<tr><td style="padding:16px 18px;font-size:14px;line-height:1.6;">'
+                . '<p style="margin:0 0 10px;"><strong>Account attivato</strong> — credenziali per l\'area riservata (password temporanea):</p>'
+                . '<strong>Login:</strong> ' . $safeCredLogin . '<br>'
+                . '<strong>Password:</strong> ' . $safeCredPwd
+                . '</td></tr></table>';
+        }
+
+        $salutoSub = docs_multi_saluto_subvettore($docSubId);
+        $safeSalutoSub = htmlspecialchars($salutoSub, ENT_QUOTES, 'UTF-8');
+
+        $testoPlain = $salutoSub . ",\n\n"
+            . "è stato richiesto l'inserimento del seguente documento:\n\n"
+            . "Tipo documento: $docNome\n"
+            . "Riferimento: #$safeDocId\n\n"
+            . "Per procedere, acceda alla sua area riservata:\n" . $loginUrl
+            . $credBlockPlain
+            . "\n\nMessaggio automatico — non rispondere.";
+
+        $mailTitolo = $sendCredentials && $plainPassword !== ''
+            ? 'Richiesta documento e credenziali'
+            : 'Richiesta inserimento documento';
+        $mailLogoUrl = docs_multi_mail_logo_src();
+        $mailInfoRows = docs_multi_mail_detail_line('Tipo documento', $docNome)
+            . docs_multi_mail_detail_line('Riferimento', '#' . $safeDocId);
+        $mailInner = '<p style="margin:0 0 12px;">' . $safeSalutoSub . ',</p>'
+            . '<p style="margin:0 0 12px;">è stato richiesto l\'inserimento del seguente documento. '
+            . 'La preghiamo di accedere alla sua <strong>area riservata</strong> per procedere con il caricamento.</p>'
+            . docs_multi_mail_info_box($mailInfoRows)
+            . $credBlockHtml
+            . docs_multi_mail_btn($loginUrl, 'Accedi all\'area riservata');
+        $testoHtml = docs_multi_mail_layout($mailTitolo, $mailInner, $mailLogoUrl);
+
+        sc_log_add(
+            'MAIL_DOCS',
+            "$logCtx — preparazione mail dest=$destinatario sendCredentials=" . ($sendCredentials ? '1' : '0')
+            . " hasLoggedFirst=$hasLoggedFirst oggetto=[$soggetto]"
+        );
+
+        try {
+            $mailOk = sc_send_mail_api(array_merge($sett_smtp, array(
+                'message' => array(
+                    'to'      => $destinatario,
+                    'subject' => $soggetto,
+                    'html'    => $testoHtml,
+                    'text'    => $testoPlain,
+                ),
+            )));
+
+            if ($mailOk === false || $mailOk === null) {
+                sc_log_add('MAIL_DOCS', "ERRORE $logCtx tipo='$docNome' — invio mail fallito (dest: $destinatario)");
+            } else {
+                $credNote = ($sendCredentials && $plainPassword !== '') ? ' con credenziali' : '';
+                sc_log_add('MAIL_DOCS', "$logCtx tipo='$docNome' — mail inviata a $destinatario$credNote");
+            }
+        } catch (Exception $e) {
+            sc_log_add('MAIL_DOCS', "ERRORE $logCtx — mail a $destinatario: " . $e->getMessage());
+        } catch (Throwable $e) {
+            sc_log_add('MAIL_DOCS', "ERRORE $logCtx — mail a $destinatario: " . $e->getMessage());
+        }
+
+        $notifyLogin = $userLogin !== '' ? $userLogin : $loginField;
+        $notifyFrom = trim((string)[usr_login]);
+        if ($notifyFrom === '') {
+            $notifyFrom = 'admin';
+        }
+        if ($notifyLogin !== '' && $notifyFrom !== '') {
+            try {
+                $notifyTitolo = 'Nuovo documento richiesto';
+                $notifyMessaggio = "È stato richiesto l'inserimento di: $docNome (#$docId)";
+                $notifyLink = $loginUrl !== '' ? $loginUrl : 'app_Login';
+                $notifyExpire = date('Y-m-d H:i:s', strtotime('+30 days'));
+
+                sc_send_notification(array(
+                    'title'        => $notifyTitolo,
+                    'message'      => $notifyMessaggio,
+                    'destiny_type' => 'user',
+                    'to'           => $notifyLogin,
+                    'from'         => $notifyFrom,
+                    'link'         => $notifyLink,
+                    'dtexpire'     => $notifyExpire,
+                    'profile'      => 'Pigliacelli_Notifications',
+                ));
+                sc_log_add('MAIL_DOCS', "$logCtx — notifica SC inviata a $notifyLogin from=$notifyFrom");
+            } catch (Exception $e) {
+                sc_log_add('MAIL_DOCS', "ERRORE $logCtx — notifica SC a $notifyLogin: " . $e->getMessage());
+            } catch (Throwable $e) {
+                sc_log_add('MAIL_DOCS', "ERRORE $logCtx — notifica SC a $notifyLogin: " . $e->getMessage());
+            }
+        } elseif ($notifyLogin === '') {
+            sc_log_add('MAIL_DOCS', "$logCtx — notifica SC saltata: login destinatario vuoto");
+        } else {
+            sc_log_add('MAIL_DOCS', "$logCtx — notifica SC saltata: from vuoto");
+        }
+
+        return true;
+    }
+}
+
+if (!function_exists('docs_multi_insert_documento')) {
+    function docs_multi_insert_documento($subvettore_id, $tipo_documento_id, $login = '')
+    {
+        $subvettore_id = (int)$subvettore_id;
+        $tipo_documento_id = (int)$tipo_documento_id;
+
+        if ($subvettore_id <= 0 || $tipo_documento_id <= 0) {
+            return array('ok' => false, 'docId' => 0, 'error' => 'Parametri non validi', 'login' => '');
+        }
+
+        sc_lookup(rsDocsMultiTipoOk, "
+            SELECT id
+            FROM tipi_documento
+            WHERE id = $tipo_documento_id
+            LIMIT 1
+        ", 'pigliacelli');
+        if (empty({rsDocsMultiTipoOk[0][0]})) {
+            return array(
+                'ok' => false,
+                'docId' => 0,
+                'error' => 'Tipo documento non trovato (id=' . $tipo_documento_id . ')',
+                'login' => ''
+            );
+        }
+
+        if (trim((string)$login) === '') {
+            $login = docs_multi_resolve_login_from_subvettore($subvettore_id);
+        } else {
+            $login = trim((string)$login);
+        }
+        if ($login === '') {
+            return array('ok' => false, 'docId' => 0, 'error' => 'Login non trovato per il subvettore selezionato', 'login' => '');
+        }
+
+        $loginSql = str_replace("'", "''", $login);
+
+        try {
+            sc_exec_sql("
+                INSERT INTO documenti
+                    (tipo_documento_id, subvettore_id, login, stato_documento_id)
+                VALUES
+                    ($tipo_documento_id, $subvettore_id, '$loginSql', 1)
+            ", 'pigliacelli');
+        } catch (Exception $e) {
+            $msg = $e->getMessage();
+            if (stripos($msg, 'documenti_tipi_documento_fk') !== false && stripos($msg, 'FOREIGN KEY (`id`)') !== false) {
+                return array(
+                    'ok' => false,
+                    'docId' => 0,
+                    'error' => 'FK documenti errata: il vincolo documenti_tipi_documento_fk è su colonna id invece di tipo_documento_id. Eseguire fix_documenti_fk_tipi_documento.sql'
+                );
+            }
+            return array('ok' => false, 'docId' => 0, 'error' => 'Inserimento documento fallito: ' . $msg);
+        } catch (Throwable $e) {
+            $msg = $e->getMessage();
+            if (stripos($msg, 'documenti_tipi_documento_fk') !== false && stripos($msg, 'FOREIGN KEY (`id`)') !== false) {
+                return array(
+                    'ok' => false,
+                    'docId' => 0,
+                    'error' => 'FK documenti errata: il vincolo documenti_tipi_documento_fk è su colonna id invece di tipo_documento_id. Eseguire fix_documenti_fk_tipi_documento.sql'
+                );
+            }
+            return array('ok' => false, 'docId' => 0, 'error' => 'Inserimento documento fallito: ' . $msg);
+        }
+
+        sc_lookup(rsDocsMultiNewDoc, "SELECT LAST_INSERT_ID()", 'pigliacelli');
+        $docId = isset({rsDocsMultiNewDoc[0][0]}) ? (int){rsDocsMultiNewDoc[0][0]} : 0;
+        if ($docId <= 0) {
+            return array('ok' => false, 'docId' => 0, 'error' => 'Inserimento documento fallito', 'login' => $login);
+        }
+
+        return array('ok' => true, 'docId' => $docId, 'error' => '', 'login' => $login);
+    }
+}
+
+if (docs_multi_user_is_subvettore_group()) {
+    header('Content-Type: text/html; charset=UTF-8');
+    echo '<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8"><title>Accesso negato</title></head>'
+        . '<body style="font-family:Arial,sans-serif;padding:32px;color:#2d3748;">'
+        . '<h1>Accesso negato</h1><p>La creazione multipla documenti è riservata agli operatori.</p></body></html>';
+    exit;
+}
+
+$subvettoreId = 0;
+if (isset($_GET['subvettore_id']) && (int)$_GET['subvettore_id'] > 0) {
+    $subvettoreId = (int)$_GET['subvettore_id'];
+} elseif (isset([subvettore_id]) && (int)[subvettore_id] > 0) {
+    $subvettoreId = (int)[subvettore_id];
+}
+
+$errors = array();
+$created = array();
+$isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
+
+if (!function_exists('docs_multi_show_success_redirect')) {
+    function docs_multi_show_success_redirect($nCreated, $withCreds = false)
+    {
+        $nCreated = (int)$nCreated;
+        if ($nCreated <= 0) {
+            return;
+        }
+
+        if ($nCreated === 1) {
+            $confirmMsg = 'È stato creato <strong>1 documento</strong>. Mail inviata al subvettore.';
+        } else {
+            $confirmMsg = 'Sono stati creati <strong>' . $nCreated . ' documenti</strong>. '
+                . 'Mail riepilogativa inviata al subvettore.';
+        }
+        if ($withCreds) {
+            $confirmMsg .= '<br><br>La mail include anche le <strong>credenziali di accesso</strong>.';
+        }
+
+        $gridUrl = '../grid_documenti/';
+
+        header('Content-Type: text/html; charset=UTF-8');
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+
+        echo '<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">'
+            . '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            . '<title>Richiesta inviata</title>'
+            . '<style>'
+            . 'body{margin:0;padding:0;background:#eef1f4;font-family:Arial,Helvetica,sans-serif;color:#2d3748;}'
+            . '.wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;}'
+            . '.card{max-width:560px;width:100%;background:#fff;border:1px solid #dde1e6;border-radius:12px;'
+            . 'box-shadow:0 8px 24px rgba(26,58,92,.08);overflow:hidden;}'
+            . '.head{padding:22px 28px;background:#fafbfc;border-bottom:1px solid #e8ebef;}'
+            . '.head h1{margin:0;font-size:22px;line-height:1.35;color:#1a3a5c;}'
+            . '.body{padding:28px;font-size:16px;line-height:1.6;}'
+            . '.badge{display:inline-block;margin:0 0 16px;padding:6px 12px;border-radius:999px;'
+            . 'background:#edf7ed;color:#1b5e20;font-size:13px;font-weight:bold;}'
+            . '.note{margin-top:20px;padding:14px 16px;background:#f7f9fb;border:1px solid #e2e8f0;border-radius:8px;'
+            . 'font-size:14px;color:#4a5568;}'
+            . '</style></head><body><div class="wrap"><div class="card">'
+            . '<div class="head"><h1>Richiesta inviata</h1></div>'
+            . '<div class="body">'
+            . '<span class="badge">Operazione completata</span>'
+            . '<p>' . $confirmMsg . '</p>'
+            . '<p class="note">Reindirizzamento alla griglia documenti tra pochi secondi…</p>'
+            . '</div></div></div>'
+            . '<script>setTimeout(function(){window.location.href='
+            . json_encode($gridUrl, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP)
+            . ';},3500);</script></body></html>';
+        exit;
+    }
+}
+
+if (!$isPost && isset($_GET['docs_multi_ok']) && (int)$_GET['docs_multi_ok'] > 0) {
+    $withCreds = isset($_GET['docs_multi_creds']) && (string)$_GET['docs_multi_creds'] === '1';
+    docs_multi_show_success_redirect((int)$_GET['docs_multi_ok'], $withCreds);
+}
+
+if ($isPost) {
+    if (isset($_POST['subvettore_id'])) {
+        $subvettoreId = (int)$_POST['subvettore_id'];
+    }
+
+    $tipiSelezionati = array();
+    if (isset($_POST['tipo_documento_id']) && is_array($_POST['tipo_documento_id'])) {
+        foreach ($_POST['tipo_documento_id'] as $tipoRaw) {
+            $tipoId = (int)$tipoRaw;
+            if ($tipoId > 0) {
+                $tipiSelezionati[$tipoId] = $tipoId;
+            }
+        }
+    }
+
+    if ($subvettoreId <= 0) {
+        $errors[] = 'Selezionare un subvettore.';
+    }
+    if (empty($tipiSelezionati)) {
+        $errors[] = 'Selezionare almeno un tipo documento.';
+    }
+
+    if (empty($errors)) {
+        sc_lookup(rsFdSubExists, "
+            SELECT id
+            FROM subvettori
+            WHERE id = $subvettoreId
+            LIMIT 1
+        ", 'pigliacelli');
+        if (empty({rsFdSubExists[0][0]})) {
+            $errors[] = 'Subvettore non valido.';
+        }
+    }
+
+    if (empty($errors)) {
+        $batchLogin = docs_multi_resolve_login_from_subvettore($subvettoreId);
+        if ($batchLogin === '') {
+            $errors[] = 'Login non trovato per il subvettore selezionato.';
+        } elseif (docs_multi_validate_destinatario($subvettoreId, $batchLogin) === '') {
+            $errors[] = 'Impossibile inviare la mail: destinatario non valido per il subvettore selezionato.';
+        }
+    }
+
+    if (empty($errors)) {
+        foreach ($tipiSelezionati as $tipoId) {
+            $result = docs_multi_insert_documento($subvettoreId, $tipoId, $batchLogin);
+            if (!empty($result['ok'])) {
+                $created[] = array(
+                    'docId' => (int)$result['docId'],
+                    'tipoId' => (int)$tipoId,
+                    'nome' => docs_multi_tipo_nome($tipoId),
+                );
+            } else {
+                $tipoNome = docs_multi_tipo_nome($tipoId);
+                $errMsg = isset($result['error']) ? trim((string)$result['error']) : 'Errore sconosciuto';
+                $errors[] = $tipoNome . ': ' . $errMsg;
+            }
+        }
+    }
+
+    if (!empty($created) && empty($errors)) {
+        $mailCtx = docs_multi_prepare_mail_context($subvettoreId, $batchLogin);
+        if ($mailCtx === false) {
+            $errors[] = 'Documenti creati ma invio mail fallito: destinatario non valido.';
+        } else {
+            docs_multi_send_batch_summary($mailCtx, $created, $subvettoreId);
+        }
+    }
+
+    if (!empty($created) && empty($errors)) {
+        sc_log_add(
+            'MAIL_DOCS',
+            'docs_multi_select — creati ' . count($created) . ' documenti per subvettore_id=' . $subvettoreId
+        );
+
+        $okQuery = 'docs_multi_ok=' . count($created);
+        if (!empty($mailCtx['sendCredentials'])) {
+            $okQuery .= '&docs_multi_creds=1';
+        }
+
+        header('Location: ?' . $okQuery);
+        exit;
+    }
+}
+
+$subvettori = array();
+sc_select(rsFdSubs, "
+    SELECT id,
+           TRIM(CONCAT(
+               COALESCE(ragione_sociale, CONCAT('Subvettore #', id)),
+               CASE
+                   WHEN codice_sga IS NOT NULL AND TRIM(codice_sga) <> ''
+                   THEN CONCAT(' (', TRIM(codice_sga), ')')
+                   ELSE ''
+               END
+           ))
+    FROM subvettori
+    ORDER BY ragione_sociale, id
+", 'pigliacelli');
+if ({rsFdSubs} !== false) {
+    while (!{rsFdSubs}->EOF) {
+        $subvettori[] = array(
+            'id' => (int){rsFdSubs}->fields[0],
+            'label' => trim((string){rsFdSubs}->fields[1]),
+        );
+        {rsFdSubs}->MoveNext();
+    }
+    {rsFdSubs}->Close();
+}
+
+$tipiDocumento = array();
+sc_select(rsFdTipi, "
+    SELECT id, nome
+    FROM tipi_documento
+    ORDER BY nome
+", 'pigliacelli');
+if ({rsFdTipi} !== false) {
+    while (!{rsFdTipi}->EOF) {
+        $tipiDocumento[] = array(
+            'id' => (int){rsFdTipi}->fields[0],
+            'nome' => trim((string){rsFdTipi}->fields[1]),
+        );
+        {rsFdTipi}->MoveNext();
+    }
+    {rsFdTipi}->Close();
+}
+
+$backUrl = '../grid_documenti/';
+
+header('Content-Type: text/html; charset=UTF-8');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+
+echo '<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">'
+    . '<meta name="viewport" content="width=device-width,initial-scale=1">'
+    . '<title>Richiesta multipla documenti</title>'
+    . '<style>'
+    . 'body{margin:0;padding:0;background:#eef1f4;font-family:Arial,Helvetica,sans-serif;color:#2d3748;}'
+    . '.wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;}'
+    . '.card{max-width:720px;width:100%;background:#fff;border:1px solid #dde1e6;border-radius:12px;'
+    . 'box-shadow:0 8px 24px rgba(26,58,92,.08);overflow:hidden;}'
+    . '.head{padding:22px 28px;background:#fafbfc;border-bottom:1px solid #e8ebef;}'
+    . '.head h1{margin:0;font-size:22px;line-height:1.35;color:#1a3a5c;}'
+    . '.head p{margin:8px 0 0;font-size:14px;color:#4a5568;}'
+    . '.body{padding:28px;}'
+    . 'label{display:block;margin:0 0 8px;font-weight:bold;color:#1a3a5c;font-size:14px;}'
+    . '.sub-combo{position:relative;}'
+    . '.sub-combo input[type=text]{width:100%;padding:10px 12px;border:1px solid #cbd5e0;border-radius:8px;font-size:15px;box-sizing:border-box;}'
+    . '.sub-list{position:absolute;left:0;right:0;top:calc(100% + 4px);margin:0;padding:4px 0;list-style:none;'
+    . 'max-height:220px;overflow:auto;background:#fff;border:1px solid #cbd5e0;border-radius:8px;'
+    . 'box-shadow:0 8px 20px rgba(26,58,92,.12);z-index:10;}'
+    . '.sub-list[hidden]{display:none;}'
+    . '.sub-list li{padding:10px 12px;cursor:pointer;font-size:15px;}'
+    . '.sub-list li:hover,.sub-list li.active{background:#edf2f7;}'
+    . '.tipi{margin-top:24px;}'
+    . '.tipi-grid{display:grid;grid-template-columns:1fr;gap:10px;margin-top:10px;}'
+    . '.tipo-item{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:1px solid #e2e8f0;border-radius:8px;background:#f7f9fb;}'
+    . '.tipo-item input{margin-top:3px;}'
+    . '.actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:28px;}'
+    . '.btn{display:inline-block;padding:12px 22px;border-radius:8px;font-size:15px;font-weight:bold;text-decoration:none;border:0;cursor:pointer;}'
+    . '.btn-primary{background:#1a3a5c;color:#fff;}'
+    . '.btn-secondary{background:#edf2f7;color:#1a3a5c;}'
+    . '.alert{padding:14px 16px;border-radius:8px;margin-bottom:18px;font-size:14px;line-height:1.5;}'
+    . '.alert-error{background:#fff5f5;border:1px solid #feb2b2;color:#742a2a;}'
+    . '.alert-success{background:#edf7ed;border:1px solid #9ae6b4;color:#22543d;}'
+    . '.empty{color:#718096;font-size:14px;}'
+    . '</style></head><body><div class="wrap"><div class="card">'
+    . '<div class="head"><h1>Richiesta multipla documenti</h1>'
+    . '<p>Seleziona il subvettore e i tipi documento da richiedere in un\'unica operazione.</p></div>'
+    . '<div class="body">';
+
+if (!empty($errors)) {
+    echo '<div class="alert alert-error"><strong>Attenzione:</strong><ul style="margin:8px 0 0 18px;">';
+    foreach ($errors as $err) {
+        echo '<li>' . htmlspecialchars((string)$err, ENT_QUOTES, 'UTF-8') . '</li>';
+    }
+    echo '</ul></div>';
+}
+
+if (!empty($created) && !empty($errors)) {
+    echo '<div class="alert alert-success"><strong>Documenti creati:</strong><ul style="margin:8px 0 0 18px;">';
+    foreach ($created as $row) {
+        echo '<li>' . htmlspecialchars((string)$row['nome'], ENT_QUOTES, 'UTF-8')
+            . ' (#' . (int)$row['docId'] . ')</li>';
+    }
+    echo '</ul></div>';
+}
+
+echo '<form method="post" action="" id="docs_multi_form">';
+
+$subSelectedLabel = '';
+if ($subvettoreId > 0) {
+    foreach ($subvettori as $sub) {
+        if ((int)$sub['id'] === $subvettoreId) {
+            $subSelectedLabel = (string)$sub['label'];
+            break;
+        }
+    }
+}
+
+echo '<label for="subvettore_combo">Subvettore</label>';
+if (empty($subvettori)) {
+    echo '<p class="empty">Nessun subvettore disponibile.</p>';
+} else {
+    echo '<div class="sub-combo">';
+    echo '<input type="hidden" name="subvettore_id" id="subvettore_id" value="'
+        . ($subvettoreId > 0 ? (int)$subvettoreId : '') . '">';
+    echo '<input type="text" id="subvettore_combo" value="'
+        . htmlspecialchars($subSelectedLabel, ENT_QUOTES, 'UTF-8') . '" '
+        . 'placeholder="Cerca e seleziona subvettore..." autocomplete="off" '
+        . 'role="combobox" aria-expanded="false" aria-controls="subvettore_list" aria-autocomplete="list">';
+    echo '<ul id="subvettore_list" class="sub-list" hidden>';
+    foreach ($subvettori as $sub) {
+        echo '<li data-id="' . (int)$sub['id'] . '" role="option">'
+            . htmlspecialchars((string)$sub['label'], ENT_QUOTES, 'UTF-8') . '</li>';
+    }
+    echo '</ul></div>';
+}
+
+echo '<div class="tipi"><label>Tipi documento</label>';
+if (empty($tipiDocumento)) {
+    echo '<p class="empty">Nessun tipo documento configurato.</p>';
+} else {
+    echo '<div class="tipi-grid">';
+    foreach ($tipiDocumento as $tipo) {
+        $checked = ($isPost && isset($_POST['tipo_documento_id']) && is_array($_POST['tipo_documento_id'])
+            && in_array((int)$tipo['id'], array_map('intval', $_POST['tipo_documento_id']), true))
+            ? ' checked' : '';
+        echo '<label class="tipo-item">'
+            . '<input type="checkbox" name="tipo_documento_id[]" value="' . (int)$tipo['id'] . '"' . $checked . '>'
+            . '<span>' . htmlspecialchars((string)$tipo['nome'], ENT_QUOTES, 'UTF-8') . '</span>'
+            . '</label>';
+    }
+    echo '</div>';
+}
+echo '</div>';
+
+echo '<div class="actions">'
+    . '<button type="submit" class="btn btn-primary">Crea documenti selezionati</button>'
+    . '<a href="' . htmlspecialchars($backUrl, ENT_QUOTES, 'UTF-8') . '" class="btn btn-secondary">Torna all\'elenco</a>'
+    . '</div>';
+
+echo '</form></div></div></div>'
+    . '<script>'
+    . '(function(){'
+    . 'var form=document.getElementById("docs_multi_form");'
+    . 'var hidden=document.getElementById("subvettore_id");'
+    . 'var input=document.getElementById("subvettore_combo");'
+    . 'var list=document.getElementById("subvettore_list");'
+    . 'if(!form||!hidden||!input||!list)return;'
+    . 'var items=[].slice.call(list.querySelectorAll("li"));'
+    . 'var picked=input.value;'
+    . 'function filterList(){'
+    . 'var q=input.value.toLowerCase().trim();'
+    . 'var n=0;'
+    . 'items.forEach(function(li){'
+    . 'var ok=q===""||li.textContent.toLowerCase().indexOf(q)!==-1;'
+    . 'li.style.display=ok?"":"none";'
+    . 'if(ok)n++;'
+    . '});'
+    . 'list.hidden=n===0;'
+    . 'input.setAttribute("aria-expanded",list.hidden?"false":"true");'
+    . '}'
+    . 'function pick(li){'
+    . 'hidden.value=li.getAttribute("data-id");'
+    . 'input.value=li.textContent.trim();'
+    . 'picked=input.value;'
+    . 'list.hidden=true;'
+    . 'input.setAttribute("aria-expanded","false");'
+    . '}'
+    . 'input.addEventListener("input",function(){'
+    . 'if(input.value!==picked)hidden.value="";'
+    . 'filterList();'
+    . '});'
+    . 'input.addEventListener("focus",function(){filterList();});'
+    . 'input.addEventListener("blur",function(){'
+    . 'setTimeout(function(){list.hidden=true;input.setAttribute("aria-expanded","false");},150);'
+    . '});'
+    . 'items.forEach(function(li){'
+    . 'li.addEventListener("mousedown",function(e){e.preventDefault();pick(li);});'
+    . '});'
+    . 'form.addEventListener("submit",function(e){'
+    . 'if(!hidden.value){e.preventDefault();input.focus();filterList();alert("Selezionare un subvettore dalla lista.");}'
+    . '});'
+    . '})();'
+    . '</script></body></html>';
+
+exit;

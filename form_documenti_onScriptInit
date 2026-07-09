@@ -24,4 +24,3 @@ if ({rs} !== false) {
 } else {
     echo "Errore nella query ";
 }
-
