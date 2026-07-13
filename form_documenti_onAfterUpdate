@@ -296,7 +296,7 @@ $fdScNotifyTitle  = '';
 $fdScNotifyMsg    = '';
 $fdScNotifyTo     = '';
 $fdScNotifyFrom   = 'admin';
-$fdScNotifyLink   = 'app_Login';
+$fdScNotifyLink   = '';
 $fdScNotifyExpire = '';
 $fdScNotifyLogOk  = '';
 $fdScNotifyLogErr = '';
@@ -492,7 +492,6 @@ if ($isUploadSubvettore) {
         if ($notifyFrom === '') {
             $notifyFrom = 'admin';
         }
-        $notifyLink   = isset($loginUrl) && $loginUrl !== '' ? $loginUrl : 'app_Login';
         $notifyExpire = date('Y-m-d H:i:s', strtotime('+30 days'));
         $notifyTitle  = 'Documento caricato — ' . $nome_documento . ' (#' . (int)$docId . ')';
         $notifyMsg    = 'Il subvettore ' . $subEtichetta
@@ -503,7 +502,7 @@ if ($isUploadSubvettore) {
         $fdScNotifyMsg    = $notifyMsg;
         $fdScNotifyTo     = implode(';', $operatorLogins);
         $fdScNotifyFrom   = $notifyFrom;
-        $fdScNotifyLink   = $notifyLink;
+        $fdScNotifyLink   = '';
         $fdScNotifyExpire = $notifyExpire;
         $fdScNotifyLogOk  = "onAfterUpdate doc=$docId — notifica SC operatori inviata a " . implode(';', $operatorLogins) . " from=$notifyFrom";
         $fdScNotifyLogErr = "onAfterUpdate doc=$docId — notifica SC operatori";
@@ -545,20 +544,13 @@ if ((int){is_not_ok} === 1 && (int)$group_id !== 2 && (int)$statoDoc !== 3) {
     }
     $notifyLinkRev   = '';
     $notifyExpireRev = date('Y-m-d H:i:s', strtotime('+30 days'));
-    sc_lookup(rs_smtp_rev_link, "SELECT set_value FROM sec_settings WHERE set_name = 'login_url' LIMIT 1");
-    if (isset({rs_smtp_rev_link[0][0]})) {
-        $notifyLinkRev = trim((string){rs_smtp_rev_link[0][0]});
-    }
-    if ($notifyLinkRev === '') {
-        $notifyLinkRev = 'app_Login';
-    }
 
     $fdScNotifySend   = true;
     $fdScNotifyTitle  = $titolo;
     $fdScNotifyMsg    = $messaggio;
     $fdScNotifyTo     = $intestatario;
     $fdScNotifyFrom   = $notifyFromRev;
-    $fdScNotifyLink   = $notifyLinkRev;
+    $fdScNotifyLink   = '';
     $fdScNotifyExpire = $notifyExpireRev;
     $fdScNotifyLogOk  = "onAfterUpdate doc=$docId — notifica revisione inviata a $intestatario from=$notifyFromRev";
     $fdScNotifyLogErr = "onAfterUpdate doc=$docId — notifica revisione a $intestatario";

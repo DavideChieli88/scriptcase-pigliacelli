@@ -668,7 +668,7 @@ if (!function_exists('docs_multi_send_batch_summary')) {
                     'destiny_type' => 'user',
                     'to'           => $notifyLogin,
                     'from'         => $notifyFrom,
-                    'link'         => $loginUrl !== '' ? $loginUrl : 'app_Login',
+                    'link'         => '',
                     'dtexpire'     => date('Y-m-d H:i:s', strtotime('+30 days')),
                     'profile'      => 'Pigliacelli_Notifications',
                 ));
@@ -912,7 +912,6 @@ if (!function_exists('docs_multi_process_after_insert')) {
             try {
                 $notifyTitolo = 'Nuovo documento richiesto';
                 $notifyMessaggio = "È stato richiesto l'inserimento di: $docNome (#$docId)";
-                $notifyLink = $loginUrl !== '' ? $loginUrl : 'app_Login';
                 $notifyExpire = date('Y-m-d H:i:s', strtotime('+30 days'));
 
                 sc_send_notification(array(
@@ -921,7 +920,7 @@ if (!function_exists('docs_multi_process_after_insert')) {
                     'destiny_type' => 'user',
                     'to'           => $notifyLogin,
                     'from'         => $notifyFrom,
-                    'link'         => $notifyLink,
+                    'link'         => '',
                     'dtexpire'     => $notifyExpire,
                     'profile'      => 'Pigliacelli_Notifications',
                 ));

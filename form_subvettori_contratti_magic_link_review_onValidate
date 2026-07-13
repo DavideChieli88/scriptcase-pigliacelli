@@ -115,5 +115,5 @@
             . implode("\n- ", $errors);
 
 		sc_error_message($msg);
-		sc_error_exit();
+		//sc_error_exit();
     }
