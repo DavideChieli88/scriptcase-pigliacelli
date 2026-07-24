@@ -1,0 +1,822 @@
+// Scriptcase blank: upsert_subvectors_basevettori
+// Job schedulato (senza UI): solo log UPSERT_SUB_T0 / EXPORT_DATA.
+// Upsert subvettori da SGA (T2BaseVettori + BaCliFor) verso pigliacelli.
+// Su INSERT nuovo subvettore + utenza: CALL bootstrap_documenti_from_preset(sub_id, login).
+// Mail credenziali: coda mail_credenziali_inviata_at IS NULL → send_credenziali_subvettori_batch.
+//
+// Parametro URL: ?dry_run=1
+// Multi-utenza: email SGA diversa → disabilita vecchia utenza, crea nuova, rimette mail in coda.
+
+function upsert_sub_t0_log($msg)
+{
+    sc_log_add('UPSERT_SUB_T0', (string)$msg);
+}
+
+function upsert_sub_t0_sql_quote($v)
+{
+    if ($v === null) {
+        return "NULL";
+    }
+    return "'" . str_replace("'", "''", (string)$v) . "'";
+}
+
+function upsert_sub_t0_valore_o_null($v)
+{
+    if ($v === null) {
+        return null;
+    }
+    $v = trim((string)$v);
+    if ($v === '') {
+        return null;
+    }
+    return $v;
+}
+
+function upsert_sub_t0_email_valida($email)
+{
+    $email = trim((string)$email);
+    if ($email === '') {
+        return false;
+    }
+    if (strpos($email, ';') !== false) {
+        return false;
+    }
+    if (strpos($email, ',') !== false) {
+        return false;
+    }
+    if (strpos($email, ' ') !== false) {
+        return false;
+    }
+    return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+}
+
+function upsert_sub_t0_connetti_sga($settings)
+{
+    $set_names = array('sgam_user', 'sgam_pswd', 'sgam_db', 'sgam_server');
+
+    foreach ($set_names as $set_name) {
+        if (!array_key_exists($set_name, $settings)) {
+            upsert_sub_t0_log("ERRORE sec_settings mancante: $set_name");
+            return null;
+        }
+        if (trim((string)$settings[$set_name]) === '') {
+            upsert_sub_t0_log("ERRORE sec_settings vuoto: $set_name");
+            return null;
+        }
+    }
+
+    try {
+        $dsn = "sqlsrv:Server=" . $settings['sgam_server']
+            . ";Database=" . $settings['sgam_db']
+            . ";Encrypt=1"
+            . ";TrustServerCertificate=1";
+
+        upsert_sub_t0_log(
+            'Connessione PDO SGA server=' . $settings['sgam_server']
+            . ' db=' . $settings['sgam_db']
+        );
+
+        $pdo_opts = array(
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_NUM,
+        );
+
+        return new PDO(
+            $dsn,
+            $settings['sgam_user'],
+            $settings['sgam_pswd'],
+            $pdo_opts
+        );
+    } catch (PDOException $e) {
+        upsert_sub_t0_log('ERRORE connessione SGA: ' . $e->getMessage());
+        return null;
+    }
+}
+
+function upsert_sub_t0_sql_num($v)
+{
+    if ($v === null || $v === '') {
+        return "NULL";
+    }
+    return (string)(0 + $v);
+}
+
+function upsert_sub_t0_generate_temp_password()
+{
+    $characters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_!+-*';
+    $charactersLength = strlen($characters);
+    $temporaryPassword = '';
+
+    for ($i = 0; $i < 12; $i++) {
+        $temporaryPassword .= $characters[random_int(0, $charactersLength - 1)];
+    }
+
+    return $temporaryPassword;
+}
+
+function upsert_sub_t0_login_collegato_a_sub($login, $subvettore_id)
+{
+    $login = trim((string)$login);
+    $subvettore_id = (int)$subvettore_id;
+    if ($login === '' || $subvettore_id <= 0) {
+        return false;
+    }
+
+    sc_lookup(rsUpsertLoginSub, "
+        SELECT login
+        FROM sec_users
+        WHERE login = " . upsert_sub_t0_sql_quote($login) . "
+          AND subvettore_id = " . upsert_sub_t0_sql_num($subvettore_id) . "
+        LIMIT 1
+    ", 'pigliacelli');
+
+    return !empty({rsUpsertLoginSub});
+}
+
+function upsert_sub_t0_login_usato_da_altro_sub($login, $subvettore_id)
+{
+    $login = trim((string)$login);
+    $subvettore_id = (int)$subvettore_id;
+    if ($login === '') {
+        return false;
+    }
+
+    sc_lookup(rsUpsertLoginAlt, "
+        SELECT subvettore_id
+        FROM sec_users
+        WHERE login = " . upsert_sub_t0_sql_quote($login) . "
+        LIMIT 1
+    ", 'pigliacelli');
+
+    if (empty({rsUpsertLoginAlt})) {
+        return false;
+    }
+
+    $sub_alt = {rsUpsertLoginAlt[0][0]};
+    if ($sub_alt === null || $sub_alt === '') {
+        return true;
+    }
+
+    return (int)$sub_alt !== $subvettore_id;
+}
+
+function upsert_sub_t0_disabilita_utenza($subvettore_id, $vecchio_login)
+{
+    $subvettore_id = (int)$subvettore_id;
+    $vecchio_login = trim((string)$vecchio_login);
+    if ($subvettore_id <= 0 || $vecchio_login === '') {
+        return;
+    }
+
+    sc_exec_sql("
+        UPDATE sec_users
+        SET active = 'N'
+        WHERE login = " . upsert_sub_t0_sql_quote($vecchio_login) . "
+          AND subvettore_id = " . upsert_sub_t0_sql_num($subvettore_id) . "
+    ", 'pigliacelli');
+
+    upsert_sub_t0_log(
+        'UTENZA disabilitata subvettore_id=' . $subvettore_id . ' login=' . $vecchio_login
+    );
+}
+
+function upsert_sub_t0_aggiorna_anagrafica_utenza($subvettore_id, $login, $email, $ragione_sociale, $phone)
+{
+    sc_exec_sql("
+        UPDATE sec_users
+        SET email = " . upsert_sub_t0_sql_quote($email) . ",
+            name = " . upsert_sub_t0_sql_quote($ragione_sociale) . ",
+            phone = " . upsert_sub_t0_sql_quote($phone) . "
+        WHERE subvettore_id = " . upsert_sub_t0_sql_num($subvettore_id) . "
+          AND login = " . upsert_sub_t0_sql_quote($login) . "
+    ", 'pigliacelli');
+}
+
+function upsert_sub_t0_crea_utenza($subvettore_id, $email, $ragione_sociale, $phone)
+{
+    $group_id = 2;
+    $email = trim((string)$email);
+
+    if (!upsert_sub_t0_email_valida($email)) {
+        return null;
+    }
+
+    if (upsert_sub_t0_login_collegato_a_sub($email, $subvettore_id)) {
+        return array('login' => $email, 'gia_esistente' => true);
+    }
+
+    if (upsert_sub_t0_login_usato_da_altro_sub($email, $subvettore_id)) {
+        upsert_sub_t0_log(
+            'UTENZA skip email=' . $email . ' gia login di altro subvettore'
+        );
+        return null;
+    }
+
+    // Password placeholder: il batch mail la rigenera all'invio
+    $password_hash = md5(upsert_sub_t0_generate_temp_password());
+
+    sc_exec_sql("
+        INSERT INTO sec_users (
+            login, pswd, name, email, phone, active, subvettore_id
+        ) VALUES (
+            " . upsert_sub_t0_sql_quote($email) . ",
+            " . upsert_sub_t0_sql_quote($password_hash) . ",
+            " . upsert_sub_t0_sql_quote($ragione_sociale) . ",
+            " . upsert_sub_t0_sql_quote($email) . ",
+            " . upsert_sub_t0_sql_quote($phone) . ",
+            'Y',
+            " . upsert_sub_t0_sql_num($subvettore_id) . "
+        )
+    ", 'pigliacelli');
+
+    sc_exec_sql("
+        INSERT INTO sec_users_groups (login, group_id)
+        VALUES (
+            " . upsert_sub_t0_sql_quote($email) . ",
+            " . upsert_sub_t0_sql_num($group_id) . "
+        )
+    ", 'pigliacelli');
+
+    upsert_sub_t0_log(
+        'UTENZA creata subvettore_id=' . (int)$subvettore_id . ' login=' . $email
+    );
+
+    return array('login' => $email, 'gia_esistente' => false);
+}
+
+function upsert_sub_t0_aggiorna_login_subvettore($subvettore_id, $email)
+{
+    sc_exec_sql("
+        UPDATE subvettori
+        SET login_subvettore = " . upsert_sub_t0_sql_quote($email) . "
+        WHERE id = " . upsert_sub_t0_sql_num($subvettore_id) . "
+    ", 'pigliacelli');
+}
+
+/** Dopo create utenza: documenti preset (tipi_documento.from_preset = 1). Idempotente. */
+function upsert_sub_t0_bootstrap_documenti_from_preset($subvettore_id, $login, $dry_run = false)
+{
+    $subvettore_id = (int)$subvettore_id;
+    $login = trim((string)$login);
+
+    if ($subvettore_id <= 0 || $login === '') {
+        return false;
+    }
+
+    if ($dry_run) {
+        upsert_sub_t0_log(
+            'DRY_RUN CALL bootstrap_documenti_from_preset sub=' . $subvettore_id
+            . ' login=' . $login
+        );
+        return true;
+    }
+
+    try {
+        sc_exec_sql("
+            CALL bootstrap_documenti_from_preset(
+                " . upsert_sub_t0_sql_num($subvettore_id) . ",
+                " . upsert_sub_t0_sql_quote($login) . "
+            )
+        ", 'pigliacelli');
+        upsert_sub_t0_log(
+            'CALL bootstrap_documenti_from_preset ok sub=' . $subvettore_id
+            . ' login=' . $login
+        );
+        return true;
+    } catch (Exception $e) {
+        upsert_sub_t0_log(
+            'CALL bootstrap_documenti_from_preset ERRORE sub=' . $subvettore_id
+            . ' — ' . $e->getMessage()
+        );
+        return false;
+    } catch (Throwable $e) {
+        upsert_sub_t0_log(
+            'CALL bootstrap_documenti_from_preset ERRORE sub=' . $subvettore_id
+            . ' — ' . $e->getMessage()
+        );
+        return false;
+    }
+}
+
+function upsert_sub_t0_sincronizza_utenza($subvettore_id, $email, $ragione_sociale, $phone, $dry_run)
+{
+    $subvettore_id = (int)$subvettore_id;
+    $email = trim((string)$email);
+    $phone = trim((string)$phone);
+    $vuoto = array('esito' => 'skip_email', 'login' => '', 'vecchio_login' => '');
+
+    if ($subvettore_id <= 0 || !upsert_sub_t0_email_valida($email)) {
+        return $vuoto;
+    }
+
+    sc_lookup(rsUpsertSubLogin, "
+        SELECT COALESCE(login_subvettore, '')
+        FROM subvettori
+        WHERE id = " . upsert_sub_t0_sql_num($subvettore_id) . "
+        LIMIT 1
+    ", 'pigliacelli');
+
+    $login_db = '';
+    if (!empty({rsUpsertSubLogin})) {
+        $login_db = trim((string){rsUpsertSubLogin[0][0]});
+    }
+
+    if (upsert_sub_t0_login_collegato_a_sub($email, $subvettore_id)) {
+        if (!$dry_run) {
+            upsert_sub_t0_aggiorna_anagrafica_utenza($subvettore_id, $email, $email, $ragione_sociale, $phone);
+            if ($login_db !== '' && strcasecmp($login_db, $email) !== 0) {
+                upsert_sub_t0_aggiorna_login_subvettore($subvettore_id, $email);
+            }
+        } else {
+            upsert_sub_t0_log(
+                'DRY_RUN UTENZA aggiorna anagrafica sub=' . $subvettore_id . ' login=' . $email
+            );
+        }
+        return array('esito' => 'ok_esistente', 'login' => $email, 'vecchio_login' => '');
+    }
+
+    if (upsert_sub_t0_login_usato_da_altro_sub($email, $subvettore_id)) {
+        return array('esito' => 'skip_occupato', 'login' => '', 'vecchio_login' => '');
+    }
+
+    if ($login_db !== '' && strcasecmp($login_db, $email) !== 0 && upsert_sub_t0_login_collegato_a_sub($login_db, $subvettore_id)) {
+        if ($dry_run) {
+            upsert_sub_t0_log(
+                'DRY_RUN UTENZA multi sub=' . $subvettore_id .
+                ' da=' . $login_db . ' a=' . $email
+            );
+            return array('esito' => 'multi_utenza', 'login' => $email, 'vecchio_login' => $login_db);
+        }
+
+        upsert_sub_t0_disabilita_utenza($subvettore_id, $login_db);
+        $creata = upsert_sub_t0_crea_utenza($subvettore_id, $email, $ragione_sociale, $phone);
+        if ($creata === null || !empty($creata['gia_esistente'])) {
+            return array('esito' => 'errore_crea', 'login' => '', 'vecchio_login' => $login_db);
+        }
+
+        upsert_sub_t0_aggiorna_login_subvettore($subvettore_id, $email);
+        return array('esito' => 'multi_utenza', 'login' => $creata['login'], 'vecchio_login' => $login_db);
+    }
+
+    if ($dry_run) {
+        upsert_sub_t0_log(
+            'DRY_RUN UTENZA crea sub=' . $subvettore_id . ' login=' . $email
+        );
+        return array('esito' => 'creata', 'login' => $email, 'vecchio_login' => '');
+    }
+
+    $creata = upsert_sub_t0_crea_utenza($subvettore_id, $email, $ragione_sociale, $phone);
+    if ($creata === null || !empty($creata['gia_esistente'])) {
+        return array('esito' => 'errore_crea', 'login' => '', 'vecchio_login' => '');
+    }
+
+    upsert_sub_t0_aggiorna_login_subvettore($subvettore_id, $email);
+    return array('esito' => 'creata', 'login' => $creata['login'], 'vecchio_login' => '');
+}
+
+function upsert_sub_t0_accoda_mail_credenziali($subvettore_id, $login, $esito_u, $dry_run = false)
+{
+    $subvettore_id = (int)$subvettore_id;
+    $login = trim((string)$login);
+    $esito = isset($esito_u['esito']) ? (string)$esito_u['esito'] : '';
+
+    if ($subvettore_id <= 0 || $login === '') {
+        return 'skip';
+    }
+    if ($esito !== 'creata' && $esito !== 'multi_utenza') {
+        return 'skip';
+    }
+
+    if ($dry_run) {
+        upsert_sub_t0_log(
+            'DRY_RUN MAIL_CRED in coda sub=' . $subvettore_id . ' login=' . $login
+            . ' esito=' . $esito
+        );
+        return 'dry_run';
+    }
+
+    try {
+        sc_exec_sql("
+            UPDATE subvettori
+            SET mail_credenziali_inviata_at = NULL
+            WHERE id = " . upsert_sub_t0_sql_num($subvettore_id) . "
+        ", 'pigliacelli');
+        upsert_sub_t0_log(
+            'MAIL_CRED in coda sub=' . $subvettore_id . ' login=' . $login
+            . ' esito=' . $esito
+        );
+        return 'coda';
+    } catch (Throwable $e) {
+        upsert_sub_t0_log(
+            'MAIL_CRED coda ERRORE sub=' . $subvettore_id . ' — ' . $e->getMessage()
+        );
+        return 'errore';
+    }
+}
+
+@set_time_limit(0);
+@ini_set('memory_limit', '512M');
+
+$upsert_sub_dry_run = false;
+$upsert_sub_dry_suffix = '';
+
+if (isset($_GET['dry_run']) && (string)$_GET['dry_run'] === '1') {
+    $upsert_sub_dry_run = true;
+    $upsert_sub_dry_suffix = ' [DRY_RUN]';
+}
+
+upsert_sub_t0_log('START upsert subvettori T2BaseVettori' . $upsert_sub_dry_suffix);
+
+sc_lookup(settingsRows, "
+    SELECT set_name, set_value
+    FROM sec_settings
+    WHERE set_name IN ('sgam_user', 'sgam_pswd', 'sgam_db', 'sgam_server')
+", 'pigliacelli');
+
+$settings = array();
+if (!empty({settingsRows})) {
+    foreach ({settingsRows} as $settingRow) {
+        $set_key = $settingRow[0];
+        $settings[$set_key] = $settingRow[1];
+    }
+}
+
+$pdo_sga = upsert_sub_t0_connetti_sga($settings);
+if ($pdo_sga === null) {
+    upsert_sub_t0_log('STOP connessione SGA non disponibile');
+    return;
+}
+
+$sub_esistenti = array();
+sc_lookup(subEsistentiRows, "
+    SELECT id, codice_sga, COALESCE(login_subvettore, '')
+    FROM subvettori
+    WHERE codice_sga IS NOT NULL
+      AND TRIM(codice_sga) <> ''
+", 'pigliacelli');
+if (!empty({subEsistentiRows})) {
+    foreach ({subEsistentiRows} as $subRow) {
+        $codice_map = (string)$subRow[1];
+        $sub_esistenti[$codice_map] = array(
+            'id' => (int)$subRow[0],
+            'login_subvettore' => trim((string)$subRow[2]),
+        );
+    }
+}
+
+upsert_sub_t0_log('Subvettori presenti in pigliacelli: ' . count($sub_esistenti));
+
+$sql_sga = "
+    SELECT
+        tbvt.CODICE,
+        tbvt.RAGIONE_SOCIALE,
+        COALESCE(NULLIF(RTRIM(tbvt.INDIRIZZO), ''), NULLIF(RTRIM(tbvt.VIA), '')) AS INDIRIZZO,
+        tbvt.LOCALITA,
+        tbvt.PROVINCIA,
+        tbvt.TELEFONO,
+        tbvt.CELLULARE,
+        NULLIF(RTRIM(tbvt.E_MAIL), '') AS E_MAIL,
+        NULLIF(RTRIM(tbvt.E_MAIL_CERTIFICATA), '') AS E_MAIL_CERTIFICATA,
+        b.PARTITA_IVA,
+        b.CODICE_FISCALE
+    FROM T2BaseVettori tbvt
+    LEFT JOIN BaCliFor b
+        ON b.SOCIETA = tbvt.SOCIETA
+       AND b.CLIENTE_FORNITORE = tbvt.FORNITORE_CLIFOR
+       AND b.CODICE = tbvt.FORNITORE_CODICE
+    WHERE tbvt.SOCIETA = 1
+      AND tbvt.CODICE IN (4152, 5911, 5967)
+    UNION ALL
+    SELECT
+        tbvt.CODICE,
+        tbvt.RAGIONE_SOCIALE,
+        COALESCE(NULLIF(RTRIM(tbvt.INDIRIZZO), ''), NULLIF(RTRIM(tbvt.VIA), '')) AS INDIRIZZO,
+        tbvt.LOCALITA,
+        tbvt.PROVINCIA,
+        tbvt.TELEFONO,
+        tbvt.CELLULARE,
+        NULLIF(RTRIM(tbvt.E_MAIL), '') AS E_MAIL,
+        NULLIF(RTRIM(tbvt.E_MAIL_CERTIFICATA), '') AS E_MAIL_CERTIFICATA,
+        b.PARTITA_IVA,
+        b.CODICE_FISCALE
+    FROM T2BaseVettori tbvt
+    LEFT JOIN BaCliFor b
+        ON b.SOCIETA = tbvt.SOCIETA
+       AND b.CLIENTE_FORNITORE = tbvt.FORNITORE_CLIFOR
+       AND b.CODICE = tbvt.FORNITORE_CODICE
+    WHERE tbvt.SOCIETA = 1
+      AND tbvt.CODICE NOT IN (
+          94, 213, 648, 694, 980, 1072, 1480, 1541, 1989, 2408, 3115, 3644, 3752,
+          4010, 4169, 4364, 4390, 4407, 4429, 4785, 5055, 5252, 5439, 5469, 5490,
+          5607, 5611, 5799, 5878, 5885, 5914, 5963, 5976, 5990, 6042, 6051, 6086,
+          6154, 6160, 6167, 6169, 6173, 6177, 6179, 6180, 6191, 6192, 6200, 6223,
+          6225, 6227, 6237, 6250, 6251, 6254, 6271, 6279, 6289, 6291, 6293, 6312, 6363,
+          4152, 5911, 5967
+      )
+      AND EXISTS (
+          SELECT 1
+          FROM T2ViaggiVettori tvv
+          WHERE tvv.VETTORE = tbvt.CODICE
+            AND tvv.ANNO >= 2024
+            AND tvv.SOCIETA = 1
+      )
+    ORDER BY CODICE
+";
+
+try {
+    $stmt = $pdo_sga->query($sql_sga);
+} catch (PDOException $e) {
+    upsert_sub_t0_log('ERRORE SELECT SGA: ' . $e->getMessage());
+    return;
+}
+
+$letti_sga      = 0;
+$inseriti       = 0;
+$aggiornati     = 0;
+$errori         = 0;
+$senza_email    = 0;
+$senza_pec      = 0;
+$senza_piva     = 0;
+$login_riempiti = 0;
+$utenze_create = 0;
+$utenze_multi = 0;
+$utenze_skip_occupato = 0;
+$mail_in_coda = 0;
+$mail_coda_errore = 0;
+
+while (($row = $stmt->fetch(PDO::FETCH_NUM)) !== false) {
+    $letti_sga++;
+    $codice_sga      = upsert_sub_t0_valore_o_null($row[0]);
+    $ragione_sociale = upsert_sub_t0_valore_o_null($row[1]);
+    $indirizzo       = upsert_sub_t0_valore_o_null($row[2]);
+    $sede_citta      = upsert_sub_t0_valore_o_null($row[3]);
+    $sede_prov       = upsert_sub_t0_valore_o_null($row[4]);
+    $phone           = upsert_sub_t0_valore_o_null($row[5]);
+    $cellphone       = upsert_sub_t0_valore_o_null($row[6]);
+    $email           = upsert_sub_t0_valore_o_null($row[7]);
+    $pec             = upsert_sub_t0_valore_o_null($row[8]);
+    $piva            = upsert_sub_t0_valore_o_null($row[9]);
+    $cod_fiscale     = upsert_sub_t0_valore_o_null($row[10]);
+
+    if ($codice_sga === null) {
+        continue;
+    }
+
+    if ($email === null) {
+        $senza_email++;
+    }
+    if ($pec === null) {
+        $senza_pec++;
+    }
+    if ($piva === null && $cod_fiscale === null) {
+        $senza_piva++;
+    }
+
+    $codice_key = (string)$codice_sga;
+    $pec_sql = 'NULL';
+    if ($pec !== null) {
+        $pec_sql = upsert_sub_t0_sql_quote($pec);
+    }
+
+    $login_ins = '';
+    if ($email !== null && upsert_sub_t0_email_valida($email)) {
+        $login_ins = $email;
+    }
+
+    $phone_utenza = $phone !== null ? trim((string)$phone) : '';
+    if ($phone_utenza === '' && $cellphone !== null) {
+        $phone_utenza = trim((string)$cellphone);
+    }
+
+    if (isset($sub_esistenti[$codice_key])) {
+        $sub_entry = $sub_esistenti[$codice_key];
+        $sub_id = (int)$sub_entry['id'];
+        $login_attuale = $sub_entry['login_subvettore'];
+
+        $pec_flag = '0';
+        if ($pec !== null) {
+            $pec_flag = '1';
+        }
+
+        $upd = "
+            UPDATE subvettori
+            SET
+                ragione_sociale = " . upsert_sub_t0_sql_quote($ragione_sociale) . ",
+                cod_fiscale     = " . upsert_sub_t0_sql_quote($cod_fiscale) . ",
+                piva            = " . upsert_sub_t0_sql_quote($piva) . ",
+                phone           = " . upsert_sub_t0_sql_quote($phone) . ",
+                cellphone       = " . upsert_sub_t0_sql_quote($cellphone) . ",
+                indirizzo       = " . upsert_sub_t0_sql_quote($indirizzo) . ",
+                sede_citta      = " . upsert_sub_t0_sql_quote($sede_citta) . ",
+                sede_prov       = " . upsert_sub_t0_sql_quote($sede_prov) . ",
+                pec             = CASE
+                    WHEN " . $pec_flag . " = 1 THEN " . $pec_sql . "
+                    ELSE pec
+                END
+            WHERE id = " . $sub_id . "
+        ";
+
+        if ($upsert_sub_dry_run) {
+            $aggiornati++;
+            upsert_sub_t0_log("DRY_RUN UPDATE id=$sub_id codice_sga=$codice_key");
+            if ($login_ins !== '') {
+                $esito_u = upsert_sub_t0_sincronizza_utenza(
+                    $sub_id,
+                    $login_ins,
+                    $ragione_sociale,
+                    $phone_utenza,
+                    true
+                );
+                if ($esito_u['esito'] === 'creata') {
+                    $utenze_create++;
+                } elseif ($esito_u['esito'] === 'multi_utenza') {
+                    $utenze_multi++;
+                } elseif ($esito_u['esito'] === 'skip_occupato') {
+                    $utenze_skip_occupato++;
+                }
+                $esito_mail = upsert_sub_t0_accoda_mail_credenziali(
+                    $sub_id,
+                    $login_ins,
+                    $esito_u,
+                    true
+                );
+                if ($esito_mail === 'dry_run' || $esito_mail === 'coda') {
+                    $mail_in_coda++;
+                }
+            }
+            continue;
+        }
+
+        try {
+            sc_exec_sql($upd, 'pigliacelli');
+            $aggiornati++;
+            if ($login_ins !== '') {
+                $esito_u = upsert_sub_t0_sincronizza_utenza(
+                    $sub_id,
+                    $login_ins,
+                    $ragione_sociale,
+                    $phone_utenza,
+                    false
+                );
+                if ($esito_u['esito'] === 'creata') {
+                    $utenze_create++;
+                    if ($login_attuale === '') {
+                        $login_riempiti++;
+                    }
+                    $sub_esistenti[$codice_key]['login_subvettore'] = $login_ins;
+                } elseif ($esito_u['esito'] === 'multi_utenza') {
+                    $utenze_multi++;
+                    $sub_esistenti[$codice_key]['login_subvettore'] = $login_ins;
+                } elseif ($esito_u['esito'] === 'skip_occupato') {
+                    $utenze_skip_occupato++;
+                }
+                $esito_mail = upsert_sub_t0_accoda_mail_credenziali(
+                    $sub_id,
+                    isset($esito_u['login']) && $esito_u['login'] !== '' ? $esito_u['login'] : $login_ins,
+                    $esito_u,
+                    false
+                );
+                if ($esito_mail === 'coda') {
+                    $mail_in_coda++;
+                } elseif ($esito_mail === 'errore') {
+                    $mail_coda_errore++;
+                }
+            }
+        } catch (Exception $e) {
+            $errori++;
+            upsert_sub_t0_log("ERRORE UPDATE id=$sub_id codice_sga=$codice_key — " . $e->getMessage());
+        } catch (Throwable $e) {
+            $errori++;
+            upsert_sub_t0_log("ERRORE UPDATE id=$sub_id codice_sga=$codice_key — " . $e->getMessage());
+        }
+        continue;
+    }
+
+    $login_val = null;
+    if ($login_ins !== '') {
+        $login_val = $login_ins;
+    }
+
+    $ins = "
+        INSERT INTO subvettori
+            (login_subvettore, ragione_sociale, cod_fiscale, piva, phone, cellphone,
+             indirizzo, sede_citta, sede_prov, codice_sga, pec)
+        VALUES
+            (" . upsert_sub_t0_sql_quote($login_val) . ",
+             " . upsert_sub_t0_sql_quote($ragione_sociale) . ",
+             " . upsert_sub_t0_sql_quote($cod_fiscale) . ",
+             " . upsert_sub_t0_sql_quote($piva) . ",
+             " . upsert_sub_t0_sql_quote($phone) . ",
+             " . upsert_sub_t0_sql_quote($cellphone) . ",
+             " . upsert_sub_t0_sql_quote($indirizzo) . ",
+             " . upsert_sub_t0_sql_quote($sede_citta) . ",
+             " . upsert_sub_t0_sql_quote($sede_prov) . ",
+             " . upsert_sub_t0_sql_quote($codice_key) . ",
+             " . $pec_sql . ")
+    ";
+
+    if ($upsert_sub_dry_run) {
+        $inseriti++;
+        upsert_sub_t0_log("DRY_RUN INSERT codice_sga=$codice_key login=$login_ins");
+        if ($login_ins !== '') {
+            upsert_sub_t0_log(
+                'DRY_RUN UTENZA crea codice_sga=' . $codice_key . ' login=' . $login_ins
+            );
+            $utenze_create++;
+            upsert_sub_t0_log('DRY_RUN MAIL_CRED in coda login=' . $login_ins);
+            $mail_in_coda++;
+            upsert_sub_t0_log(
+                'DRY_RUN CALL bootstrap_documenti_from_preset codice_sga=' . $codice_key
+                . ' login=' . $login_ins
+            );
+        }
+        $sub_esistenti[$codice_key] = array(
+            'id' => 0,
+            'login_subvettore' => $login_ins,
+        );
+        continue;
+    }
+
+    try {
+        sc_exec_sql($ins, 'pigliacelli');
+        $inseriti++;
+
+        sc_lookup(rsUpsertLastSubId, "SELECT LAST_INSERT_ID()", 'pigliacelli');
+        $new_sub_id = 0;
+        if (!empty({rsUpsertLastSubId})) {
+            $new_sub_id = (int){rsUpsertLastSubId[0][0]};
+        }
+
+        if ($new_sub_id > 0 && $login_ins !== '') {
+            $esito_u = upsert_sub_t0_sincronizza_utenza(
+                $new_sub_id,
+                $login_ins,
+                $ragione_sociale,
+                $phone_utenza,
+                false
+            );
+            if ($esito_u['esito'] === 'creata') {
+                $utenze_create++;
+                $login_riempiti++;
+            } elseif ($esito_u['esito'] === 'skip_occupato') {
+                $utenze_skip_occupato++;
+            }
+            $esito_mail = upsert_sub_t0_accoda_mail_credenziali(
+                $new_sub_id,
+                isset($esito_u['login']) && $esito_u['login'] !== '' ? $esito_u['login'] : $login_ins,
+                $esito_u,
+                false
+            );
+            if ($esito_mail === 'coda') {
+                $mail_in_coda++;
+            } elseif ($esito_mail === 'errore') {
+                $mail_coda_errore++;
+            }
+
+            // Preset documenti: dopo utenza (serve login in sec_users)
+            if ($esito_u['login'] !== ''
+                && ($esito_u['esito'] === 'creata'
+                    || $esito_u['esito'] === 'ok_esistente'
+                    || $esito_u['esito'] === 'multi_utenza')
+            ) {
+                upsert_sub_t0_bootstrap_documenti_from_preset(
+                    $new_sub_id,
+                    $esito_u['login'],
+                    false
+                );
+            }
+        }
+
+        $sub_esistenti[$codice_key] = array(
+            'id' => $new_sub_id,
+            'login_subvettore' => $login_ins,
+        );
+    } catch (Exception $e) {
+        $errori++;
+        upsert_sub_t0_log("ERRORE INSERT codice_sga=$codice_key login=$login_ins — " . $e->getMessage());
+    } catch (Throwable $e) {
+        $errori++;
+        upsert_sub_t0_log("ERRORE INSERT codice_sga=$codice_key login=$login_ins — " . $e->getMessage());
+    }
+}
+
+$stmt->closeCursor();
+
+$riepilogo = 'END letti_sga=' . $letti_sga
+    . ' inseriti=' . $inseriti
+    . ' aggiornati=' . $aggiornati
+    . ' errori=' . $errori
+    . ' login_riempiti=' . $login_riempiti
+    . ' utenze_create=' . $utenze_create
+    . ' utenze_multi=' . $utenze_multi
+    . ' utenze_skip_occupato=' . $utenze_skip_occupato
+    . ' mail_in_coda=' . $mail_in_coda
+    . ' mail_coda_errore=' . $mail_coda_errore
+    . ' senza_email=' . $senza_email
+    . ' senza_pec=' . $senza_pec
+    . ' senza_piva_cf=' . $senza_piva
+    . $upsert_sub_dry_suffix;
+
+upsert_sub_t0_log($riepilogo);
+sc_log_add('EXPORT_DATA', 'Upsert subvettori T0: ' . $riepilogo);
+

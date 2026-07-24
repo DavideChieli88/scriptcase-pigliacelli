@@ -450,3 +450,45 @@ ALTER TABLE `documenti`
   FOREIGN KEY (`tipo_documento_id`) REFERENCES `tipi_documento`(`id`)
   ON DELETE RESTRICT
   ON UPDATE RESTRICT;
+
+  ALTER TABLE `tipi_documento` ADD `mandatory` TINYINT(1) NULL DEFAULT '0' AFTER `nome`, ADD `from_preset` TINYINT(1) NULL DEFAULT '0' AFTER `mandatory`;
+
+  ALTER TABLE `tipi_documento` ADD `is_readonly` TINYINT(1) NULL DEFAULT '0' AFTER `from_preset`, ADD `flag_possesso` TINYINT(1) NULL DEFAULT '0' AFTER `is_readonly`, ADD `tipo_collegato_id` INT(11) NULL AFTER `flag_possesso`;
+
+  DELIMITER $$
+
+DROP PROCEDURE IF EXISTS `sp_bootstrap_documenti_from_preset` $$
+
+CREATE PROCEDURE `sp_bootstrap_documenti_from_preset`(
+    IN `p_subvettore_id` INT,
+    IN `p_login` VARCHAR(255)
+)
+BEGIN
+    INSERT INTO documenti (
+        tipo_documento_id,
+        subvettore_id,
+        login,
+        stato_documento_id
+    )
+    SELECT
+        td.id,
+        p_subvettore_id,
+        p_login,
+        1
+    FROM tipi_documento td
+    WHERE td.from_preset = 1
+      AND NOT EXISTS (
+          SELECT 1
+          FROM documenti d
+          WHERE d.subvettore_id = p_subvettore_id
+            AND d.tipo_documento_id = td.id
+      );
+END $$
+
+DELIMITER ;
+
+ALTER TABLE `subvettori` ADD `wizard_complete` TINYINT(1) NULL DEFAULT '0' AFTER `pec`;
+
+ALTER TABLE `subvettori`
+    ADD COLUMN `mail_credenziali_inviata_at` DATETIME NULL DEFAULT NULL
+        AFTER `wizard_complete`;

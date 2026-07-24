@@ -1,0 +1,1315 @@
+📝 Note
+lug 9, 2026
+Pigliacelli Workspace | Modulo 1 chiarimenti (SGA)
+Partecipanti davide.chieli@digiwebuno.it Erik Capoccetta gianni.cerroni@ctsonweb.it
+Allegati Pigliacelli Workspace | Modulo 1 chiarimenti (SGA)
+Record delle riunioni Trascrizione
+Riepilogo
+La riunione ha definito la logica di estrazione dati per la fatturazione e il nuovo flusso automatizzato.Struttura database e fatturazioneLa discussione ha chiarito la mappatura delle tabelle SGA per collegare mittenti e clienti, definendo la gestione delle quantità residue e lo stato di saldato per gli ordini.Flusso di registrazione subvettoriÈ stato deciso di implementare un wizard di primo accesso obbligatorio che blocca l'operatività del subvettore fino al completamento dei dati anagrafici e all'approvazione manuale da parte dell'operatore.Automazione sincronizzazione e contrattiIl sistema integrerà job distinti per la sincronizzazione delle anagrafiche e delle tratte, permettendo inoltre la creazione manuale autonoma dei contratti quadro da parte degli operatori.
+Passaggi successivi
+[Il gruppo] Confermare importi extra: Chiedere al cliente se sia sufficiente visualizzare il Nolo o se sia necessario evidenziare gli addebiti extra con le relative descrizioni.
+[Davide Chieli] Verificare filiali anno: Controllare nel database se esistono record con filiali diverse per l anno 2026. Analizzare i dati per confermare l utilizzo effettivo delle filiali.
+[Il gruppo] Verificare stampa filiali: Verificare se la filiale viene riportata correttamente sulla stampa dell ordine inviata al cliente. Accertare se tale informazione sia sempre presente nei documenti prodotti.
+[Il gruppo] Consultare Stefano: Contattare Stefano per discutere i dettagli relativi agli ordini di servizio e alle modalità di gestione degli importi. Approfondire la disponibilità del consulente per definire i requisiti rimanenti.
+[Erik Capoccetta] Chiedere parzialità ordine: Chiedere a Stefano Iannozzi se sia necessario gestire la parzialità negli ordini.
+[Erik Capoccetta] Chiedere extra tariffa: Verificare con Stefano Iannozzi se gli extra debbano essere visualizzati nella tariffa del noleggio.
+[Davide Chieli] Sviluppare job sincronizzazione: Creare 2 job di sincronizzazione separati per le anagrafiche dei subvettori e per le tratte.
+[Davide Chieli] Implementare flusso accesso: Sviluppare il nuovo flusso di primo accesso per i subvettori includendo il wizard per anagrafica e documenti.
+[Davide Chieli] Aggiornare modifica anagrafica: Modificare l interfaccia dei subvettori per consentire la modifica completa dei propri dati anagrafici.
+[Davide Chieli] Risolvere bug sessione: Analizzare e correggere il bug che causa la disconnessione della sessione quando l accesso avviene tramite link nelle notifiche email.
+[Davide Chieli] Aggiungi pulsante contratto: Implementa un pulsante per la creazione manuale di un nuovo contratto quadro di tipo 1. Assicurati che il flusso includa tutte le tratte e gli autisti già presenti per il subvettore coinvolto.
+Dettagli
+Modulo Tratte - Terminologia e Definizioni: Per il modulo delle tratte, Gianni Cerroni chiarisce che in SGA il termine "Caricatore" identifica il mittente (00:01:05). Il "Proprietario" viene definito come il cliente del viaggio ed è reperibile cliccando sulla voce "Cliente" nella barra in basso (00:02:05). La merce è indicata nella colonna adiacente alla tratta (00:01:05).
+Struttura Database SGA: Gianni Cerroni spiega che la tabella principale è T2 Viaggi Vettori, contenente un record per ogni viaggio. La tabella T2 Viaggi Vettori Clienti consente di collegare i viaggi agli ordini, supportando una relazione che nel 90% dei casi è uno a uno, ma potenzialmente di tipo N a N (00:02:52).
+Mappatura Campi per Caricatore e Proprietario: Per determinare il cliente, è necessario relazionare T2 Viaggi Vettori con T2 Viaggi Vettori Clienti e successivamente con T2 Viaggi Clienti (00:04:05). Per il caricatore (mittente), Gianni Cerroni indica di utilizzare la tabella T2 Viaggi Clienti Carichi Scarichi, relazionandola con i campi anno, filiale, numero e numero carico scarico (00:07:49) (00:09:49). La ragione sociale del cliente si ottiene relazionando il codice cliente con la tabella anagrafica Biaclifero, utilizzando il campo cliente fornitore uguale a C (00:10:52).
+Gestione della Merce: La merce va reperita nella tabella T2 Viaggi Clienti Carichi Scarichi Merci, seguendo la stessa logica di join utilizzata per le altre tabelle (00:11:58). Gianni Cerroni consiglia di utilizzare sia il codice che la descrizione, poiché quest'ultima potrebbe contenere informazioni aggiuntive inserite dall'ufficio operativo (00:13:03).
+Tariffa Cliente e Addebiti Extra: La tariffa del cliente è presente nella tabella T2 Viaggi Clienti, nel campo "Importo Totale" (00:14:42). Tuttavia, Erik Capoccetta e Davide Chieli devono verificare con il cliente se sia sufficiente visualizzare solo il Nolo o se sia necessario dettagliare anche gli addebiti extra (come sosta, facchinaggio o prese aggiuntive), che si trovano nella tabella T2 Viaggi Clienti Addebiti (00:16:10).
+Fatturazione - Numero d'Ordine: Per identificare il numero d'ordine ai fini della fatturazione, bisogna utilizzare la tabella MA Ordini For Testata (00:18:48). Il numero d'ordine è composto dalla combinazione di anno, filiale e numero, che costituisce la chiave primaria (00:19:32).
+Utilizzo delle Filiali: Durante la discussione, Davide Chieli osserva che nel sistema sono presenti tre diverse filiali (VO, CO e una terza) (00:21:01). Erik Capoccetta e Davide Chieli devono verificare con Stefano se le filiali vengano effettivamente riportate in fattura o sui documenti, poiché in caso contrario potrebbe essere difficile distinguere gli ordini con lo stesso numero (00:20:15) (00:21:47).
+Fatturazione - Gestione dello Stato dell'Ordine: Il campo "Saldato" è considerato importante per monitorare se la merce è stata consegnata (00:23:39). Il valore "Saldato S" indica che la merce è arrivata a magazzino, mentre "Saldato N" indica che non è ancora arrivata o è arrivata solo parzialmente (00:24:41). Il campo "Confermato" deve essere ignorato (00:23:39).
+Servizi vs Merci in SGA: Gianni Cerroni conferma che la logica applicata alle merci si estende anche ai servizi, gestiti tramite la stessa procedura di "Arrivo Merce". Pertanto, lo stato "Saldato" è valido anche per i servizi (00:27:41).
+Codice Articolo: Il codice articolo si individua nella tabella MA Ordini For Dettaglio tramite il campo "Materiale", che include anche la descrizione, rendendo superflua un'ulteriore decodifica (00:29:52).
+Gestione Quantità e Residuo: Per gestire le consegne parziali, è necessario utilizzare sia il campo "Quantità" che quello "Residuo" (00:30:41). Gianni Cerroni conferma che quando non è arrivato nulla, quantità e residuo coincidono; quando è arrivato tutto, il residuo è zero; se è arrivata una parte, il residuo indica quanto manca (00:32:50).
+Gestione Sconti e Importi: Per il calcolo degli importi, deve essere utilizzato l'importo totale al netto dello sconto presente nel dettaglio dell'ordine (00:33:40). Gianni Cerroni chiarisce che l'importo unitario netto va moltiplicato per la quantità per ottenere il totale della riga, smentendo l'ipotesi che l'importo totale della testata sia globale per l'intero ordine (00:35:28).
+Pianificazione follow-up: Il team concorda di richiedere chiarimenti a Stefano Iannozzi in merito alla gestione delle parzialità e alla visualizzazione degli extra nella tariffa cliente, non appena sarà disponibile (00:25:30) (00:37:41).
+Rimodellazione Flusso Sub-vettori: La nuova richiesta prevede la creazione di due job separati: uno per la sincronizzazione dell'anagrafica subvettori e uno per le tratte. Inoltre, saranno necessari due pulsanti distinti per richiamare tali job rispettivamente nelle schermate di anagrafica subvettori e anagrafica tratte (00:41:08).
+Nuovo Flusso di Primo Accesso (Wizard): Il flusso di primo accesso del subvettore deve essere rivisto drasticamente (00:41:08). Non avverrà più all'invio del contratto, ma quando deciso dall'operatore tramite un pulsante di invio credenziali (00:42:40) (00:45:13). Il subvettore dovrà completare un Wizard iniziale che bloccherà l'operatività finché non sarà concluso (00:46:12) (00:49:01).
+Documentazione e Dati nel Wizard: Durante il Wizard, il subvettore dovrà compilare le informazioni anagrafiche mancanti (come numero REA e indirizzo, unificando civico e indirizzo se necessario) e caricare i documenti obbligatori definiti a sistema (00:46:12). Dovrà inoltre inserire la lista dei mezzi e degli autisti (00:48:07).
+Processo di Approvazione dell'Operatore: Una volta completato il Wizard, la richiesta passa all'operatore di Pigliacelli per la revisione (00:49:48). In caso di dati errati, il subvettore riceverà una notifica email con una nota specifica e dovrà riaccedere al Wizard per correggere le informazioni. Solo dopo l'approvazione, il subvettore sarà operativo sulla piattaforma (00:51:25).
+Gestione Storico Tratte: Se un subvettore è già censito in anagrafica ma non possiede alcuna tratta, il sistema dovrà richiedere la firma del contratto quadro (00:53:10). Con la nuova logica, non sarà più possibile trovare una tratta associata a un subvettore che non sia stato precedentemente censito (00:54:11).
+Risoluzione Bug Timeout Sessione: Davide Chieli ha rimosso il parametro "use password at least once" dalle form master detail di Script Case, sospettando che fosse la causa delle disconnessioni frequenti riscontrate dagli utenti dopo l'accesso tramite link nelle email (00:55:18). Davide Chieli suggerisce inoltre una revisione del parametro "session max life" nel file PHP.ini qualora il problema dovesse persistere (00:56:18).
+Aggiornamento profilo subvettore e separazione dei Job: Davide Chieli intende consentire ai subvettori di modificare autonomamente tutti i campi della propria anagrafica. Erik Capoccetta suggerisce di separare il lavoro in due Job distinti, una strategia che Davide Chieli accetta di implementare per gestire l'aggiornamento e la sincronizzazione (00:57:48).
+Criteri per la sincronizzazione dei viaggi (trips): Davide Chieli definisce la logica per il Job di aggiornamento dei viaggi, che prevede l'identificazione di nuove tratte solo se vengono soddisfatte quattro condizioni specifiche: la presenza di un carico e uno scarico, un importo valido non pari a zero, e la presenza di data e ora di partenza. Le nuove tratte saranno identificate automaticamente nel sistema quando questi parametri sono rispettati (00:57:48).
+Requisiti di attivazione per il subvettore: Erik Capoccetta chiarisce che la creazione di una tratta deve avvenire solo dopo che il subvettore ha completato il flusso di registrazione e risulta attivo nel sistema (00:58:46). Di conseguenza, il Job di aggiornamento delle tratte non necessita di un controllo approfondito sull'anagrafica del subvettore, essendo sufficiente verificare che il soggetto esista nel database (00:59:40).
+Automazione della generazione dei contratti: Davide Chieli richiede conferma sulla natura della generazione del contratto, chiedendo se debba essere attivata tramite un pulsante o automatizzata. Erik Capoccetta specifica che la generazione del contratto deve essere automatica, avvenendo una volta completato il flusso del subvettore e importate le nuove tratte (00:59:40) (01:01:43). Entrambi concordano che il sistema debba assumere che il flusso del subvettore sia completo nel momento in cui vengono importate le tratte, rendendo superflui ulteriori controlli manuali su tale stato (01:00:51).
+Creazione manuale di nuovi Contratti Quadro: Erik Capoccetta richiede l'implementazione di un pulsante che permetta agli operatori di creare un nuovo Contratto Quadro (di tipo 1) in autonomia, indipendentemente dalle condizioni di sistema. Questo processo sarà distinto dalla generazione automatica dei contratti di tipo 2 e 3, che continuano a basarsi sulle tratte (01:01:43).
+Gestione dati per i nuovi Contratti Quadro: In merito alla creazione manuale dei contratti di tipo 1, Erik Capoccetta indica che il sistema deve popolare l'elenco degli autisti includendo tutte le tratte e gli autisti già presenti. Davide Chieli e Erik Capoccetta concordano sul fatto che, qualora i dati non fossero completi, la responsabilità ricadrà sull'operatore che inserisce le informazioni, poiché il sistema non procederà senza i dati necessari (01:02:54).
+Dovresti rivedere le note di Gemini per assicurarti che siano accurate. Ricevi suggerimenti e scopri come Gemini prende appunti
+Qual è la qualità di queste note specifiche? Rispondi a un breve sondaggio? Facci sapere cosa ne pensi e quanto le note siano state utili per le tue esigenze.
+📖 Trascrizione
+lug 9, 2026
+Pigliacelli Workspace | Modulo 1 chiarimenti (SGA) - Trascrizione
+00:00:03
+Erik Capoccetta: Ammetti tutti,
+Gianni Cerroni: parlavo prima, tu sentivi.
+Davide Chieli: Buondì.
+Gianni Cerroni: Qualunque cosa dico io che tu la senti,
+Erik Capoccetta: buongiorno.
+Davide Chieli: Buongiorno.
+Gianni Cerroni: quindi condividioni con te.
+Davide Chieli: Mi sentite?
+Gianni Cerroni: No, speriamo che ti stufi.
+Erik Capoccetta: Buongiorno.
+Davide Chieli: Datemi un secondo.
+Erik Capoccetta: Già.
+Gianni Cerroni: Tanto lo so che lo pensi, eh, lo so benissimo. Io so un po' lo so che so un po' logo corroio, come diceva mia moglie, ripeto le cose 100 miliardi di volte.
+Erik Capoccetta: Ci sei Gianni?
+Gianni Cerroni: Pronti?
+Erik Capoccetta: Eccoci qua.
+Gianni Cerroni: Eccoci
+Erik Capoccetta: Buongiorno. Allora,
+Gianni Cerroni: qua.
+Erik Capoccetta: andiamo rapidi così facciamo perdere poco tempo. Allora, noi c'abbiamo un paio di domande per quanto riguarda sempre il famoso modulo delle tratte, viaggi, eccetera.
+Gianni Cerroni: Sì.
+Erik Capoccetta: E poi un'altra serie di domande invece per quanto riguarda il modulo della fatturazione. Eh, partirei dal modulo delle tratte perché penso che siano due domande che smartiamo molto rapidamente.
+00:01:05
+Erik Capoccetta: Allora, prima domanda.
+Davide Chieli: Sì.
+Erik Capoccetta: Dove andiamo a reperire relativamente a una tratta le informazioni relative a caricatore, proprietario e merce?
+Gianni Cerroni: caricatore. Stai parlando quindi di rifiuti quando parli di caricatore, proprietario e merce. No,
+Erik Capoccetta: eh di una
+Gianni Cerroni: diciamo che terminologie, allora, aspetta, su termini non comuni in ambito trasporta,
+Erik Capoccetta: tratta.
+Gianni Cerroni: a meno che non stiamo parlando specificamente del trasporto di fiatore, che cacchio è il caricatore?
+Erik Capoccetta: Ah, loro ce l'hanno nell'allegato A.
+Davide Chieli: Eh,
+Erik Capoccetta: Eh,
+Davide Chieli: praticamente ci hanno specificato nel Datemi un secondino che lo ritrovo.
+Erik Capoccetta: quando
+Davide Chieli: C'è uno specificato dei campi?
+Gianni Cerroni: caricatore che è il vettore forse colui che presumo sia colui che carica la mer caricatore però sono
+Davide Chieli: Sì. Eh,
+Gianni Cerroni: termini di non comuni su SGA,
+Davide Chieli: allora ci hanno specificato loro eh che il caricatore Allora,
+Gianni Cerroni: quindi
+Davide Chieli: che corrisponde al mittente,
+Erik Capoccetta: corrifondo ammittente la merce
+Davide Chieli: la merce indicata della colonna vicina alla tratta.
+00:02:05
+Davide Chieli: Per la proprietà si intende il cliente,
+Gianni Cerroni: Ah,
+Davide Chieli: per il proprietario che potete trovare cliccando nella voce cliente sulla barra in basso del viaggio. Ovviamente non abbiamo accesso alla piattaforma.
+Gianni Cerroni: ok. Quindi Oh, forse ho capito. Probabilmente loro usano questi termini perché si riferiscono in particolar modo al trasporto rifiuti, però mo al di là che sia un trasporto rifiuti o non rifiuti, quindi per caricatore vogli vuoi sapere dove prendi il mutente. Ok.
+Erik Capoccetta: ilmittente il tipo la merce
+Gianni Cerroni: Poi l'altra l'altra richiesta era dove il la merce,
+Davide Chieli: la merch e il proprietario.
+Gianni Cerroni: ok? E poi il destinatario, diciamo, il produttore, come si chiama?
+Erik Capoccetta: No, il
+Gianni Cerroni: Il Beh,
+Erik Capoccetta: cliente,
+Gianni Cerroni: ok, il cliente, non il destinatario, il cliente del Vabbè,
+Erik Capoccetta: il proprietario, loro lo chiamano proprietario,
+Gianni Cerroni: va
+Davide Chieli: proprietario della merce.
+Gianni Cerroni: bene.
+Erik Capoccetta: si intende il cliente che potete trovare cliccando sulla voce cliente sulla barra in basso al viaggio.
+Davide Chieli: Vabbè,
+Gianni Cerroni: Ok,
+Davide Chieli: chiaramente noi non abbiamo accesso,
+00:02:52
+Gianni Cerroni: ok.
+Davide Chieli: come dicevo,
+Gianni Cerroni: Allora, guarda, non so a che punto siete andati sul sul approfondire, insomma, la la struttura dati de di SGA, però eh sicuramente avete acceduto alla tabella di due Viaggi Vettori, che è la tabella principale, dove c'è un record per ogni viaggio e non so se già avuto
+Erik Capoccetta: Sì.
+Gianni Cerroni: avete avuto la necessità di accedere anche eh alla tabella di due viaggi clienti che eh tra virgolette contiene i dati dell'ordine del cliente e quindi
+Davide Chieli: Abbiamo avuto accesso a T2 viaggi vettori clienti.
+Gianni Cerroni: anche il cliente. Perfetto. Ecco, quella tabella T2 viaggi, vettori clienti è la tabella che vi permette di collegare i due ambiti, cioè da una parte c'ho T2 viaggi vettori in cui un record è un viaggio. Su T2 viaggi clienti ho un record per ogni ordine. Il rapporto tra le due tabelle potrebbe anche essere NN, n Piacelli nel 90% dei casi è uno a uno, cioè un viaggio per un ordine, però in realtà per come è strutturato SGA potremmo anche avere un rapporto AN e la tabella T2 viaggi, vettori clienti è l'unica tabella che vi permette di mettere in relazione eh le due tabelle, per cui se partite dalla tabella di di due viaggi vettori e volete
+00:04:05
+Erik Capoccetta: M.
+Gianni Cerroni: sapere qual è il cliente dovete fare una relazione con la tabella di vettori che da quello che mi dice Davide avete già fatto. Aspetta che mi apro mi apro a video il database e da da
+Erik Capoccetta: Sì.
+Gianni Cerroni: questa relazione da altri due viaggi vettori altri due viaggi vettori clienti poi fate la relazione sulla tabella di due viaggi clienti dove c'è il codice l'unica cosa in questa tabella tutti i due viaggi vettori clienti a cui avete già acceduto, no? C'avete acceduto, immagino, per determinare se il viaggio ha più prese e più consegne, più carichi e più scarichi.
+Davide Chieli: Esattamente.
+Erik Capoccetta: Esatto.
+Gianni Cerroni: Perfetto,
+Davide Chieli: Sì.
+Gianni Cerroni: perfetto. Ok. Ed è giusto ed è corretto. Eh, un attimo che la apro, eh, così vi do un'informazione più precisa.
+Davide Chieli: Abbiamo utilizzato anche l'addebiti per avere gli debiti gli debiti extra poi
+Gianni Cerroni: Va bene.
+Davide Chieli: collegati.
+Gianni Cerroni: Ok. Un attimo che vado sulle tabelle. Allora, quando voi andate a relazionarvi con la T2 viaggi vettori clienti, se ricordo bene, a fronte di un record, quindi di un viaggio presente in tutto di viaggi vettori, lui gli tira fuori quantomeno quantomeno quattro record, perché per SGA ogni viaggio è composto da una partenza,
+00:05:27
+Davide Chieli: Sì.
+Erik Capoccetta: Sì.
+Gianni Cerroni: da al minimo è composto da una partenza, da uno più carichi, da uno più scarichi. qui e dal libero. Per cui al minimo con pigliacelli dovresti avere un quattro record perché partenza, carico, scarico e libero. Ok?
+Davide Chieli: Esatto.
+Gianni Cerroni: per andare allora a questo punto dovete relazionare sta tabella con i due viaggi viventi.
+Davide Chieli: Mhm.
+Gianni Cerroni: Eh non vi dico quali sono i campi. Un attimo, sto aprendo. Due viaggiori. Ok. Allora, la le i campi da utilizzare per relazionarsi per relazionare poi con la T2 viaggi clienti dove c'è il codice cliente, magari pure altre informazioni potranno essere utili,
+Davide Chieli: il codice cliente. Scusami Gianni,
+Gianni Cerroni: sono per determinare il codice cliente dovete relazionare da
+Davide Chieli: giusto?
+Gianni Cerroni: partendo dalla tabella di due viaggi vittori clienti,
+Davide Chieli: Ok.
+Gianni Cerroni: prendete i campi che iniziano con cliente_ore, per cui cliente anno, cliente finale, cliente numero, cliente numero carico scarico. quattro campi e li andate a e
+00:06:44
+Erik Capoccetta: Mhm.
+Gianni Cerroni: questi campi, attenzione che non li troverete eh probabilmente eh sulla partenza, ma li trovate esclusivamente sui carichi e sugli scarichi. E vabbè, è una cosa singura. che comunque dove li trovate questi campi vanno relazionati coi stessi campi. Se ci togli, diciamo, se apri la tabella di due viaggi clienti, ti troverai questi quattro campi: anno, filiale, numero e numero carico scarico. Aprila un attimo, la potete aprire al volo, seò vi
+Erik Capoccetta: La posso pure io?
+Gianni Cerroni: detto allora
+Davide Chieli: Ah.
+Erik Capoccetta: Guarda, aspetta che la apro. Allora
+Gianni Cerroni: diciamo che lì ti troverai la società che dovete sempre mettere nelle vostre gioie. ricordatevelo per fare un filtro a mondo e poi c'è,
+Davide Chieli: sempre sempre.
+Gianni Cerroni: vedi,
+Davide Chieli: Sì.
+Gianni Cerroni: c'è proprio all'inizio dopo la società c'è anno, filiale e numero, il quarto campo, quello carico scarico. Anzi, aspetta, non è questa, eh, sto ragionando. Voi vi serve solo il cliente, non vi serve anche il mittente non serve,
+00:07:49
+Davide Chieli: Mi servono quei quattro dati. Sì,
+Gianni Cerroni: no, ti serve anche il mittente. Allora, niente, allora dobbiamo farne due di Giove, mi dispiace. Allora, prima dobbiamo relazionare con la tabella di due viaggi carichi e scarichi.
+Davide Chieli: c'è
+Gianni Cerroni: Prima.
+Erik Capoccetta: Quindi due viaggi clienti devo prendere
+Gianni Cerroni: Quindi vale perché in questa tabella oltre ad esserci anno filiale e numero che è il numero dell'ordine c'è anche il quarto campo quello di numero carico scarico. Quindi prima di due viaggi clienti carico scarico e i campi, quei quattro campi che ho citato prima, quelli che inizia col cliente_ li ritrovate qui. Hanno numero, numero, carico scarico, sono proprio all'inizio della tabella. Fatto questo, allora, intanto vi dico subito che da qui tirate fuori il mittente, il mittente, quello che li chiamavano caricatore, il l'indirizzo di carica e se già chiamende. Infatti, se vai sulla destra di questa tabella,
+Erik Capoccetta: Oh.
+Gianni Cerroni: trovi eh carico ragione sociale, carico indirizzo, carico zona, carico gap e se vi occorre c'è anche da qualche parte il codice, però se voi serve tirar fuori l'indirizzo sta qui.
+00:08:57
+Davide Chieli: Erick,
+Erik Capoccetta: Ma penso il nome,
+Davide Chieli: mi vuoi condividere?
+Erik Capoccetta: penso dobbiamo tirare fuori il nome,
+Gianni Cerroni: Allora, ragione sociale è carico. Ragione sociale.
+Erik Capoccetta: il caricatore, quindi è il mittente e che si chiama carico ragione sociale,
+Gianni Cerroni: Sì,
+Davide Chieli: Solo il mittente.
+Gianni Cerroni: sì. chiedetegli conferma,
+Erik Capoccetta: no?
+Gianni Cerroni: però da quello che mi avete detto il caricatore SGA lo definisce mittente, cioè il luogo di carico della merce, l'indirizzo di carico della merce che lui definisce come un e lì c'è tutto compreso la ragione sociale.
+Erik Capoccetta: Sì.
+Gianni Cerroni: Poi qui non c'è ancora il cliente.
+Davide Chieli: M.
+Gianni Cerroni: Per arrivare al cliente dovete relazionare questa tabella qui usando società anno, filiale e numero con la tabella di due viaggi clienti che sono i primi sono i primi quattro campi che trovate quella e lì c'è il codice cliente.
+Erik Capoccetta: Allora, scusa Gianni, no,
+Davide Chieli: Non mi sono confuso,
+Erik Capoccetta: però la prima tabella è T2 viaggi,
+Davide Chieli: eh.
+Erik Capoccetta: vettori, clienti.
+Gianni Cerroni: Partite da quella per relazionarla usando i cambi client_
+00:09:49
+Davide Chieli: M
+Erik Capoccetta: Mh
+Gianni Cerroni: con questa tabella qui che è la T2 viaggi clienti carica e scariche.
+Erik Capoccetta: mh.
+Gianni Cerroni: Quindi la prima join da aggiungere è
+Davide Chieli: Ok.
+Gianni Cerroni: questa.
+Erik Capoccetta: due viaggi clienti, carico e scarico si chiama proprio
+Gianni Cerroni: Sì,
+Davide Chieli: Ah, carico scarico sta nel nome della
+Erik Capoccetta: carico.
+Gianni Cerroni: T2 viaggi clienti.
+Davide Chieli: tabella.
+Gianni Cerroni: La tabella si chiama T2 viaggi clienti, carichi,
+Davide Chieli: M
+Gianni Cerroni: scarichi la tabella e lì dentro troverete i quattro campi
+Davide Chieli: Ok.
+Gianni Cerroni: da relazionare che sono anno, numero e numero carico scarico e lì determinate il
+Erik Capoccetta: hanno quindi sono quattro
+Gianni Cerroni: caricatore
+Davide Chieli: Numero
+Erik Capoccetta: campi sono anno, filiale,
+Davide Chieli: carico.
+Erik Capoccetta: numero
+Gianni Cerroni: natli numero numero carico scar
+Erik Capoccetta: Ah,
+Davide Chieli: Il numero carico scarico che cos'è Gianni se tu di preciso?
+Gianni Cerroni: Identifica nella tabella quella da cui siamo partiti,
+Erik Capoccetta: no.
+Gianni Cerroni: no? due viaggi, clienti, vettori, identifica se nell'ordine, nel viaggio, scusami, ci sono più stop, più carichi di scal,
+00:10:52
+Erik Capoccetta: Ah, certo.
+Davide Chieli: Ah, ok.
+Erik Capoccetta: Sì.
+Gianni Cerroni: perché potrebbe anche essere cab c'è gli ordini multipli in cui il cliente gli dice via a caricare il mio
+Davide Chieli: Vabbè.
+Erik Capoccetta: Ok,
+Gianni Cerroni: stabilimento e mi fai tre consegne. In quel caso sarebbero tre righe di carico scarico, no?
+Davide Chieli: Ok.
+Gianni Cerroni: Ok,
+Erik Capoccetta: quindi questa è la prima e da qua ci tiriamo fuori il caricatore che è carico ragione sociale.
+Gianni Cerroni: un attimo che poi da qui vi relazionate con i due viaggi clienti usando soltanto ancià sempre non la dico ma scontata, an filiale e numero e da lì c'è il codice cliente.
+Erik Capoccetta: E questo è il proprietario. Ovviamente mi sa che ci dobbiamo relazionare anche con la tabella i due clienti, però per prendere la ragione
+Gianni Cerroni: Un attimo.
+Erik Capoccetta: sociale.
+Gianni Cerroni: Per poi tirar fuori la ragione sociale del cliente devi fare la la relazione del codice cliente che trovate in due viaggi clienti con la l'anagrafia di cliente che è Baclifo.
+Davide Chieli: Blifor. Ok, perfetto. Mi
+Gianni Cerroni: E quando fate la relazione col Biaclifero,
+00:11:58
+Davide Chieli: dormi.
+Gianni Cerroni: la relazione non basta fare il codice, bussate anche il campo cliente_ore fornitore, perché noi abbiamo un'unica tabella che contiene sia clienti che migliore.
+Davide Chieli: Uguale C e cliente fornitore uguale C,
+Erik Capoccetta: Certo.
+Davide Chieli: non F.
+Gianni Cerroni: Sì, esatto.
+Davide Chieli: Giusto.
+Gianni Cerroni: Bravo. Giusto.
+Davide Chieli: Ok.
+Erik Capoccetta: Ok. E rimane la merce.
+Gianni Cerroni: La merce fate una relaz così quella relazione che abbiamo fatto prima tra la prima relazione di cui vi ho parlato quella da altri due viaggi clienti vettori due viaggi clienti carichi scarichi se ne fa una uguale stessa stessa logica, stessa struttura, ma si fa con una tabella che si chiama T2 viaggi clienti,
+Erik Capoccetta: Mh.
+Gianni Cerroni: carichi, scarichi, merci.
+Erik Capoccetta: Allora, tu viaggi, carichi, scarichi, merci.
+Gianni Cerroni: Quindi è la stessa logica di di gioco,
+Davide Chieli: Allora, T2 viaggi clienti Carico,
+Gianni Cerroni: diciamo.
+Davide Chieli: scarico, merci.
+Erik Capoccetta: per il proprietario è
+Gianni Cerroni: E lì c'è sempre anale numero e numero.
+Erik Capoccetta: quinto.
+00:13:03
+Gianni Cerroni: È come è come la prima Johnny che vi ho aggiunto c'avete
+Erik Capoccetta: E il campo che dove indica la merce come si chiama?
+Gianni Cerroni: sia il codice che la descrizione, però usateli tutti e due perché la descrizione è modificabile. Spesso l'ufficio operativo sulla descrizione aggiunge qualche informazione in più, per cui o gli portate la descrizione direttamente o sia codice che descrizione,
+Erik Capoccetta: Mh.
+Gianni Cerroni: vedete un po' voi,
+Erik Capoccetta: Eh sì, io direi
+Gianni Cerroni: parlate. E lì c'avete oltre che quella è la tabella dove risiede la merce e la quantità di merce
+Erik Capoccetta: entrambi.
+Gianni Cerroni: trasportata. Per cui se vi chiedessero di se vi dovessero chiedere di evidenziare le pedane, il peso, i le tonnellate, stanno stanno in questa tabella.
+Erik Capoccetta: Mh. Ok.
+Gianni Cerroni: Or diciamo che una volta che avete fatto ste join accedete la quasi totalità dei dati, eh c'avete quasi tutti a disposizione.
+Erik Capoccetta: Ok, adesso l'altra domanda che sicuramente sarà in
+Gianni Cerroni: Aspetta, qual era l'ultima cosa? Perché abbiamo detto la Ah,
+Erik Capoccetta: un
+00:13:55
+Gianni Cerroni: no, questi tre, scusami, merch, caricatore e cliente. Ok.
+Davide Chieli: In realtà allora hanno chiesto un'altra cosa, se non sbaglio,
+Erik Capoccetta: esatto,
+Davide Chieli: però forse era una era una una CR eh dove si doveva aggiungere la tariffa del cliente,
+Gianni Cerroni: Ok.
+Davide Chieli: se non
+Erik Capoccetta: è questa che ti sto chiedendo. È questa che ti chiedo. Sì. L'altra domanda è dove dove possiamo noi gli dobbiamo aggiungere a loro un campo dove gli compare la
+Davide Chieli: sbaglio.
+Erik Capoccetta: tariffa che per il cliente che fa loro oltre a quella che loro fanno al vettore al
+Gianni Cerroni: Oh, vi stanno a complicare un po' la vita comunque,
+Erik Capoccetta: subvettore,
+Gianni Cerroni: eh. Cioè, come si dice? Vbè che l'app mangiando, però insomma siamo passati da uno strumento che dovrebbe controllare solo i rapporti col vettore,
+Davide Chieli: Sì.
+Erik Capoccetta: eh.
+Gianni Cerroni: ma addirittura e vogliono pure poter controllare la rifraente. Non mi non mi voglio mettere nei vostri panni perché se questi decidono di usarlo sto strumento vi creveranno
+Erik Capoccetta: Ok,
+Gianni Cerroni: sicuro.
+00:14:42
+Gianni Cerroni: Vabboh. Allora, la tariffa del cliente la trovate dentro alla
+Davide Chieli: Bella.
+Gianni Cerroni: stessa tabella da cui abbiamo determinato il codice cliente,
+Erik Capoccetta: quindi oggi
+Gianni Cerroni: ovvero sia i due viaggi lì c'è un campo,
+Erik Capoccetta: Sì.
+Gianni Cerroni: c'è un campo che si chiama che si chiama che si chiama che si chiama che si chiama Dove c**** Totale import totale importo metto io eh importo totale importore
+Erik Capoccetta: Importo totale.
+Gianni Cerroni: totale.
+Erik Capoccetta: Ok.
+Gianni Cerroni: Però però questo importo totale è solo il Nolo. Gli dovete chiedere vi basta il Nolo o vi dobbiamo evidenziare pure gli addebiti extra? Che sono gli addbiti extra? Il Nolo è il costo effettivo del trasporto, però in alcuni trasporti, faccio un esempio, tipo quello che ho fatto prima, un cliente mi chiede di fa un viaggio con tre consegne. Io al cliente gli dico "Ok, sto viaggio ti costa denolo €1000, ma ogni consegna in più io sappi che ti è debito €50". Quelli sono quelli che SGA chiama debiti aggiuntivi e in questa tariffa,
+00:16:10
+Davide Chieli: Sì.
+Gianni Cerroni: in questo campo, il porco totale c'è solo il NO che gli dovrebbe bastare, però è meglio che glielo chiedete. Vi basta il NO dobbiamo evidenziare pure perché non è che gli puoi evidenziare, presumo, eh che mentre tu gli dai il nolo, il nolo è il costo del viaggio per il cliente, va bene, ma se gli devi evidenziare gli extra,
+Davide Chieli: F.
+Gianni Cerroni: ce ne sono tanti di extra, gli dovresti evidenziare sia la tariffa sia la descrizione dell'extra. sosta, facchinaggio, ulteriori prese, ulteriori consegni, cioè a quel punto se vi dicono "No, dobbiamo vedere anche quelli" gli devi ti dovrai preoccupare di tirar fuori anche la descrizione. Se volete vi preannuncio dove tirar fuori sti dati, però facciamo subito così se vi dicono sì.
+Erik Capoccetta: Eh, così magari già ce li abbiamo in
+Davide Chieli: Nel dubbio,
+Gianni Cerroni: Allora, questi dati aggiuntivi che sono, ripeto,
+Davide Chieli: eh,
+Gianni Cerroni: aggiuntivi al noro,
+Erik Capoccetta: caso
+Gianni Cerroni: da debito aggiuntivi al noro, li trovate in tutti i due viaggi di enti a debiti e
+Davide Chieli: è quella che usiamo già. Ok,
+Gianni Cerroni: lì ah è già forse ne abbiamo già parlato del del ricavo in
+00:17:06
+Davide Chieli: ok.
+Gianni Cerroni: passato.
+Davide Chieli: debiti.
+Gianni Cerroni: Aspetta,
+Davide Chieli: Eh, scusa,
+Erik Capoccetta: no.
+Davide Chieli: mi hai fatto vedere il gruppo.
+Gianni Cerroni: ti due viaggi vettori a debiti tu acc quello è l'addebito aggiuntivo del vettore.
+Erik Capoccetta: Eh,
+Davide Chieli: Ah,
+Erik Capoccetta: quella è un'altra cosa al
+Davide Chieli: sì.
+Gianni Cerroni: Qui stiamo parlando dell'addebito aggiuntivo al cliente.
+Davide Chieli: Ah,
+Gianni Cerroni: Però, però la logica è la relazione è quella solita anno,
+Davide Chieli: il cliento.
+Erik Capoccetta: vettore.
+Gianni Cerroni: filiale e numero, però ce ne potrebbe essere più di uno.
+Davide Chieli: Ok.
+Gianni Cerroni: C'è un campo progressivo, infatti che ti dice se ce ne sta più di uno, perché uno un ordine potrebbe avere una sosta, un fachinaggio, eccetera eccetera.
+Erik Capoccetta: Eh, questo glielo chiediamo magari.
+Davide Chieli: Sì.
+Gianni Cerroni: Chiedetegli, provate a dirgli, ma è una complicazione, serve proprio. Non ce l'hanno sempre, non ne usano tanti, ma li usano, quindi non potevo non
+Erik Capoccetta: Certo,
+00:17:52
+Gianni Cerroni: dir
+Erik Capoccetta: a meno che non gli facciamo una somma di questi
+Davide Chieli: Ok,
+Erik Capoccetta: valori,
+Gianni Cerroni: semplifica la vita e non gli dai la descrizione. Certo.
+Erik Capoccetta: oppure anche lì gli facciamo no extra
+Gianni Cerroni: Eh,
+Erik Capoccetta: sicuramente.
+Gianni Cerroni: al limite esit. Esatto. Fai la stessa cosa che hai fatto sul vettone.
+Erik Capoccetta: Ok, per il modulo 2 ci siamo.
+Gianni Cerroni: M.
+Erik Capoccetta: Sì, è già è parecchia carne, è parecchia carne al fuoco.
+Davide Chieli: ok.
+Erik Capoccetta: Poi invece per quanto riguarda il modulo della fatturazione dobbiamo capire come va costruito. Allora, per noi la chiave insomma per il fare i controlli sarà il numero di ordine. Come viene composto questo numero d'ordine?
+Davide Chieli: M
+Erik Capoccetta: Perché sulla tabella ma ordini for testata ci sono vari campi, non c'è un campo singolo.
+Gianni Cerroni: Ah, stiamo parlando di ordini fornitori. Eh,
+Davide Chieli: sì,
+Gianni Cerroni: come mi hai detto?
+Erik Capoccetta: Sì il numero d'ordine,
+Gianni Cerroni: Come faccio a determinare?
+Davide Chieli: il numero d'ordine.
+00:18:48
+Gianni Cerroni: Ah,
+Erik Capoccetta: perché loro sul ddt e sulla fattura lo riporteranno,
+Gianni Cerroni: di sicuro sta
+Erik Capoccetta: no? Riporteranno sto numero d'ordine e noi lo dobbiamo usare per poi andare a prenderci.
+Gianni Cerroni: il fornitore dovrebbe riportare in fattura il numero d'ici. Ok.
+Erik Capoccetta: Sì,
+Davide Chieli: in fattura o sul DDT è importante questo.
+Gianni Cerroni: il numero dell'ordine.
+Erik Capoccetta: entrambi.
+Davide Chieli: entrambi.
+Gianni Cerroni: Vabbè,
+Erik Capoccetta: Trama.
+Gianni Cerroni: considera che il dtt Vabbè, comunque il numero,
+Davide Chieli: Eh
+Gianni Cerroni: come si chiama la tabella? Te l'avevo data la tabella TV.
+Erik Capoccetta: Sì. Ma ordini for testata.
+Gianni Cerroni: Ecco un attimo che ci arrivo.
+Erik Capoccetta: Eh,
+Gianni Cerroni: E beh, lì ci dovrebbe essere il numero in campo numero.
+Erik Capoccetta: non c'è un campo in realtà.
+Gianni Cerroni: Vediamo, vediamo. Ma ridammi la tabella.
+Erik Capoccetta: Ma ordini for testat.
+Davide Chieli: ma ordini forte strada.
+Erik Capoccetta: C'è un numero, però è uguale per le società, per l'anno.
+00:19:32
+Erik Capoccetta: C'è un un
+Davide Chieli: dovrebbe essere una combinazione,
+Gianni Cerroni: Orde.
+Davide Chieli: secondo me, di
+Gianni Cerroni: Eccolo qui.
+Erik Capoccetta: campo
+Gianni Cerroni: Vediamo te lo dico.
+Davide Chieli: valori.
+Gianni Cerroni: Allora, il numero di è anno filiale e numero. La filiale sarà sempre la stessa, però diciamo la chiave primaria le
+Davide Chieli: Ci sono tre filiali attualmente su quella tabella, tre tipi di filiale diverse, perciò chiedo
+Gianni Cerroni: usano tutte e tre. Allora, beh, comunque la chiave è data da Anna,
+Davide Chieli: sì
+Gianni Cerroni: il numero d'ordine per noi è composto da Anna Filiale Nun che è la chiave principale.
+Erik Capoccetta: figlio.
+Davide Chieli: e società.
+Gianni Cerroni: Sì, sì. La società, vabbè, quella è slegata, la gestita come società, quella è proprio l'entità l'entità legale,
+Davide Chieli: Sì, sì.
+Erik Capoccetta: Certo.
+Gianni Cerroni: insomma, no?
+Davide Chieli: Ok,
+Erik Capoccetta: Quindi loro avranno tipo un 2026 SE6,
+Gianni Cerroni: Quella
+Davide Chieli: perfetto.
+Erik Capoccetta: dovranno riportare in fattura.
+00:20:15
+Gianni Cerroni: 2026 cosa? fare un esempio?
+Erik Capoccetta: Sì, 466 è il numero del che può essere C.
+Davide Chieli: Sì.
+Gianni Cerroni: Sì, sì, certo, certo, certo. Allora,
+Erik Capoccetta: Ok.
+Gianni Cerroni: tieni conto che secondo me ci metteranno solo il numero.
+Davide Chieli: Eh no,
+Erik Capoccetta: Ah,
+Davide Chieli: è impossibile solo il
+Erik Capoccetta: e e poi come risaliamo noi
+Gianni Cerroni: Secondo me secondo no.
+Davide Chieli: numero.
+Erik Capoccetta: affidiale?
+Gianni Cerroni: Quello quella è una cosa che dovete preoccuparvi di come dice fino a oggi a voi vi bastava il numero, a noi il numero non basta a meno che non vi dicono che la
+Erik Capoccetta: Eh
+Davide Chieli: No,
+Erik Capoccetta: no.
+Gianni Cerroni: filiale è scontata, perché il la filiale io non mi sarei aspettato che la usassero la filiale. Sei sicuro che la usano? È
+Davide Chieli: usano tutti e tre, usano V8.
+Gianni Cerroni: ceduto
+Davide Chieli: usano, ho visto vari record che hanno quelle filiali diverse. Sì, pure una sessantina di record.
+Gianni Cerroni: su su registrazioni recenti, cioè date recenti?
+00:21:01
+Davide Chieli: Non no, non ho verificato questo, non me lo ricordo neanche. Magari l'ho visto pure, non me lo ricordo.
+Gianni Cerroni: Fa una cosa, verifica se se il 2026 contiene più filiali.
+Davide Chieli: Devo Aspetta
+Gianni Cerroni: Se non le contiene,
+Davide Chieli: che Ah,
+Gianni Cerroni: secondo me è un falso problema.
+Davide Chieli: vabbè.
+Gianni Cerroni: Però però vabbè, l'anno lo potresti determinare dall'anno del del documento
+Erik Capoccetta: Allora, nel VO, sì, la VO c'è nel
+Gianni Cerroni: cè ci sta.
+Davide Chieli: E vedi anche le altre due ci sono.
+Erik Capoccetta: 2026.
+Gianni Cerroni: sta per Volpiano.
+Davide Chieli: C sta anche ce ne sono altri due co e un
+Gianni Cerroni: È la filiale loro di Volpiano che
+Erik Capoccetta: Co,
+Davide Chieli: altro.
+Erik Capoccetta: CO como Otrant.
+Gianni Cerroni: ciao.
+Erik Capoccetta: Sì.
+Gianni Cerroni: Mi dice così non mi dice niente.
+Davide Chieli: M.
+Gianni Cerroni: Dovrei andare a vedere la tabella se volete ve la vado a vedere, però insomma a voi cambia poco. L'importante è che lo sappiano loro che sta
+Erik Capoccetta: Allora, CO e VO hanno nel 2000, oltre a S,
+00:21:47
+Gianni Cerroni: cedi
+Erik Capoccetta: chiaramente.
+Davide Chieli: Sì.
+Erik Capoccetta: Ah, no, però è del 2010, scusami. No, aspetta. Anno uguale a 202.
+Gianni Cerroni: il vedi solo il 2026 cosa c'è.
+Erik Capoccetta: Allora, nel 2026 c'è solo VO, ma sono due ordini.
+Gianni Cerroni: Mamma mia, non lo so, non lo so. valutate voi,
+Davide Chieli: Mm.
+Gianni Cerroni: però se la filiale deve essere evidenziata, io ho un motivo di pensare che i fortori non la stiano evidenziando in fettura e neanche nei rirofondite sta cosa. Se non c'è voi ditegli io se non c'è prendo il numero,
+Davide Chieli: Mh.
+Gianni Cerroni: ok, ma il numero potrebbe se ne trovo due, come mi devo comportare? No,
+Davide Chieli: Eh,
+Gianni Cerroni: secondo me secondo me non succederà. Seò non succederà, però approfondirla con
+Davide Chieli: esatto.
+Erik Capoccetta: Va bene. Ok.
+Gianni Cerroni: loro
+Erik Capoccetta: filiale, quindi in teoria no.
+00:22:44
+Erik Capoccetta: Vabbè, questo poi magari chiediamo a Stefano se le usano ste filiali
+Gianni Cerroni: sulla stampa dell'ordine che se loro mandano al cliente la stampa dell'ordine fa testeggiare c'è anno,
+Erik Capoccetta: poi.
+Gianni Cerroni: filiale e numero,
+Davide Chieli: No.
+Gianni Cerroni: c'è tutto, però mi sono passati sott'occhio un po' di cose, ho la sensazione che non tutti le replicano così come sta scritto sulla stampa, ma mettono solo il numero.
+Erik Capoccetta: Ok.
+Gianni Cerroni: Verificatela,
+Erik Capoccetta: Ok.
+Gianni Cerroni: vai.
+Erik Capoccetta: Poi, eh per quanto riguarda sempre l'ordine, va considerato il campo stato.
+Gianni Cerroni: stato eh stato stato il campo.
+Davide Chieli: Eh sì, ci sono vari stati lì dentro.
+Gianni Cerroni: Allora,
+Erik Capoccetta: Ci sono, ad esempio,
+Gianni Cerroni: diciamo che il il saldato il saldato è importante per voi.
+Erik Capoccetta: confermato,
+Davide Chieli: Sì.
+Erik Capoccetta: saldato Ja.
+Gianni Cerroni: Il saldato è importante. Credo che sia importante solo il saldato. Il saldato è quello che se vuol dire che la merce ordinata è stata consegnata dai. Quindi penso che questo per voi sia importante saperlo.
+00:23:39
+Gianni Cerroni: Il confermato, boh,
+Davide Chieli: M.
+Gianni Cerroni: non so se lo usano. Il confermato sta per per dire io mando un ordine e poi lo metto su confermato quando è confermato. Cioè, magari c'è un utente che inserisce un ordine e un altro che lo conferma. Non mi risulta che lo giustisco. Per me lo dovreste ignorare il confermato. Il saldato invece no.
+Erik Capoccetta: Il saldata è importante.
+Davide Chieli: Perch può essere, ti faccio un esempio, Gianni, potrebbe essere che loro saldino magari gli ordini ovviamente in fattura,
+Gianni Cerroni: importante.
+Erik Capoccetta: Poi
+Davide Chieli: diciamo, abbiamo una una divergenza di aggiornamento a livello temporale tra ehm la la carico della fattura sul portale e l'aggiornamento del saldato sulla su SGA. Se ci fosse se ci fosse questo disallineamento, io non potrei mai confrontare poi le fatture a meno che diciamo di non far appunto aggiornare ogni volta gli ordini,
+Erik Capoccetta: Beh,
+Gianni Cerroni: Non ho capito.
+Erik Capoccetta: gli ordini infatti non abbiamo capito,
+Gianni Cerroni: Non ho capito.
+Erik Capoccetta: Davide, che cosa
+Davide Chieli: no?
+00:24:41
+Davide Chieli: diciamo. Allora,
+Erik Capoccetta: intendi?
+Davide Chieli: praticamente se loro io non so come agiscono, tra virgolette,
+Gianni Cerroni: Intanto ricorda che il saldato significa che la merce è arrivata al
+Davide Chieli: quindi
+Erik Capoccetta: Ok,
+Gianni Cerroni: magazzino.
+Erik Capoccetta: quindi che c'è anche un
+Davide Chieli: Ah,
+Erik Capoccetta: TDT.
+Gianni Cerroni: Perché l'ordine è una cosa,
+Davide Chieli: ok.
+Gianni Cerroni: l'arrivo merce per noi è un altro stato. E quando arriva la merce lo Stato passa sul saldato S. Saldato N significa che la merce non è arrivata o è arrivata in parte ma non
+Davide Chieli: Ok.
+Gianni Cerroni: tutta.
+Davide Chieli: E quel caso si
+Erik Capoccetta: E questo vale solo per la merce, però per per esempio per i servizi lavaggio e cosa.
+Davide Chieli: considera
+Erik Capoccetta: Vabbè, non c'è un
+Gianni Cerroni: Aspetta i servizi. Aspetta un attimo i servizio.
+Davide Chieli: e Ah, questo pure unaltra cosa.
+Erik Capoccetta: ordine.
+Gianni Cerroni: Non credo che ci sia.
+Davide Chieli: Sì.
+Gianni Cerroni: Eh, aspetta un attimo. Non so manco se lo utilizzano il servizio.
+00:25:30
+Gianni Cerroni: Penso che identificano tutto con la merce, però aspetta un attimo. Gli ordini servizio qualche dubbio c non ricordo. Arrivo merce vale solo per la merce.
+Davide Chieli: M.
+Gianni Cerroni: Quello è poco. Sì, sì, ma sicuro. Perché si chiama arriva merce. Eh, aspetta,
+Erik Capoccetta: M.
+Gianni Cerroni: faccio una prova qui da me al volo che non l'ho mai fatta sta prova di servizio. Allora, prendo in fondo, ora ci metto un servizio,
+Davide Chieli: Vabbè, poi si vede. Ho
+Gianni Cerroni: ci metto un servizio.
+Davide Chieli: capito.
+Erik Capoccetta: Sì, poi qui dobbiamo dobbiamo parlare anche con Stefano appena ci
+Davide Chieli: Eh, sì.
+Erik Capoccetta: dà disponibilità. Mi sa che è in ferie.
+Davide Chieli: Ah, bella.
+Gianni Cerroni: Guarda, vi faccio una facile previsione, mentre sono sicuro che il modulo di cui abbiamo parlato prima, quelli verso i vettori, verrà usato, sfruttato. sapendo come sono incasinati e come lavorano male con gli ordini fornitori, secondo me la parte ordini fornitori vi arriveranno poche richieste perché non lo useranno. Non so se mi hai capito.
+00:26:38
+Gianni Cerroni: Certo, sei meglio di me che le richieste arrivano e un software viene ritenuto utile e e messo in pratica, no? Lì cominciano a arrivare quello che dicevo prima, l'appetito viene mangiato. Secondo me si ricordo i fornitori lavorano talmente male che qualche dubbio ce la sarà, però non è un problema né mio né vostro, credo. No,
+Erik Capoccetta: Noi quello che ci chiedo chiedono
+Gianni Cerroni: cioè c No,
+Erik Capoccetta: facci
+Gianni Cerroni: però dico, secondo me qui su ve ne arriveranno poche di queste perché invece sulla parte vettori sono sicuro che lì arriverà.
+Erik Capoccetta: meglio.
+Davide Chieli: Veda.
+Gianni Cerroni: Aspetta un attimo, una prova. Dove c**** stavo visto prima?
+Erik Capoccetta: Vabbè, poi vediamo.
+Gianni Cerroni: Ok,
+Erik Capoccetta: Tanto ci restano solo due domande che sono relative ai agli
+Davide Chieli: Eh,
+Gianni Cerroni: allora sto Ok,
+Davide Chieli: anche in realtà anche l' fatto della scontistica
+Erik Capoccetta: articoli.
+Gianni Cerroni: sto mettendo un ordine con un servizio.
+Davide Chieli: quella
+Gianni Cerroni: Un secondo, giusto per vedere che succede pure che pure su qui si può stare
+Davide Chieli: Erick quella il fatto che ci fossero cinque sconti, ti ricordi?
+00:27:41
+Erik Capoccetta: Gli sconti.
+Davide Chieli: mh gli importi, cioè possiamo considerare direttamente l'importo per
+Erik Capoccetta: Sì, sì. Vabbè, quello dobbiamo dirlo poi sempre con
+Davide Chieli: l'ordine.
+Erik Capoccetta: Stefano, che poi l'importo dov'è che sta qua.
+Davide Chieli: Ci sta in porto netto e stavano un paio di cose.
+Erik Capoccetta: Nella testata?
+Davide Chieli: Eh,
+Erik Capoccetta: No,
+Davide Chieli: mi pare nel dettaglio, mi
+Erik Capoccetta: eh, nel dettagà. No, infatti non stiamo parlando di desta.
+Gianni Cerroni: Allora, merci è quasi fatto, eh. 2006 numero 2. 2006 numero 2. Mold questo al 27, da questo al 26. Qua ci mettiamo un eh vi confermo che eh anche il servizio, se lo gestiscono ha lo stessa procedura, lo stesso quindi anche per dire che un servizio è stato svolto devo usare la stessa
+Erik Capoccetta: M.
+Gianni Cerroni: funzionalità che si chiama arrivo merce,
+Erik Capoccetta: Ok.
+Gianni Cerroni: perché inizialmente sto moto gestiva solo merci, poi si è un po' esteso a gestire i servizi per cui il saldato vale anche per il servizio. saldato vale anche per il servizio.
+00:29:02
+Gianni Cerroni: Tutto è uguale, non cambia la logica tra merce e
+Erik Capoccetta: Ok.
+Gianni Cerroni: servizi e non lo
+Erik Capoccetta: Mentre qua un totale ordine non c'è nella testata, vero?
+Gianni Cerroni: so. Non lo so. Già controllato se c'è.
+Erik Capoccetta: Non mi sembra di averlo
+Gianni Cerroni: Ma di solito non ci stanno ste cose,
+Erik Capoccetta: visto.
+Gianni Cerroni: eh. Non ci stanno, lo deviare dal dettaglio.
+Erik Capoccetta: C'è un pagamento che però c'ha un codice cheo sia un
+Gianni Cerroni: Codice pagamento,
+Erik Capoccetta: pfetto.
+Gianni Cerroni: lascia perdere. Niente, no. Ti confermo che lo devi determinare dal dettaglio qua
+Erik Capoccetta: Tornando al dettaglio a questo punto prima domanda,
+Gianni Cerroni: gi
+Erik Capoccetta: il codice articolo come lo individuiamo con la colonna materiale?
+Gianni Cerroni: dettaglio, ovviamente nella tabella MA ordini for dettaglio e lì c'hai il codice,
+Erik Capoccetta: Sì.
+Davide Chieli: Sì.
+Gianni Cerroni: si chiama il campo si chiama materiale.
+Davide Chieli: Eh, immaginavo fosse quello. Ok, perfetto.
+Erik Capoccetta: Ok.
+Davide Chieli: Va bene.
+00:29:52
+Gianni Cerroni: Poi la decodifica potete anche evitare di farla perché ce l'avete direttamente riscritta qui in questa
+Davide Chieli: Eh,
+Erik Capoccetta: Sì,
+Gianni Cerroni: tabella.
+Erik Capoccetta: esatto. Materiale e descrizione
+Davide Chieli: quindi anche nel DDT e nelle fatture mi ritroverò lo stesso codice articolo, probabilmente uguale dentro.
+Erik Capoccetta: teoricamente. Sì.
+Davide Chieli: Ok.
+Erik Capoccetta: sempre in teoria,
+Gianni Cerroni: sempre in teoria.
+Erik Capoccetta: perché poi i fornitori fanno come su queste cose siamo messi l'altra
+Davide Chieli: Eh, perciò vabbè e
+Gianni Cerroni: Bravantità
+Erik Capoccetta: domanda è come gestire quantità e residuo perché noi abbiamo due campi qua,
+Davide Chieli: poi
+Erik Capoccetta: quantità e residuo. Dove con quale dovremmo confrontare?
+Gianni Cerroni: ordinata e residuo d'ariv, cioè il caso in cui ordino 10 me ne arrivano cinque, per cui il residuo è 5. Di questo parli?
+Davide Chieli: è un piccolo
+Erik Capoccetta: Sì, per esempio, noi qua abbiamo dei dettagli che hanno quantità 144 e residuo 144, che vuol dire? Che ho ordinato 144 e me ne devono
+00:30:41
+Gianni Cerroni: Dove stai guardando,
+Erik Capoccetta: ancora
+Gianni Cerroni: scusa? Eh, dove lo guardi sto residuo? Ah, sul sulla tabella in questione.
+Erik Capoccetta: Sì.
+Gianni Cerroni: Sì, quello è eh quando non è stato fatto l'arrivo mercio.
+Davide Chieli: Sì.
+Gianni Cerroni: Poi te lo voglio verificare. Dammi un secondo. Voglio esserne sicuro. Voglio dovrebbe il residuo dovrebbe essere a zero quando risulta essere tutto arrivato, però voglio esserne sicuro.
+Davide Chieli: E quindi dobbiamo considerarli quegli ordini se hanno un residuo pure parziale.
+Gianni Cerroni: Diciamo che gli ordini che hanno un residuo parziale, il saldo, il saldato lo trovate a Niduo vi dice quante ne manca.
+Davide Chieli: Ah!
+Gianni Cerroni: Però un attimo voglio darvi un po' un attimino
+Davide Chieli: Mh.
+Erik Capoccetta: Ok.
+Davide Chieli: Madò che mal di testa che mi sta venendo. Ok, diciamo, dobbiamo questo v da chiedere a Stefano, Erick, giustamente se loro vogliono anche la parzialità
+Erik Capoccetta: Beh,
+Davide Chieli: dell'ordine.
+Erik Capoccetta: ma sicuramente c'avranno delle consegne e delle fatturazioni parziali, eh.
+00:31:49
+Davide Chieli: Ah, perché io, cioè, l'abbiamo sempre gestito intere, tra virgolette,
+Erik Capoccetta: No,
+Davide Chieli: quindi
+Erik Capoccetta: in realtà no,
+Davide Chieli: no.
+Gianni Cerroni: Ecco, quasi fatto.
+Erik Capoccetta: perché se io ordino 100.000 pezzi me ne possono consegnare anche 10.000 alla volta in 10
+Davide Chieli: Ah,
+Erik Capoccetta: mesi.
+Davide Chieli: ci sta.
+Gianni Cerroni: Qui è il numero d'ordine.
+Davide Chieli: In effetti, sì, in effetti hai ragione. Sì.
+Gianni Cerroni: 10 su 1026
+Erik Capoccetta: Per quello non è un problema.
+Gianni Cerroni: 2026. W anno quale
+Erik Capoccetta: capito?
+Gianni Cerroni: 2026
+Erik Capoccetta: Vabbè, tanto alla fine dovremmo andare sempre su quantità e residuo.
+Davide Chieli: อื
+Gianni Cerroni: eh sembrerebbe che non sia così come io immaginavo,
+Davide Chieli: M.
+Gianni Cerroni: cioè sembrerebbe No, è quello, è quello. Comunque, aspetta, faccio la prova, se sicuro,
+Erik Capoccetta: Ok,
+Gianni Cerroni: gli dico che è arrivato tutto qua. dato memorizza.
+00:32:50
+Gianni Cerroni: Ok. Refresh. Confermo. Sì, sì, confermo il residuo. Quando non è arrivato niente, la quantità coincide col residuo. Quando è arrivato tutto, residuo è a zero. Quando è arrivata una parte contiene il residuo che rimane
+Erik Capoccetta: quindi ci servono questi camping.
+Gianni Cerroni: da Sì.
+Davide Chieli: Allora, ci servono, mi sa. Va
+Erik Capoccetta: gestire consegne parziali e l'ultima domanda è quella relativa a tutti quei campi per gli sconti,
+Davide Chieli: bene,
+Erik Capoccetta: ma non credo che servano a noi,
+Gianni Cerroni: Gli sconti,
+Erik Capoccetta: no?
+Gianni Cerroni: gli sconti, eh.
+Davide Chieli: ce ne sono tipo cinque campi di sconti,
+Gianni Cerroni: Ah, quelli sono gli sconti a scalare che che si us possono quelli che
+Davide Chieli: eh, perciò volevo chiedere
+Gianni Cerroni: credo che li usino. Credo che li usino perché quando si fa un ordine bisogna tener traccia degli sconti concordati.
+Erik Capoccetta: No, dico, però a noi interessa,
+Gianni Cerroni: Credo
+Erik Capoccetta: no? Possiamo guardare l'importo unitario e
+00:33:40
+Davide Chieli: Netto.
+Erik Capoccetta: basta.
+Gianni Cerroni: per me gli dà dell'importo al netto dello sconto. Dovrebbe bastare avanzare, però non so se li dovete evidenziare gli sconti. Non lo so. Per come la vedo io gli dovrebbero bastare avanzare l'importo al netto dello sconto.
+Erik Capoccetta: E quindi è l'importo totale che ci stanno importo unitario.
+Gianni Cerroni: E aspetto vedere. Non mi ricordo io. Aessi scritto io sti programmi ricordav tutti a memoria.
+Erik Capoccetta: Importo unitario,
+Gianni Cerroni: Anzi, già è tanto, siccome ha fatto 20 anni il programmatore, le logiche di programmazione ce l'ho,
+Erik Capoccetta: eh.
+Gianni Cerroni: poi loro ci lavorano, insomma, quindi le queri le faccio, insomma. Allora, vediamo un attimo. Vediamo un attimo. Tu dici se io punto sulla tabella importo totale se quella tabella, se quel campo è già detratto lo scorso, mi risulta di sì. Le do un'occhiata da qualche parte. Faccio su questo. Numero uno. Dobbi numero
+00:34:36
+Erik Capoccetta: Più che altro è importunità onetto.
+Gianni Cerroni: 1.
+Erik Capoccetta: importo totale mi sa è quello globale
+Davide Chieli: Eh, quello che ti dicevo, secondo me è quello unitario netto.
+Gianni Cerroni: Se c'è la parola netto è quello sicuro.
+Erik Capoccetta: dell'ordine.
+Gianni Cerroni: Io non lo vedo.
+Davide Chieli: Sì,
+Gianni Cerroni: Dove sta la parola? La parola netto. Io nella tabella, aspetta, sto guardando nella tabella sbagliata.
+Davide Chieli: i
+Gianni Cerroni: Stavo guardando nella tabella sbagliata,
+Davide Chieli: dettagli.
+Gianni Cerroni: scusate. La tabella
+Erik Capoccetta: Sì, al netto dello sconto, secondo me.
+Gianni Cerroni: sbagliato.
+Davide Chieli: Ok,
+Erik Capoccetta: Quindi non non serve a gestire que secondo me.
+Gianni Cerroni: Ok. Sì, è al netto dello sconto.
+Erik Capoccetta: Eh,
+Gianni Cerroni: Confermo.
+Davide Chieli: quindi possiamo prendere quello.
+Gianni Cerroni: Qu è l'importo totale al netto dello sconto? Sì.
+Erik Capoccetta: quindi importo unitario netto è quello della riga.
+Gianni Cerroni: è quello l'importo unitario al netto dello sconto e l'importo totale il totale della riga al netto dello
+00:35:28
+Erik Capoccetta: Sì,
+Gianni Cerroni: sconto.
+Erik Capoccetta: che poi per alcuni casi però è più alto dell'importo unitario netto perché magari sono più righe. Quello totale mi sa è relativo a tutto loro.
+Gianni Cerroni: Dove Ah, tu dici quello potrebbe essere Tu dici il totale dell'ordine,
+Erik Capoccetta: Ad esempio,
+Gianni Cerroni: non della riga.
+Erik Capoccetta: eh sì, perché io ho, ad esempio, una riga che ha importo unitario netto 4000 312 e invece importo totale è 7.
+Gianni Cerroni: Ah, mi sembra strana una cosa. Mi sembrerebbe molto molto strana una cosa, quindi fammela controllare, sarebbe una cappellata da un programmatore di di scarso livello di
+Davide Chieli: M.
+Gianni Cerroni: programmazione.
+Erik Capoccetta: Se vuoi ti do il codice eh
+Gianni Cerroni: Se fai una cosa. Aspetta, me lo vedo, me lo vedo io qua. Prendo un ordine con due righe. Vediamo cosa par.
+Erik Capoccetta: il
+Gianni Cerroni: Allora, programmatore che ha fatto una cosa del genere è un programmatore da licenziare. Cazzate di sto tipo non le ho vista, eh, devo essere sincero.
+Erik Capoccetta: sini
+00:36:33
+Gianni Cerroni: Allora, 2006, vediamo un po', per esempio, 2026 numero 1 numero
+Erik Capoccetta: No, però infatti non è vero questa
+Gianni Cerroni: 1.
+Erik Capoccetta: cosa.
+Gianni Cerroni: Ah.
+Erik Capoccetta: Forse no, questo è l'importo per l'unità.
+Davide Chieli: Quindi va comunque moltiplicato per M
+Erik Capoccetta: moltiplicata per la
+Gianni Cerroni: Quale?
+Davide Chieli: vabbè e ci potrebbe anche
+Erik Capoccetta: quantità.
+Gianni Cerroni: L'importo unitario. L'importo unitario, certo che va l'importo unitario va moltato per la quantità, quello è sicuro,
+Davide Chieli: unito
+Gianni Cerroni: però dico l'importo totale, mi aspetto che sia il totale della riga al netto dello
+Erik Capoccetta: Sì,
+Gianni Cerroni: sconto.
+Erik Capoccetta: sì, sì, è così, te lo confermo. Ma quindi noi dobbiamo guardare importo totale, Davide.
+Davide Chieli: totale netto o totale esiste?
+Erik Capoccetta: Importo totale,
+Davide Chieli: Quale esiste?
+Erik Capoccetta: no?
+Gianni Cerroni: Ok,
+Erik Capoccetta: C'è solo importo totale della Ric.
+Davide Chieli: Ok.
+Erik Capoccetta: Perfetto, Gianni, noi non abbiamo altre domande.
+00:37:41
+Erik Capoccetta: Adesso gli chiediamo quella cosa lì, magari sul modulo uno approfondiamo con Stefano. Per quanto riguarda la tariffa cliente, eh gli chiediamo questa cosa e basta. Tanto le indicazioni ce le hai date.
+Gianni Cerroni: Buon Buon lavoro a tutti.
+Erik Capoccetta: Grazie.
+Davide Chieli: Ciao,
+Erik Capoccetta: Ciao ciao a tutti Davide,
+Davide Chieli: grazie.
+Erik Capoccetta: se puoi restare un secondo così.
+Davide Chieli: Sì, sì, sì.
+Gianni Cerroni: Ciao
+Erik Capoccetta: Ok, così scrivi Ah.
+Erik Capoccetta: Scusami Davide che ho Sì,
+Davide Chieli: Sì, sì, vai tranquillo,
+Erik Capoccetta: sì,
+Davide Chieli: vai tranquillo.
+Erik Capoccetta: ho chiuso la chiamata pure io, non dovevo chiudere, aspettavo che uscisse lui.
+Davide Chieli: Eh, si
+Erik Capoccetta: Eh, no, allora la la domanda da fare è questa cosa sugli extra,
+Davide Chieli: sta
+Erik Capoccetta: se gli vogliono vedere nella tariffa anche per il cliente o solo gli interessa solo il nodo. Adesso gli scrivo subito qua.
+Davide Chieli: eh
+Erik Capoccetta: Eh,
+Davide Chieli: sì.
+Erik Capoccetta: dove sta viaggio? Il vettore emittente è stato per il caricatore qua mi avevano anche risposto.
+00:38:59
+Davide Chieli: Sì,
+Erik Capoccetta: Sì,
+Davide Chieli: però loro hanno usato eh diciamo la loro app che noi non abbiamo mai visto né
+Erik Capoccetta: sì, sì, certo,
+Davide Chieli: conosciamo.
+Erik Capoccetta: infatti è giusto che abbiamo chiesto. Allora,
+Davide Chieli: M.
+Erik Capoccetta: vi basta visualizzare soltanto la riffa del snolo oppure è necessario visualizziare anche
+Davide Chieli: Però ci andiamo a impenerficare qua,
+Erik Capoccetta: l' eh sta
+Davide Chieli: secondo me.
+Erik Capoccetta: tanto vabbè poi ti dirò eh basso la del no oppure
+Davide Chieli: Mh.
+Erik Capoccetta: necessario che vis visualiz visualizziate anche l'importo di tutti gli peré ce andiamo a sommare eh importo
+Davide Chieli: Eh no, è chiaro, è chiaro.
+Erik Capoccetta: totale degli extra
+Davide Chieli: E se loro vogliono vedere ogni singolo a debito, poi c'ha detto al minimo quattro-
+Erik Capoccetta: no
+Davide Chieli: cinque campi là, facchinaggio, tutte quelle cose là.
+Erik Capoccetta: vabbè adesso gli ho scritto. su questa cosa. E vabbè.
+Davide Chieli: Mh.
+Erik Capoccetta: E quindi le cose sono queste, adesso le
+Davide Chieli: Ah, però non gli abbiamo chiesto niente più.
+00:40:19
+Erik Capoccetta: ho
+Davide Chieli: Allora, mi sono dimenticato. Vabbè, la parte, diciamo, di vabbè, di trascodifica non gli dobbiamo chiedere nulla.
+Erik Capoccetta: a lui, no? E che ne sa lui? No,
+Davide Chieli: No, ok,
+Erik Capoccetta: no,
+Davide Chieli: ok. No, no, infatti, infatti chiedevo or.
+Erik Capoccetta: no, no. Lui è solo per quanto riguarda SGA.
+Davide Chieli: Ok,
+Erik Capoccetta: Per quell'altra parte dobbiamo parlare con Stefano Iannozzi quando ci darà a
+Davide Chieli: perfetto.
+Erik Capoccetta: udienza. Ah, non lo so.
+Davide Chieli: Rimosta in ferie fino al Ah,
+Erik Capoccetta: No, non ho ipotizzato io, eh, perché non risponde, ma non lo so se sta in serio o no.
+Davide Chieli: ok.
+Erik Capoccetta: Ehm, va bene. Da allora magari utilizziamo quest'ultimo quarto d'ora, anzi anche di meno. Ti anticipo che praticamente eh per quanto riguarda quella modifica che ti di cui ti
+Davide Chieli: Eh,
+Erik Capoccetta: dicevo ieri eh quella grossa sì
+Davide Chieli: quella grossa.
+Erik Capoccetta: che che sostanzialmente va fatta eh
+00:41:08
+Davide Chieli: Ecco.
+Erik Capoccetta: praticamente che cosa hanno chiesto loro? Allora,
+Davide Chieli: Moo
+Erik Capoccetta: parto dalle cose semplici. Eh, vogliono due job separati, uno che sincronizzi solo l'anagrafica e l'altro che sincronizzi solo le tratte dei
+Davide Chieli: che sincronizza la grafica di cosa?
+Erik Capoccetta: subvettori
+Davide Chieli: Ok. Eh, già lo stavo facendo in realtà. Però gi uno che organizza solo l'anagrafica e
+Erik Capoccetta: solo per le tratte.
+Davide Chieli: uno vogliono due job separati.
+Erik Capoccetta: Sì.
+Davide Chieli: Va bene, già questo è un bel problema. Va
+Erik Capoccetta: Poi questi due job gli dobbiamo mettere ovviamente due pulsanti separati,
+Davide Chieli: bene.
+Erik Capoccetta: uno nell'anagrafica subvettori e uno nella nella anagrafica tratte per richiamarli al loro piacimento. Vabbè, questa è la parte più semplice. Eh, cosa più importante,
+Davide Chieli: Угуm.
+Erik Capoccetta: la modifica grossa che hanno chiesto è che praticamente eh devono va rivisto tutto il flusso di primo accesso del vettore. E in pratica il vettore non fa più il primo accesso né quando gli viene inviata la ad il contratto, l'appendice né quando ti viene richiesto un documento come abbiamo fatto adesso, no?
+00:42:40
+Erik Capoccetta: Ok. Quando eh quando fa il primo accesso il vettore? quando decidono loro,
+Davide Chieli: E quando decidono loro?
+Erik Capoccetta: quando decidono loro, che gli fanno praticamente attraverso un pulsante o attraverso un job che eh invia le credenziali al vettore per accreditarsi sulla piattaforma e il subvettore al primo accesso dovrà compilare tutte le informazioni anagrafiche, quelle là che vede nel contratto principale, numero rea, ragione sociale eh e quant'altro.
+Davide Chieli: tutte le informazioni di anagrafica.
+Erik Capoccetta: Eh, questa richiesta qua che facevano loro la riga 14, no? Che poi loro l'hanno scritto, in realtà non è un bug.
+Davide Chieli: No, infatti non è un bug questo.
+Erik Capoccetta: Non è un pack, cioè forse non l'hanno capito. Vabbè, eh, te lo dico.
+Davide Chieli: No,
+Erik Capoccetta: diciamo, io gliel'ho pure spiegato ieri,
+Davide Chieli: eh,
+Erik Capoccetta: però
+Davide Chieli: allora, praticamente, ehm, quindi, allora, fammi capire un attimo,
+Erik Capoccetta: Sì.
+Davide Chieli: perché già questa cosa di suddividere la sincronizzazione diventa un grosso problema perché eh io che cosa faccio? controllo se esiste un nuovo subvettore, cioè se non esiste un nuovo codice SGA, eh, un codice cliente, dice un codice subvettore là, un codice Sga nuovo, ok?
+00:44:03
+Davide Chieli: per i subvettori. Nel caso in cui esista, creo un nuovo tipo di contratto uno, cioè la nuova utente e
+Erik Capoccetta: E non lo devi fare più questo perché loro il contratto lo mandano solo quando il vettore ha ehm non il contratto
+Davide Chieli: perché
+Erik Capoccetta: Loro la tratta su SGA la creano solo quando hanno acquisito tutta la documentazione, l'anagrafica del vettore, non prima,
+Davide Chieli: la tratta la creano dopo, No, vabbè dai.
+Erik Capoccetta: dopo.
+Davide Chieli: Ma com'è possibile fare una cosa del genere però? Ah, allora
+Erik Capoccetta: Purtroppo dobbiamo inare la testa.
+Davide Chieli: eh, ma è devastante sta cosa. Allora, se la tratta la creano dopo, significa che loro prima devono cioè ora da sga che cosa io che cosa devo prendere da sga?
+Erik Capoccetta: Dasga, tu devi prendere l'anagrafica dei dei vettori quando c'è un vettore,
+Davide Chieli: Eh, già ce l'ho.
+Erik Capoccetta: eh, e ce l'ha e fai sto job che sincronizza tutti i dati anagrafici,
+Davide Chieli: Ok.
+Erik Capoccetta: per quelli esistenti li aggiorna, per quelli nuovi inserisce un nuovo record. inserito questo nuovo record,
+00:45:13
+Davide Chieli: Ok.
+Erik Capoccetta: a loro gli dovremmo far comparire questo pulsantino è in via credenziali che lo nell'anagrafica subvettore.
+Davide Chieli: Quindi direttamente dai subvettori.
+Erik Capoccetta: Sì.
+Davide Chieli: Ok.
+Erik Capoccetta: E poi sarà l'operatore di Pigliacelli a decidere, ok, voglio mandare le credenziali a Eric, voglio mandare le credenziali a Davide.
+Davide Chieli: Eh vabbè, ma questo è un rework grosso, Erick,
+Erik Capoccetta: Eh sì,
+Davide Chieli: già lo sa.
+Erik Capoccetta: ma infatti già l'ho fatto presente io questa cosa,
+Davide Chieli: Eh,
+Erik Capoccetta: eh, non ti
+Davide Chieli: invia a eh, quindi an grafica subvettori invia a al subvettore le
+Erik Capoccetta: preoccupe.
+Davide Chieli: credenziali. Va bene? Quindi una volta che inviato le loro le cioè il subettore riceve le credenziali, accede compila l'anagrafica.
+Erik Capoccetta: deve essere bloccata tutta l'operatività fin quando non dobbiamo fare una sorta di wizard iniziale che sono saranno un po' di schermate dove lui deve fare determinate cose. La prima schermata è deve compilare l'anagrafica con tutti quei campi che abbiamo inserito nella schermata del contratto,
+Davide Chieli: Eh,
+00:46:12
+Erik Capoccetta: quindi numero rea,
+Davide Chieli: tutti quanti quelli che c'hanno,
+Erik Capoccetta: indirizzo.
+Davide Chieli: diciamo, il committente, diciamo quelli
+Erik Capoccetta: Esatto.
+Davide Chieli: là,
+Erik Capoccetta: anche lì i dati delle gare rappresentante e via così già già ce li
+Davide Chieli: tutti,
+Erik Capoccetta: abbiamo e siamo qua. Ah,
+Davide Chieli: no?
+Erik Capoccetta: una cosa m'hanno chiesto di unificare il campo indirizzo e numero civico perché su SGA è unico. Quella è una cazzata.
+Davide Chieli: No, ci sono due.
+Erik Capoccetta: Vabbè.
+Davide Chieli: Ce ne sono due in realtà, quindi non lo so. De dimmi ci sta proprio civico su vettori, mi pare,
+Erik Capoccetta: Eh, ma loro non lo mettono
+Davide Chieli: eh. Ah, vabbè.
+Erik Capoccetta: mai.
+Davide Chieli: E allora, quindi, metto indirizzo e basta.
+Erik Capoccetta: Anzi, fai una cosa, se se lo trovi popolato lo unisci al campo indirizzo,
+Davide Chieli: Eh, ok,
+Erik Capoccetta: così.
+Davide Chieli: sono l'unico campo. Va bene, sui subvettori questo. Va bene.
+Erik Capoccetta: Quindi loro compilano sta anagrafica.
+00:47:06
+Davide Chieli: Poi
+Erik Capoccetta: Poi dovranno obbligatoriamente caricare una serie di documenti che ci indicheranno loro. Ancora me lo devono far sapere, ma mi devono dare la lista.
+Davide Chieli: devono già caricare i documenti loro,
+Erik Capoccetta: Sì,
+Davide Chieli: quindi è pure questa è l'enorme cosa. Vabbè,
+Erik Capoccetta: esatto.
+Davide Chieli: diciamo che già si si basa adesso sui preset che abbiamo fatto su OCM e su altre parti, quindi diciamo un preset diciamo di documenti che è standard per
+Erik Capoccetta: Sì, praticamente nell'anagrafica dei documenti dovremmo aggiungere dei campi che ci dicono questo deve essere
+Davide Chieli: tutti.
+Erik Capoccetta: obbligatorio, questo deve essere nel wizard iniziale in modo tale che ce la gestiamo in questo in questo modo. Vabbè, mo ti racconto span il flusso poi andiamo nel dettaglio,
+Davide Chieli: Ok.
+Erik Capoccetta: facciamo una collo separata,
+Davide Chieli: Ok,
+Erik Capoccetta: sennò qua non non ci finiamo. Quindi questo step primo accesso,
+Davide Chieli: presetto.
+Erik Capoccetta: si apre sto Wizard, prima schermata, compila tutta l'anagrafica nei campi mancanti, ovviamente perché quelli che tu c'hai già da SGA se li ritrova fatti.
+00:48:07
+Davide Chieli: Sì, sì, sì, sì. Chiaro?
+Erik Capoccetta: carica questi documenti e mi sembra che deva debe debba compilare anche la lista delle mezzi con gli autisti.
+Davide Chieli: Ah, questo avveniva solo per l'operatore di cioè il contratto di tipo uno.
+Erik Capoccetta: Eh, esatto. Invece mo avviene pure avviene lì,
+Davide Chieli: No, avvene per tutti e tre.
+Erik Capoccetta: no? Mo avviene lì in questo Wizard
+Davide Chieli: Ok. Ok,
+Erik Capoccetta: iniziale.
+Davide Chieli: dico a se però è un contratto di tipo due o tre che prima non richiedevano.
+Erik Capoccetta: No, ma tu mo non devi ragionare. L'input non è il contratto a te. L'input
+Davide Chieli: Eh no, no, no, ho capito.
+Erik Capoccetta: è
+Davide Chieli: E l'input è praticamente è un nuovo subvettore che a cui ho inviato le credenziali e faccio questa cosa per tutti quanti.
+Erik Capoccetta: ma anche per quelli vecchi e anche per quelli che del loro
+Davide Chieli: Basta che quindi praticamente basta che io dal l'operatore invia sto pulsantino
+Erik Capoccetta: gen Esatto.
+Davide Chieli: e deve parti per forza tutto sto flusso.
+Erik Capoccetta: Esatto.
+00:49:01
+Erik Capoccetta: Finché non lo fanno, finché non lo fanno,
+Davide Chieli: Ok.
+Erik Capoccetta: gli si ripropone
+Davide Chieli: Ah, ok.
+Erik Capoccetta: sempre,
+Davide Chieli: Quindi, finché non hanno consegnato tutti i dati riappare ogni volta il
+Erik Capoccetta: cioè ogni volta che entrano possono fare solo quello,
+Davide Chieli: form.
+Erik Capoccetta: finché finché non è finita quella procedura.
+Davide Chieli: Ho capito. Va bene.
+Erik Capoccetta: Ovviamente possono salvare e dopo lo riprendono. Vabbè,
+Davide Chieli: Sì,
+Erik Capoccetta: ma quindi compila la lista delle cose,
+Davide Chieli: sì, va bene, ci sta.
+Erik Capoccetta: eh, si chiude sto Wizard e loro entrano sulla piattaforma.
+Davide Chieli: Quindi devo proprio cambiargli ruolo a un certo punto, cioè se loro devono vedere oppure o lo faccio con una c'è una formul stavo
+Erik Capoccetta: No,
+Davide Chieli: pensando eh No,
+Erik Capoccetta: io mi metterei un flag prima accesso Wizard.
+Davide Chieli: già ci sta, come ti dicevo,
+Erik Capoccetta: Ok,
+Davide Chieli: cioè No,
+Erik Capoccetta: cioè Wizard completato. Sì. No,
+Davide Chieli: è il problema non è tanto quello,
+Erik Capoccetta: 0.
+00:49:48
+Davide Chieli: ma è la visualizzazione di tutti i campi dell'appù.
+Erik Capoccetta: No, ma io non glielo farei vedere proprio il menù,
+Davide Chieli: Eh,
+Erik Capoccetta: cioè gli rimanderei a a un'applicazione esterna del menù che è questo Wizard e
+Davide Chieli: quello ti sto dicendo proprio quello,
+Erik Capoccetta: basta,
+Davide Chieli: cioè una forma praticamente un blank quella che è è una una forma a parte è un po' quello che succede già.
+Erik Capoccetta: eh.
+Davide Chieli: Oh, giusto? è come la forma che c'è. Adesso diciamo che loro compilano i dati, poi vabbè, adesso loro mandano la in revisione l'operatore. Invece di fare quello, una volta che hanno compilato i dati, hanno inserito i documenti, eccetera eccetera, arriva comunque il benestare, diciamo, richiedono comunque il benestare l'operatore. Ottimo.
+Erik Capoccetta: Sì,
+Davide Chieli: Quindi una volta richiesto il benestare l'operatore, praticamente mi stanno rifacendo fa tutto.
+Erik Capoccetta: eh.
+Davide Chieli: Erick,
+Erik Capoccetta: Lo so, lo so, infatti ho detto che c ci vorrà un sacco di
+Davide Chieli: ma p**** Eva.
+Erik Capoccetta: tempo.
+00:50:36
+Davide Chieli: Va bene. Ok. E Filippo lo sa,
+Erik Capoccetta: Eh no,
+Davide Chieli: penso.
+Erik Capoccetta: gliel'ho detto stamattina,
+Davide Chieli: Belle.
+Erik Capoccetta: lo non se si eh male
+Davide Chieli: Come l'ha presa? Perfetto.
+Erik Capoccetta: male.
+Davide Chieli: Va bene. Ok.
+Erik Capoccetta: Ma e però dobbiamo abbiamo
+Davide Chieli: Vabbè, vabboh,
+Erik Capoccetta: fatto Sì,
+Davide Chieli: vabbè. i tempi su quelli che saranno.
+Erik Capoccetta: sì, sì. Vabbè, lui gli manderà una mail,
+Davide Chieli: Va bene,
+Erik Capoccetta: ma io l'ho già detto, si allungheranno i tempi.
+Davide Chieli: ma di parecchio, cioè signif.
+Erik Capoccetta: Eh, sì, sì,
+Davide Chieli: Va bene. Quindi una volta fatto questo, io mando,
+Erik Capoccetta: sì.
+Davide Chieli: cioè ovviamente il consenso, l'operatore mi dà il consenso, mi dà con un tasto tra virgolette se accetta, non accetta, che cosa deve fa'?
+Erik Capoccetta: Sì, lui revisiona sti dati e fa decide se sono buoni o no.
+Davide Chieli: Va bene.
+00:51:25
+Davide Chieli: Se non sono buoni le come succede già rimanda per controllo oppure
+Erik Capoccetta: Se non sono buoni gli mandiamo semplicemente una notifica email dove gli dice i dati sono statificati,
+Davide Chieli: direttamente.
+Erik Capoccetta: lui riaccede, c'avrà sempre gli avverrà proposto il Wizard e Demo ovviamente
+Davide Chieli: Ok. riodificaare i dati
+Erik Capoccetta: lui quando rifiuta gli inserisce una nota e gli dice "Guarda,
+Davide Chieli: praticamente.
+Erik Capoccetta: no, questo non va bene, questo non va bene". Gli arriva la nota in email e lui fa quello che deve fare,
+Davide Chieli: Ok,
+Erik Capoccetta: no?
+Davide Chieli: ok,
+Erik Capoccetta: Una volta che è tutto buono,
+Davide Chieli: perfetto.
+Erik Capoccetta: entrano sulla piattaforma e sono operativi.
+Davide Chieli: Ok, sono operativi, come già succede, quindi lo possono vedere i contratti, i documenti, eccetera.
+Erik Capoccetta: Eh a quel punto loro andranno su SGA, inseriranno la tratta dopo tutto
+Davide Chieli: Quindi dopo tutto sto casino loro inseriscono la tratta,
+Erik Capoccetta: st
+Davide Chieli: il job rivela le tratte nuove, solo le nuove o anche quelle là già usate,
+Erik Capoccetta: Esatto. No,
+Davide Chieli: estrausate?
+Erik Capoccetta: allora se tu le tratte noi lo storico lo dobbiamo importare tutto quanto.
+00:52:25
+Davide Chieli: No, le tratte noi le portiamo già,
+Erik Capoccetta: Eh,
+Davide Chieli: capito?
+Erik Capoccetta: come già lo come
+Davide Chieli: Questo vettore c'abbiamo già le tratte,
+Erik Capoccetta: già
+Davide Chieli: però il job attualmente, come ti dicevo, prende, cioè crea un contratto solo se è una tratta nuova o una variazione di tariffa
+Erik Capoccetta: Esatto,
+Davide Chieli: nuova o è un nuovo subvettore. Questo in questo caso succede.
+Erik Capoccetta: esatto.
+Davide Chieli: È uguale, rimane uguale questa
+Erik Capoccetta: rimane uguale perché se tu non hai altre tratte mai nella storia associate a quel superettore gli devi mandare il contratto
+Davide Chieli: cosa.
+Erik Capoccetta: quadro, altrimenti se già ce l'hai gli mandi o l'integrazione o la la
+Davide Chieli: Esatto. No,
+Erik Capoccetta: variazione.
+Davide Chieli: perché noi il contratto quadro lo mandavamo quando era proprio un nuovo
+Erik Capoccetta: Eh beh,
+Davide Chieli: suvetture.
+Erik Capoccetta: se non ha mai nessuna tratta è ovvio che è un
+Davide Chieli: Sì, esatto.
+Erik Capoccetta: nuovo.
+Davide Chieli: Sì, in effetti una conseguenza. Poi ho capito, il primo check che facevamo era direttamente l'anagrafica.
+00:53:10
+Erik Capoccetta: E invece no, in questo caso è invertito, capito? Cioè tu nelle tratte controlli solo le tratte,
+Davide Chieli: Non è equivalente.
+Erik Capoccetta: no? Perché nelle tratte tu controlli solo se le tratte, solo i dati relativi alle
+Davide Chieli: Eh no, no,
+Erik Capoccetta: tratte.
+Davide Chieli: chiaro. Diciamo io controllo solo le tratte, quindi provo per dirti potrebbe essere un subvettore vecchio senza tratte.
+Erik Capoccetta: Potrebbe eh beh, se non c'atta gli devi mandare il contratto quattro.
+Davide Chieli: Eh, perciò dico attualmente, però ho capito, attualmente sì, cioè già censito, quindi per comeè il flusso attuale,
+Erik Capoccetta: Eh no,
+Davide Chieli: visto che è già censito,
+Erik Capoccetta: ma quello
+Davide Chieli: ehm viene mandato il contatto quadro.
+Erik Capoccetta: eh
+Davide Chieli: Ok, quindi invece no,
+Erik Capoccetta: esatto.
+Davide Chieli: invece non va più bene.
+Erik Capoccetta: No, se è già censito ma non ha nessuna tratta deve firmare il contratto
+Davide Chieli: Ah,
+Erik Capoccetta: quadro.
+Davide Chieli: quindi allora questa è quindi è una è una condizione in più, diciamo. Quindi se non è già censito, se non è censito in anagrafica e non anagraf
+00:54:11
+Erik Capoccetta: Perché tu con Perché tu con questa nuova logica è impossibile che ti trovi una tratta per un
+Davide Chieli: Sì.
+Erik Capoccetta: subvettore che non hanno prima censito loro in anagrafica perché non lo
+Davide Chieli: Non ha tratte,
+Erik Capoccetta: fanno.
+Davide Chieli: ha contratto tipo uno. Va bene. Ok,
+Erik Capoccetta: Questo mo è a grandi linee,
+Davide Chieli: perfetto.
+Erik Capoccetta: poi ci facciamo magari un'altra call separata, però inizia a ragionarci un po'
+Davide Chieli: Va bene.
+Erik Capoccetta: su
+Davide Chieli: Ok. E posso già, cioè a questo punto la fattura che fine fa?
+Erik Capoccetta: Eh, allora questo ce lo devono far sapere loro se vogliono fare questa cosa prima o
+Davide Chieli: Ok.
+Erik Capoccetta: dopo.
+Davide Chieli: Eh, cosa do priorità adesso?
+Erik Capoccetta: Adesso continua su quello che stai
+Davide Chieli: Eh, io mo ho finito. Allora, Refix, per quanto riguarda quella questione della sessione.
+Erik Capoccetta: facendo.
+Davide Chieli: Allora, io che cosa? Probabilmente c'era un parametrino su script case che nella forma quella là dei subvettori allora chiedeva ogni tanto si, diciamo, dopo un tempo relativamente breve gli richiedeva l'accesso perché c'era un parametro
+00:55:18
+Erik Capoccetta: Sì, sì.
+Davide Chieli: che probabilmente era sulle ehm sulle formil master detail c'erano che era usavano un parametro use password at least once.
+Erik Capoccetta: Ah!
+Davide Chieli: ti richiedeva la password almeno una volta per per sessione,
+Erik Capoccetta: Ah!
+Davide Chieli: quindi mo lo eliminati da entrambe le le master detail, non dovrebbe richiederlo più, anche perché in realtà io Non riesco a testarlo questo flusso perché a me non me le chiede mai le credenziali anche diciamo
+Erik Capoccetta: M.
+Davide Chieli: in devo provare anche in in anonimo, ma a me non succede questa cosa, diciamo, non è evidenza di questo
+Erik Capoccetta: Cioè, loro lo dicevano che gli succede,
+Davide Chieli: bug
+Erik Capoccetta: però solo quando entrano tramite le mail.
+Davide Chieli: tramite le mail.
+Erik Capoccetta: Mh.
+Davide Chieli: Come le mail?
+Erik Capoccetta: Tramite le notifiche. Quando l'hai visto gli arriva la
+Davide Chieli: Eh sì,
+Erik Capoccetta: notifica No,
+Davide Chieli: tr ah le notifiche di script case eh io da là l'ho
+Erik Capoccetta: tram le notifiche le notifiche mail e che c'è il pulsantino e c'è cliccano là
+Davide Chieli: verificato.
+Erik Capoccetta: e poi dopo 5 minuti si
+00:56:18
+Davide Chieli: Da là l'ho verificato. Eh, allora ci sta.
+Erik Capoccetta: scollega.
+Davide Chieli: Ho un parametro della del sul php.iniin Toini, probabilmente che va modificato che è la session Max Life, qualcosa, Max da 5 minuti va cambiato. Eh,
+Erik Capoccetta: Però perché succede solo tra se entri tramite le mail e
+Davide Chieli: ma a me ripeto, io non riesco a reprodurlo perché a me non succede.
+Erik Capoccetta: se
+Davide Chieli: Ho fatto proprio mi sono messo lì a aspettare più di 5 minuti, non succede niente a me. Pure di più ti dici per me non è riproducibile,
+Erik Capoccetta: boh, vabbè.
+Davide Chieli: diciamo,
+Erik Capoccetta: Eh
+Davide Chieli: l'atomia, perciò ti chiedevo un ambiente speculare alla a loro, capito?
+Erik Capoccetta: eh,
+Davide Chieli: Perché eh in realtà penso sia un
+Erik Capoccetta: ma in teoria è speculare, cioè poi, scusa,
+Davide Chieli: problema.
+Erik Capoccetta: se lo fai su AT che che succede? Eh,
+Davide Chieli: Lo provo a fare un però non posso crearmi tra virgolette dei contratti fake,
+Erik Capoccetta: fa tanto è un ambiente di AT, non è che non si può toccare.
+00:57:05
+Erik Capoccetta: Ma sì,
+Davide Chieli: capito?
+Erik Capoccetta: sì, sì, sì, sì, sì.
+Davide Chieli: Ah,
+Erik Capoccetta: Tanto è,
+Davide Chieli: vabbè, io non stavo facendo nulla,
+Erik Capoccetta: non è che
+Davide Chieli: tra virgolette di pro perché stavo facendo i test, quindi capito? Si possono impressionare,
+Erik Capoccetta: mh
+Davide Chieli: che ne so.
+Erik Capoccetta: no,
+Davide Chieli: Va bene, allora va bene, perfetto.
+Erik Capoccetta: quindi ti dicevo l'operatività è fare quei fix che ci hanno chiesto, quella quelle cose che avevamo in ballo
+Davide Chieli: Sì, quelli li ho fatti tutti, tranne quello là che c' Vabbè,
+Erik Capoccetta: e
+Davide Chieli: questo qua che hanno chiesto non è un bug, allora è una un'aggiunta.
+Erik Capoccetta: no,
+Davide Chieli: C'era quel bug che dicevano loro, ma non è un
+Erik Capoccetta: praticamente questo che dicono che quando la tu entri come subvettore e vai a modificare la tua una grafica,
+Davide Chieli: bug.
+Erik Capoccetta: vedi meno campi rispetto a quelli che vede l'operatore Pigliacelli, invece per loro il vettore deve vedere gli stessi campi che poi sono quelli che gli chiederemo la al Wizard
+Davide Chieli: Eh,
+00:57:48
+Erik Capoccetta: iniziale.
+Davide Chieli: praticamente il subettore deve poter modificare tutti i campi del proprio della propria anagrafica. Vabbè, questo è chiaro. Certo,
+Erik Capoccetta: Sì,
+Davide Chieli: mo lo aggiungo. Questo qui.
+Erik Capoccetta: puoi unificare il campo indirizzo. Eh, vabbè, io ti direi di che puoi iniziare a lavorare sui due job separati.
+Davide Chieli: Sì. Eh, va bene questa cosa. Sì, questa è devastante. Ripeto, è proprio una cosa che mi Allora, perché devo fare un job, vabbè, quella l'apsert diciamo dei subettori è la più scema di tutte, cioè ce l'ho, tra virgolette. La cosa dei trips è quella là che sarà più, diciamo, che io l'auto, diciamo, l'aggiornamento delle tratte le li devo fare eh, quindi anche con il sync. Il problema qual è? Loro mi fanno il sync delle tratte, mi aggiorno, cioè sulle grid tratte avrò delle nuove tratte se sono state create valide, cioè se sono hanno carico e scarico,
+Erik Capoccetta: Mh.
+Davide Chieli: hanno un un importo valido, nono zero,
+00:58:46
+Erik Capoccetta: Sì,
+Davide Chieli: e hanno una partenza data ora, diciamo, hanno questi tre valori. Ok? Se queste tre,
+Erik Capoccetta: esatto.
+Davide Chieli: quattro condizioni sono rispettate, loro si trovano le nuove tratte e basta. Vogliono solo questo, quindi senza la generazione del contratto.
+Erik Capoccetta: No, il contratto si deve generare. Sì, come no.
+Davide Chieli: Eh,
+Erik Capoccetta: quello rimane uguale.
+Davide Chieli: però è una cosa che viene dopo, abbiamo detto
+Erik Capoccetta: Sì,
+Davide Chieli: separata.
+Erik Capoccetta: ma loro non inseriranno mai una tratta se il vettore non gli ha prima fornito tutti i documenti. Quindi è ovvio che viene loro inseriscono prima il
+Davide Chieli: Loro non
+Erik Capoccetta: vettore, gli mandano le credenziali, lui fa tutto il processo.
+Davide Chieli: iniz
+Erik Capoccetta: Eh, dopo che hanno verificato che è tutto ok dicono "Ok, allora posso creare il viaggio." Quindi la tratta viene creata solo dopo che il vettore è già attivo, quindi è entrato.
+Davide Chieli: ratta viene creata solo dopo che è attivo. Chiaro? Eh vabbè, diciamo che adesso Ok.
+Erik Capoccetta: Per cui
+00:59:40
+Davide Chieli: Eh, però diciamo per me cambia poco. Boh, diciamo
+Erik Capoccetta: eh sì, sul job delle trat cambia poco,
+Davide Chieli: mh.
+Erik Capoccetta: non devi solo controllare più la grafica vettori, cioè si alleggerisce.
+Davide Chieli: Esatto. Però eh quindi la perché io no, la la io le controllo sempre perché le tratte sono associate a un
+Erik Capoccetta: Eh,
+Davide Chieli: subvettoreamente.
+Erik Capoccetta: ovvio. Sì, però tu devi controllare solo che esiste a sto punto, non è che devi
+Davide Chieli: Eh, devo controllare, esatto. che esiste e quelle quindi dici che non ci siano tratte per creare un contratto,
+Erik Capoccetta: controllare
+Davide Chieli: cioè il contratto quello che ti dicevo era eh il controllo devono averlo loro perché loro l'hanno richiesto più volte, cioè il fatto di poter creare il contratto è automatizzato o è una cosa che devo scatenare da un button?
+Erik Capoccetta: No, è automatizzato il creare, però devono poterlo fare anche loro in autonomia.
+Davide Chieli: Allora, quindi il contratto è e quindi il contratto si genera sempre in automatico. Ok? Quando si genera abbiamo detto quando il flusso abbiamo quando il flusso subvettore è completo. Flusso subvettore è completo e diciamo importano delle tratte nuove.
+01:00:51
+Erik Capoccetta: Sì, ma tanto loro le importeranno solo se quello ha completato il flusso.
+Davide Chieli: Sì, sì. No, proprio questo ho capito, però a me non scade, cioè a me non serve, tra virgolette, a me serve sapere che il subettore ha completato il flusso.
+Erik Capoccetta: Sì, ma quando tu controlli la non ti serve non ti interessa saperlo questo dato che
+Davide Chieli: Punto. Quale?
+Erik Capoccetta: il subvettore ha completato il flusso.
+Davide Chieli: Eh, in realtà non mi serve. Cioè, nel senso, loro importano le tratte.
+Erik Capoccetta: Lo diamo per scontato che l'abbia fatto.
+Davide Chieli: Eh, lo questo ti sto dicendo, non faccio controlli su questa
+Erik Capoccetta: No, no, perché se loro hanno specificato che inseriscono una tratta solo dopo che quello avrà completato,
+Davide Chieli: cosa.
+Erik Capoccetta: ma è una cosa che sanno loro?
+Davide Chieli: Eh, perciò dico, non c'è un controllo effettivo su questa cosa,
+Erik Capoccetta: No, vabbè, ma se tanto, cioè,
+Davide Chieli: però
+Erik Capoccetta: perché se tu adesso lo metti non importerai più nessuna tratta perché nessun vettore ha completato sta roba.
+Davide Chieli: va bene.
+01:01:43
+Davide Chieli: Quindi, e poi si generano i nuovi contratti a seconda se non ci sono tratte per questo vettore genero un contratto uno. Se ci sono le altre variazioni due o tre.
+Erik Capoccetta: Esatto.
+Davide Chieli: A posto.
+Erik Capoccetta: Ricordati di mettere il pulsante che crea nuovo contratto quadro
+Davide Chieli: Eh, questa è una cosa nuova.
+Erik Capoccetta: a
+Davide Chieli: Abbiamo detto crea nuovo contratto, che cosa deve fare?
+Erik Capoccetta: che praticamente su input dell'operatore viene creato il flusso di nuovo contratto quadro.
+Davide Chieli: Sì. Eh, cioè loro generano di per sé un nuovo contratto quadro
+Erik Capoccetta: a prescindere da qualsiasi quando quanto gli pare a loro a prescindere da qualsiasi
+Davide Chieli: solo tipo
+Erik Capoccetta: condizione.
+Davide Chieli: uno.
+Erik Capoccetta: Solo tipo uno. Sì, vabbè,
+Davide Chieli: Ok.
+Erik Capoccetta: perché due tre si fanno automaticamente con le
+Davide Chieli: Sì,
+Erik Capoccetta: tratte,
+Davide Chieli: però dico c'è la possibilità che possono creare un contratto di come si dice di allegato.
+Erik Capoccetta: no?
+Davide Chieli: Va bene? Quindi solo contatto di tipo uno e da qui devo praticamente fargli, cioè il contratto lo deve avendo già tutti i dati del subvettore, perché in questo caso sto dicendo che già ho tutti i dati del subvettore per creare un contratto di tipo
+01:02:54
+Erik Capoccetta: Esatto. Sì.
+Davide Chieli: uno.
+Erik Capoccetta: In quel caso sia l'atteenco degli autisti lo devi popolare con tutte le tratte già presenti e tutti degli autisti già solo in quel caso
+Davide Chieli: Eh, ho capito.
+Erik Capoccetta: là.
+Davide Chieli: Tutte le tratte già presenti più gli autisti solo per questo nuovo
+Erik Capoccetta: Sì,
+Davide Chieli: contratto.
+Erik Capoccetta: magari io lo chiamerei anche contratto, ci farei un altro tipo, così siamo più tranquilli.
+Davide Chieli: Un nuovo tipo faresti tipo
+Erik Capoccetta: E sì, così ti gestisci questa casistica perché tu
+Davide Chieli: qua.
+Erik Capoccetta: nel manco serve,
+Davide Chieli: Quindi diciamo questo sarebbe eh questo qui sarebbe un vecchio,
+Erik Capoccetta: manco serve perché per quelli nuovi ti prendi tutte le tratte esistenti che sono quelle poche che hanno inserito. No, no, non serve.
+Davide Chieli: non credo serva pure secondo me.
+Erik Capoccetta: No,
+Davide Chieli: Ok,
+Erik Capoccetta: no,
+Davide Chieli: però vabbè,
+Erik Capoccetta: no.
+Davide Chieli: questo sarebbe il caso funzionale in cui un vecchio subettore loro gli chiedono di rifare il contratto quadro.
+Erik Capoccetta: Gli vogliono rilevare il contratto nuovo. Sì.
+Davide Chieli: Ho capito. Vabbè, qui significa che devono già avere tutti i dati loro e se non ce l'hanno sicuramente eh son cavoli loro perché lo
+Erik Capoccetta: No, se non c'hanno si attacca,
+Davide Chieli: devono Ok,
+Erik Capoccetta: cioè quando quello va a compilare devi inserire per forza i dati.
+Davide Chieli: ok, perfetto. Va bene, va bene. Allora, comincio l'opera,
+Erik Capoccetta: Va bene.
+Davide Chieli: comincio a una cosa.
+Erik Capoccetta: Buon pranzo. Ciao Davide.
+Davide Chieli: No, grazie Erick. Ciao. Ciao
+Erik Capoccetta: Sì.
+Trascrizione terminata dopo 01:04:21
+Questa trascrizione modificabile è stata generata dal computer e potrebbe contenere errori. È possibile anche modificare manualmente il testo dopo la creazione.

@@ -1,0 +1,8 @@
+/**
+ * form_subvettori_autisti onBeforeUpdate
+ * Mantiene subvettore_contratto_id vuoto finche non agganciato da check_new_trips.
+ */
+
+if (!isset({subvettore_contratto_id}) || {subvettore_contratto_id} === '' || {subvettore_contratto_id} === 'null' || (int){subvettore_contratto_id} <= 0) {
+    {subvettore_contratto_id} = 'null';
+}

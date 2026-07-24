@@ -1,0 +1,373 @@
+/**
+ * Scriptcase blank: send_credenziali_subvettori_batch
+ *
+ * Job schedulato (senza UI): solo log MAIL_CRED_BATCH / EXPORT_DATA.
+ * Invio scaglionato mail credenziali (group 2).
+ * Coda: subvettori.mail_credenziali_inviata_at IS NULL
+ * Per record: rigenera password → invia → se OK setta timestamp.
+ *
+ * Scheduler: ogni 5 minuti (max 20 / run).
+ * URL: ?dry_run=1 | ?limit=20 | ?mail_override=1|email
+ */
+
+if (!function_exists('scb_log')) {
+    function scb_log($msg)
+    {
+        sc_log_add('MAIL_CRED_BATCH', (string)$msg);
+    }
+}
+
+if (!function_exists('scb_sql_quote')) {
+    function scb_sql_quote($v)
+    {
+        if ($v === null) {
+            return 'NULL';
+        }
+        return "'" . str_replace("'", "''", (string)$v) . "'";
+    }
+}
+
+if (!function_exists('scb_sql_num')) {
+    function scb_sql_num($v)
+    {
+        return (string)(0 + $v);
+    }
+}
+
+if (!function_exists('scb_email_valida')) {
+    function scb_email_valida($email)
+    {
+        $email = trim((string)$email);
+        if ($email === '') {
+            return false;
+        }
+        if (strpos($email, ';') !== false || strpos($email, ',') !== false || strpos($email, ' ') !== false) {
+            return false;
+        }
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+}
+
+if (!function_exists('scb_generate_temp_password')) {
+    function scb_generate_temp_password()
+    {
+        $characters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=';
+        $len = strlen($characters);
+        $out = '';
+        for ($i = 0; $i < 12; $i++) {
+            $out .= $characters[random_int(0, $len - 1)];
+        }
+        return $out;
+    }
+}
+
+if (!function_exists('scb_mail_setting')) {
+    function scb_mail_setting($name, $default = '')
+    {
+        sc_lookup(rsScbSet, "
+            SELECT set_value FROM sec_settings
+            WHERE set_name = " . scb_sql_quote(trim((string)$name)) . "
+            LIMIT 1
+        ", 'pigliacelli');
+        if (!empty({rsScbSet[0][0]})) {
+            return trim((string){rsScbSet[0][0]});
+        }
+        return (string)$default;
+    }
+}
+
+if (!function_exists('scb_get_smtp_config')) {
+    function scb_get_smtp_config()
+    {
+        sc_lookup(rsScbSmtp, 'SELECT set_name, set_value FROM sec_settings', 'pigliacelli');
+        if (!empty({rsScbSmtp})) {
+            foreach ({rsScbSmtp} as $f) {
+                $_SESSION['sett_' . $f[0]] = $f[1];
+            }
+        }
+        $smtpApi = isset($_SESSION['sett_smtp_api']) ? (string)$_SESSION['sett_smtp_api'] : '';
+        if ($smtpApi === 'custom') {
+            return array(
+                'settings' => array(
+                    'gateway'       => 'smtp',
+                    'smtp_server'   => (string)($_SESSION['sett_smtp_server'] ?? ''),
+                    'smtp_protocol' => (string)($_SESSION['sett_smtp_security'] ?? ''),
+                    'smtp_port'     => (string)($_SESSION['sett_smtp_port'] ?? ''),
+                    'smtp_user'     => (string)($_SESSION['sett_smtp_user'] ?? ''),
+                    'smtp_password' => (string)($_SESSION['sett_smtp_pass'] ?? ''),
+                    'from_email'    => (string)($_SESSION['sett_smtp_from_email'] ?? ''),
+                    'from_name'     => (string)($_SESSION['sett_smtp_from_name'] ?? ''),
+                ),
+            );
+        }
+        return array('profile' => $smtpApi);
+    }
+}
+
+if (!function_exists('scb_portal_url')) {
+    function scb_portal_url()
+    {
+        $loginUrl = rtrim(scb_mail_setting('login_url', ''), '/');
+        if ($loginUrl !== '') {
+            return $loginUrl;
+        }
+        $portalUrl = rtrim(scb_mail_setting('portal_url', ''), '/');
+        if ($portalUrl !== '') {
+            return $portalUrl;
+        }
+        return rtrim(scb_mail_setting('app_url', ''), '/');
+    }
+}
+
+if (!function_exists('scb_mail_layout')) {
+    function scb_mail_layout($title, $innerHtml)
+    {
+        if (function_exists('pigliacelli_mail_layout')) {
+            $logo = '';
+            if (function_exists('pigliacelli_mail_logo_src')) {
+                $logo = pigliacelli_mail_logo_src(function ($k, $d = '') {
+                    return scb_mail_setting($k, $d);
+                });
+            }
+            return pigliacelli_mail_layout($title, $innerHtml, $logo);
+        }
+        return '<html><body style="font-family:Arial,sans-serif;font-size:14px;color:#222;">'
+            . '<h2 style="color:#5b2d8e;">' . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '</h2>'
+            . $innerHtml
+            . '<p style="margin-top:24px;font-size:12px;color:#888;">Messaggio automatico — non rispondere.</p>'
+            . '</body></html>';
+    }
+}
+
+if (!function_exists('scb_risolvi_mail_override')) {
+    function scb_risolvi_mail_override()
+    {
+        $raw = '';
+        if (isset($_GET['mail_override'])) {
+            $raw = trim((string)$_GET['mail_override']);
+        }
+        if ($raw === '' && isset($_REQUEST['mail_override'])) {
+            $raw = trim((string)$_REQUEST['mail_override']);
+        }
+        if ($raw === '' || $raw === '0') {
+            return '';
+        }
+        if ($raw === '1') {
+            $mailTo = '';
+            if (isset($_GET['mail_to'])) {
+                $mailTo = trim((string)$_GET['mail_to']);
+            }
+            if ($mailTo === '' && isset($_REQUEST['mail_to'])) {
+                $mailTo = trim((string)$_REQUEST['mail_to']);
+            }
+            if ($mailTo !== '' && scb_email_valida($mailTo)) {
+                return $mailTo;
+            }
+            return 'davide.chieli@digiwebuno.it';
+        }
+        return scb_email_valida($raw) ? $raw : '';
+    }
+}
+
+if (!function_exists('scb_invia_mail_credenziali')) {
+    function scb_invia_mail_credenziali($to, $login, $plainPassword, $displayName, $mailOverride)
+    {
+        $toOrig = trim((string)$to);
+        $to = ($mailOverride !== '') ? $mailOverride : $toOrig;
+        $login = trim((string)$login);
+        $plainPassword = (string)$plainPassword;
+
+        if ($plainPassword === '' || !scb_email_valida($to) || $login === '') {
+            return 'skip';
+        }
+        if (!function_exists('sc_send_mail_api')) {
+            scb_log('SKIP sc_send_mail_api assente login=' . $login);
+            return 'errore';
+        }
+
+        $portalUrl = scb_portal_url();
+        $nome = trim((string)$displayName);
+        if ($nome === '') {
+            $nome = 'Gentile subvettore';
+        }
+
+        $titolo = 'Credenziali area riservata — Pigliacelli';
+        if ($mailOverride !== '') {
+            $titolo = '(UAT) ' . $titolo;
+        }
+
+        $testo = $nome . ",\n\n"
+            . "E' stato creato il tuo accesso all'area riservata subvettori.\n"
+            . "Puoi accedere con le credenziali seguenti (password temporanea).\n\n"
+            . "Login: " . $login . "\n"
+            . "Password: " . $plainPassword . "\n";
+        if ($portalUrl !== '') {
+            $testo .= "\nArea riservata: " . $portalUrl . "\n";
+        }
+        $testo .= "\nMessaggio automatico — non rispondere.";
+
+        $safeLogin = htmlspecialchars($login, ENT_QUOTES, 'UTF-8');
+        $safePwd = htmlspecialchars($plainPassword, ENT_QUOTES, 'UTF-8');
+        $safeNome = htmlspecialchars($nome, ENT_QUOTES, 'UTF-8');
+        $inner = '<p style="margin:0 0 16px;">' . $safeNome . ',</p>'
+            . '<p style="margin:0 0 20px;">E\' stato creato il tuo accesso all\'<strong>area riservata subvettori</strong>. '
+            . 'Ecco le credenziali (password temporanea).</p>'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+            . 'style="margin:0 0 20px;background:#f8f9fb;border:1px solid #e2e6ea;border-radius:8px;">'
+            . '<tr><td style="padding:16px 18px;font-size:14px;line-height:1.6;">'
+            . '<strong>Login:</strong> ' . $safeLogin . '<br><strong>Password:</strong> ' . $safePwd
+            . '</td></tr></table>';
+        if ($portalUrl !== '') {
+            $safePortal = htmlspecialchars($portalUrl, ENT_QUOTES, 'UTF-8');
+            $inner .= '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px;"><tr>'
+                . '<td align="center" bgcolor="#5b2d8e" style="border-radius:8px;background-color:#5b2d8e;">'
+                . '<a href="' . $safePortal . '" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:bold;'
+                . 'color:#ffffff;text-decoration:none;">Accedi all\'area riservata</a>'
+                . '</td></tr></table>';
+        }
+
+        $html = scb_mail_layout($titolo, $inner);
+
+        try {
+            sc_send_mail_api(array_merge(scb_get_smtp_config(), array(
+                'message' => array(
+                    'html'    => $html,
+                    'text'    => $testo,
+                    'to'      => $to,
+                    'subject' => $titolo,
+                ),
+            )));
+        } catch (Throwable $e) {
+            scb_log('ERRORE login=' . $login . ' to=' . $to . ' msg=' . $e->getMessage());
+            return 'errore';
+        }
+
+        scb_log(
+            'OK login=' . $login
+            . ' to=' . $to
+            . ($toOrig !== $to ? ' orig=' . $toOrig : '')
+        );
+        return 'inviata';
+    }
+}
+
+@set_time_limit(120);
+
+$dryRun = (isset($_GET['dry_run']) && (string)$_GET['dry_run'] === '1');
+$mailOverride = scb_risolvi_mail_override();
+$limit = 20;
+if (isset($_GET['limit']) && (int)$_GET['limit'] > 0) {
+    $limit = (int)$_GET['limit'];
+}
+if ($limit > 50) {
+    $limit = 50;
+}
+
+scb_log(
+    'START limit=' . $limit
+    . ($dryRun ? ' [DRY_RUN]' : '')
+    . ($mailOverride !== '' ? ' override=' . $mailOverride : '')
+);
+
+$ok = 0;
+$err = 0;
+$skip = 0;
+
+sc_lookup(rsScbCoda, "
+    SELECT
+        s.id,
+        COALESCE(s.ragione_sociale, ''),
+        su.login
+    FROM subvettori s
+    INNER JOIN sec_users su
+        ON su.subvettore_id = s.id
+       AND su.active = 'Y'
+       AND su.login = s.login_subvettore
+    INNER JOIN sec_users_groups sug
+        ON sug.login = su.login
+       AND sug.group_id = 2
+    WHERE s.mail_credenziali_inviata_at IS NULL
+      AND s.login_subvettore IS NOT NULL
+      AND TRIM(s.login_subvettore) <> ''
+    ORDER BY s.id
+    LIMIT " . (int)$limit . "
+", 'pigliacelli');
+
+$rows = array();
+if (!empty({rsScbCoda})) {
+    foreach ({rsScbCoda} as $r) {
+        $rows[] = array(
+            'sub_id' => (int)$r[0],
+            'nome'   => trim((string)$r[1]),
+            'login'  => trim((string)$r[2]),
+        );
+    }
+}
+
+scb_log('Candidati in coda (batch): ' . count($rows));
+
+foreach ($rows as $row) {
+    $subId = $row['sub_id'];
+    $login = $row['login'];
+    $nome = $row['nome'];
+
+    if (!scb_email_valida($login)) {
+        $skip++;
+        scb_log('SKIP email non valida sub=' . $subId . ' login=' . $login);
+        continue;
+    }
+
+    if ($dryRun) {
+        $ok++;
+        scb_log('DRY_RUN would_send sub=' . $subId . ' login=' . $login);
+        continue;
+    }
+
+    $plain = scb_generate_temp_password();
+    $hash = md5($plain);
+
+    try {
+        sc_exec_sql("
+            UPDATE sec_users
+            SET pswd = " . scb_sql_quote($hash) . "
+            WHERE login = " . scb_sql_quote($login) . "
+              AND subvettore_id = " . scb_sql_num($subId) . "
+            LIMIT 1
+        ", 'pigliacelli');
+    } catch (Throwable $e) {
+        $err++;
+        scb_log('ERRORE update pswd sub=' . $subId . ' login=' . $login . ' — ' . $e->getMessage());
+        continue;
+    }
+
+    $esito = scb_invia_mail_credenziali($login, $login, $plain, $nome, $mailOverride);
+    if ($esito === 'inviata') {
+        try {
+            sc_exec_sql("
+                UPDATE subvettori
+                SET mail_credenziali_inviata_at = NOW()
+                WHERE id = " . scb_sql_num($subId) . "
+            ", 'pigliacelli');
+            $ok++;
+        } catch (Throwable $e) {
+            $err++;
+            scb_log(
+                'ERRORE set flag dopo mail OK sub=' . $subId
+                . ' login=' . $login . ' — ' . $e->getMessage()
+                . ' (mail inviata ma flag non aggiornato: rischio reinvio)'
+            );
+        }
+    } elseif ($esito === 'skip') {
+        $skip++;
+        scb_log('SKIP send sub=' . $subId . ' login=' . $login);
+    } else {
+        $err++;
+        // flag resta NULL → retry al prossimo run
+    }
+}
+
+$riepilogo = 'END ok=' . $ok . ' errori=' . $err . ' skip=' . $skip
+    . ' candidati=' . count($rows)
+    . ($dryRun ? ' [DRY_RUN]' : '');
+scb_log($riepilogo);
+sc_log_add('EXPORT_DATA', 'Mail credenziali batch: ' . $riepilogo);

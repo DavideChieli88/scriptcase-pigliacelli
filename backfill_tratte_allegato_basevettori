@@ -1,0 +1,681 @@
+// Scriptcase blank: backfill_tratte_allegato_basevettori
+// Backfill merce, caricatore, proprietario_merce su tratte già importate (v1 / pre-_v2).
+// Legge i dati da SGA con la stessa logica di insert_new_trips_optimized_basevettori_v2
+// e aggiorna solo i campi ancora vuoti su tratte + contratti_tratte collegati.
+//
+// Parametri URL:
+//   ?run=1           esegue (dopo conferma)
+//   ?dry_run=1       solo log, nessun UPDATE (richiede run=1)
+//
+// Deploy Scriptcase:
+//   1) New Application → Blank → nome: backfill_tratte_allegato_basevettori
+//   2) Programming → onExecute → incolla questo file
+//   3) Security: solo admin (group 1)
+//   4) Generate + publish
+//
+// Pulsante admin (opzionale):
+//   sc_redir('backfill_tratte_allegato_basevettori');
+
+function bf_allegato_log($msg)
+{
+    sc_log_add('BF_TRATTE_ALLEGATO', (string)$msg);
+}
+
+function bf_allegato_sql_quote($v)
+{
+    if ($v === null) {
+        return "NULL";
+    }
+    return "'" . str_replace("'", "''", (string)$v) . "'";
+}
+
+function bf_allegato_testo_sql($v)
+{
+    $v = trim((string)$v);
+    if ($v === '') {
+        return "NULL";
+    }
+    return bf_allegato_sql_quote($v);
+}
+
+function bf_allegato_vuoto($v)
+{
+    return $v === null || trim((string)$v) === '';
+}
+
+function bf_allegato_route_key($codice_sga, $carico_str, $scarico_str)
+{
+    return strtoupper(trim((string)$codice_sga))
+        . '|' . strtoupper(trim((string)$carico_str))
+        . '|' . strtoupper(trim((string)$scarico_str));
+}
+
+function bf_allegato_merce_label($codice, $descrizione)
+{
+    $codice = trim((string)$codice);
+    $descrizione = trim((string)$descrizione);
+    if ($codice !== '' && $descrizione !== '') {
+        return $codice . ' - ' . $descrizione;
+    }
+    if ($codice !== '') {
+        return $codice;
+    }
+    if ($descrizione !== '') {
+        return $descrizione;
+    }
+    return '';
+}
+
+function bf_allegato_data_compare($value)
+{
+    if ($value === null || $value === '') {
+        return PHP_INT_MIN;
+    }
+    $ts = strtotime((string)$value);
+    return $ts === false ? PHP_INT_MIN : $ts;
+}
+
+function bf_allegato_viaggio_piu_recente($nuovo, $corrente)
+{
+    $nuovo_partenza = bf_allegato_data_compare($nuovo['partenza_data_ora']);
+    $corrente_partenza = bf_allegato_data_compare($corrente['partenza_data_ora']);
+    if ($nuovo_partenza !== $corrente_partenza) {
+        return $nuovo_partenza > $corrente_partenza;
+    }
+
+    $nuovo_sync = bf_allegato_data_compare(isset($nuovo['sync_data_ora']) ? $nuovo['sync_data_ora'] : '');
+    $corrente_sync = bf_allegato_data_compare(isset($corrente['sync_data_ora']) ? $corrente['sync_data_ora'] : '');
+    if ($nuovo_sync !== $corrente_sync) {
+        return $nuovo_sync > $corrente_sync;
+    }
+
+    if ((int)$nuovo['ANNO'] !== (int)$corrente['ANNO']) {
+        return (int)$nuovo['ANNO'] > (int)$corrente['ANNO'];
+    }
+
+    return (int)$nuovo['NUMERO'] > (int)$corrente['NUMERO'];
+}
+
+function bf_allegato_utente_admin()
+{
+    $usrLogin = trim((string)[usr_login]);
+    if ($usrLogin === '' || strcasecmp($usrLogin, 'Guest') === 0) {
+        return false;
+    }
+
+    $loginSql = str_replace("'", "''", $usrLogin);
+    sc_lookup(rsBfAllegatoAdmin, "
+        SELECT 1
+        FROM sec_users_groups sug
+        INNER JOIN sec_users su ON su.login = sug.login
+        WHERE su.login = '$loginSql'
+          AND su.active = 'Y'
+          AND sug.group_id = 1
+        LIMIT 1
+    ", 'pigliacelli');
+
+    return !empty({rsBfAllegatoAdmin});
+}
+
+function bf_allegato_connetti_sga()
+{
+    sc_lookup(bfSettingsRows, "
+        SELECT set_name, set_value
+        FROM sec_settings
+        WHERE set_name IN (
+            'sgam_user', 'sgam_pswd', 'sgam_db', 'sgam_server',
+            'export_viaggi_anno', 'export_viaggi_societa'
+        )
+    ", 'pigliacelli');
+
+    $settings = array();
+    if (!empty({bfSettingsRows})) {
+        foreach ({bfSettingsRows} as $settingRow) {
+            $settings[$settingRow[0]] = $settingRow[1];
+        }
+    }
+
+    $set_names = array('sgam_user', 'sgam_pswd', 'sgam_db', 'sgam_server');
+    foreach ($set_names as $set_name) {
+        if (!array_key_exists($set_name, $settings) || trim((string)$settings[$set_name]) === '') {
+            bf_allegato_log("ERRORE sec_settings mancante: $set_name");
+            sc_error_message("Parametro '" . $set_name . "' non trovato o vuoto in sec_settings.");
+            return null;
+        }
+    }
+
+    $societa = isset($settings['export_viaggi_societa']) && trim((string)$settings['export_viaggi_societa']) !== ''
+        ? (int)$settings['export_viaggi_societa']
+        : 1;
+    $anno_da = isset($settings['export_viaggi_anno']) && trim((string)$settings['export_viaggi_anno']) !== ''
+        ? (int)$settings['export_viaggi_anno']
+        : 2023;
+
+    try {
+        $dsn = "sqlsrv:Server=" . $settings['sgam_server']
+            . ";Database=" . $settings['sgam_db']
+            . ";Encrypt=1"
+            . ";TrustServerCertificate=1";
+
+        bf_allegato_log('Connessione PDO SGA server=' . $settings['sgam_server'] . ' db=' . $settings['sgam_db']);
+
+        $pdo = new PDO(
+            $dsn,
+            $settings['sgam_user'],
+            $settings['sgam_pswd'],
+            array(
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_NUM,
+            )
+        );
+
+        return array(
+            'pdo' => $pdo,
+            'societa' => $societa,
+            'anno_da' => $anno_da,
+        );
+    } catch (PDOException $e) {
+        bf_allegato_log('ERRORE connessione SGA: ' . $e->getMessage());
+        sc_error_message('Errore connessione PDO SGA: ' . $e->getMessage());
+        return null;
+    }
+}
+
+function bf_allegato_carica_localita_bulk($pdo_sga, $societa, $anno)
+{
+    $sql = "
+        SELECT ANNO, NUMERO, OPERAZIONE, LOCALITA
+        FROM T2ViaggiVettoriClienti
+        WHERE SOCIETA = :societa
+          AND ANNO = :anno
+          AND OPERAZIONE IN ('C', 'S')
+        ORDER BY ANNO, NUMERO, OPERAZIONE, PROGRESSIVO
+    ";
+    $stmt = $pdo_sga->prepare($sql);
+    $stmt->execute(array('societa' => $societa, 'anno' => $anno));
+
+    $carichi_map = array();
+    $scarichi_map = array();
+    while (($row = $stmt->fetch(PDO::FETCH_NUM)) !== false) {
+        $key = (int)$row[0] . '|' . (int)$row[1];
+        if ($row[2] === 'C') {
+            if (!isset($carichi_map[$key])) {
+                $carichi_map[$key] = array();
+            }
+            $carichi_map[$key][] = $row[3];
+        } elseif ($row[2] === 'S') {
+            if (!isset($scarichi_map[$key])) {
+                $scarichi_map[$key] = array();
+            }
+            $scarichi_map[$key][] = $row[3];
+        }
+    }
+    $stmt->closeCursor();
+
+    return array($carichi_map, $scarichi_map);
+}
+
+function bf_allegato_carica_allegato_bulk($pdo_sga, $societa, $anno)
+{
+    $sql = "
+        SELECT
+            vc.ANNO,
+            vc.NUMERO,
+            RTRIM(t.CARICO_RAGIONE_SOCIALE) AS caricatore,
+            RTRIM(b.RAGIONE_SOCIALE) AS proprietario_merce,
+            RTRIM(m.MERCE_CODICE) AS merce_codice,
+            RTRIM(m.MERCE_DESCRIZIONE) AS merce_descrizione,
+            vc.PROGRESSIVO
+        FROM T2ViaggiVettoriClienti vc
+        INNER JOIN T2ViaggiClientiCarichiScarichi t
+            ON t.SOCIETA = vc.SOCIETA
+           AND t.ANNO = vc.CLIENTE_ANNO
+           AND t.FILIALE = vc.CLIENTE_FILIALE
+           AND t.NUMERO = vc.CLIENTE_NUMERO
+           AND t.NUMERO_CARICO_SCARICO = vc.CLIENTE_NUMERO_CARICO_SCARICO
+        INNER JOIN T2ViaggiClienti vcl
+            ON vcl.SOCIETA = t.SOCIETA
+           AND vcl.ANNO = t.ANNO
+           AND vcl.FILIALE = t.FILIALE
+           AND vcl.NUMERO = t.NUMERO
+        INNER JOIN BaCliFor b
+            ON b.SOCIETA = vcl.SOCIETA
+           AND b.CLIENTE_FORNITORE = 'C'
+           AND b.CODICE = vcl.CLIENTE
+        LEFT JOIN T2ViaggiClientiCarichiScarichiMerci m
+            ON m.SOCIETA = t.SOCIETA
+           AND m.ANNO = t.ANNO
+           AND m.FILIALE = t.FILIALE
+           AND m.NUMERO = t.NUMERO
+           AND m.NUMERO_CARICO_SCARICO = t.NUMERO_CARICO_SCARICO
+        WHERE vc.SOCIETA = :societa
+          AND vc.ANNO = :anno
+          AND vc.OPERAZIONE = 'C'
+        ORDER BY vc.ANNO, vc.NUMERO, vc.PROGRESSIVO, m.MERCE_CODICE
+    ";
+    $stmt = $pdo_sga->prepare($sql);
+    $stmt->execute(array('societa' => $societa, 'anno' => $anno));
+
+    $map = array();
+    while (($row = $stmt->fetch(PDO::FETCH_NUM)) !== false) {
+        $key = (int)$row[0] . '|' . (int)$row[1];
+        if (!isset($map[$key])) {
+            $map[$key] = array(
+                'caricatore' => null,
+                'proprietario_merce' => null,
+                'merce_parts' => array(),
+            );
+        }
+
+        $c = trim((string)$row[2]);
+        if ($map[$key]['caricatore'] === null && $c !== '') {
+            $map[$key]['caricatore'] = $c;
+        }
+
+        $p = trim((string)$row[3]);
+        if ($map[$key]['proprietario_merce'] === null && $p !== '') {
+            $map[$key]['proprietario_merce'] = $p;
+        }
+
+        $label = bf_allegato_merce_label($row[4], $row[5]);
+        if ($label !== '' && !in_array($label, $map[$key]['merce_parts'], true)) {
+            $map[$key]['merce_parts'][] = $label;
+        }
+    }
+    $stmt->closeCursor();
+
+    $out = array();
+    foreach ($map as $key => $entry) {
+        $out[$key] = array(
+            'caricatore' => $entry['caricatore'],
+            'proprietario_merce' => $entry['proprietario_merce'],
+            'merce' => count($entry['merce_parts']) > 0 ? implode('; ', $entry['merce_parts']) : null,
+        );
+    }
+
+    return $out;
+}
+
+function bf_allegato_costruisci_indice_sga($pdo_sga, $societa, $anno_da, $anno_a)
+{
+    $sql_viaggi_base = "
+        SELECT
+          v.SOCIETA,
+          v.ANNO,
+          v.NUMERO,
+          v.VETTORE AS codice_vettore,
+          v.PARTENZA_DATA_ORA AS partenza_data_ora,
+          COALESCE(v.UPDATE_DATA_ORA, v.INSERT_DATA_ORA, '1900-01-01 00:00:00') AS sync_data_ora
+        FROM T2ViaggiVettori v
+        INNER JOIN T2BaseVettori t
+          ON t.CODICE = v.VETTORE
+         AND t.SOCIETA = v.SOCIETA
+        WHERE v.SOCIETA = :societa
+          AND v.ANNO = :anno
+        ORDER BY v.ANNO, v.NUMERO
+    ";
+
+    $stmt_viaggi = $pdo_sga->prepare($sql_viaggi_base);
+    $route_map = array();
+
+    for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
+        bf_allegato_log('SGA indice ANNO ' . $anno . ' | lettura viaggi/localita/allegato');
+
+        $stmt_viaggi->execute(array('societa' => $societa, 'anno' => $anno));
+        $viaggi_rows = $stmt_viaggi->fetchAll(PDO::FETCH_NUM);
+        $stmt_viaggi->closeCursor();
+
+        list($carichi_map, $scarichi_map) = bf_allegato_carica_localita_bulk($pdo_sga, $societa, $anno);
+        $allegato_map = bf_allegato_carica_allegato_bulk($pdo_sga, $societa, $anno);
+
+        $viaggi_unici = array();
+        foreach ($viaggi_rows as $row_sga) {
+            $row_anno = $row_sga[1];
+            $numero = $row_sga[2];
+            $codice_vettore = $row_sga[3];
+            $partenza_data_ora = $row_sga[4];
+            $sync_data_ora = $row_sga[5];
+
+            $viaggio_key = (int)$row_anno . '|' . (int)$numero;
+            $carico_str = '';
+            $scarico_str = '';
+            if (isset($carichi_map[$viaggio_key])) {
+                $carico_str = implode(' + ', $carichi_map[$viaggio_key]);
+            }
+            if (isset($scarichi_map[$viaggio_key])) {
+                $scarico_str = implode(' + ', $scarichi_map[$viaggio_key]);
+            }
+            if ($carico_str === '' || $scarico_str === '') {
+                continue;
+            }
+
+            $caricatore = null;
+            $proprietario_merce = null;
+            $merce = null;
+            if (isset($allegato_map[$viaggio_key])) {
+                $caricatore = $allegato_map[$viaggio_key]['caricatore'];
+                $proprietario_merce = $allegato_map[$viaggio_key]['proprietario_merce'];
+                $merce = $allegato_map[$viaggio_key]['merce'];
+            }
+
+            $route_key = bf_allegato_route_key($codice_vettore, $carico_str, $scarico_str);
+            $viaggio = array(
+                'ANNO' => $row_anno,
+                'NUMERO' => $numero,
+                'codice_vettore' => $codice_vettore,
+                'carico_str' => $carico_str,
+                'scarico_str' => $scarico_str,
+                'caricatore' => $caricatore,
+                'proprietario_merce' => $proprietario_merce,
+                'merce' => $merce,
+                'partenza_data_ora' => $partenza_data_ora,
+                'sync_data_ora' => $sync_data_ora,
+            );
+
+            if (!isset($viaggi_unici[$route_key]) || bf_allegato_viaggio_piu_recente($viaggio, $viaggi_unici[$route_key])) {
+                $viaggi_unici[$route_key] = $viaggio;
+            }
+        }
+
+        foreach ($viaggi_unici as $route_key => $viaggio) {
+            if (!isset($route_map[$route_key]) || bf_allegato_viaggio_piu_recente($viaggio, $route_map[$route_key])) {
+                $route_map[$route_key] = array(
+                    'caricatore' => $viaggio['caricatore'],
+                    'proprietario_merce' => $viaggio['proprietario_merce'],
+                    'merce' => $viaggio['merce'],
+                );
+            }
+        }
+
+        unset($viaggi_rows, $carichi_map, $scarichi_map, $allegato_map, $viaggi_unici);
+    }
+
+    return $route_map;
+}
+
+function bf_allegato_carica_tratte_da_backfill()
+{
+    $loc_carico = array();
+    $loc_scarico = array();
+
+    sc_lookup(bfLocRows, "
+        SELECT tl.tratta_id, tl.tipo_tratta, tl.localita, tl.progressivo
+        FROM tratte_localita tl
+        INNER JOIN tratte t ON t.id = tl.tratta_id
+        WHERE (
+            t.merce IS NULL OR TRIM(t.merce) = ''
+            OR t.caricatore IS NULL OR TRIM(t.caricatore) = ''
+            OR t.proprietario_merce IS NULL OR TRIM(t.proprietario_merce) = ''
+        )
+        ORDER BY tl.tratta_id, tl.tipo_tratta, tl.progressivo
+    ", 'pigliacelli');
+
+    if (!empty({bfLocRows})) {
+        foreach ({bfLocRows} as $locRow) {
+            $tratta_id_loc = (int)$locRow[0];
+            $tipo_loc = (string)$locRow[1];
+            $localita_loc = (string)$locRow[2];
+            if ($tipo_loc === 'C') {
+                if (!isset($loc_carico[$tratta_id_loc])) {
+                    $loc_carico[$tratta_id_loc] = array();
+                }
+                $loc_carico[$tratta_id_loc][] = $localita_loc;
+            } elseif ($tipo_loc === 'S') {
+                if (!isset($loc_scarico[$tratta_id_loc])) {
+                    $loc_scarico[$tratta_id_loc] = array();
+                }
+                $loc_scarico[$tratta_id_loc][] = $localita_loc;
+            }
+        }
+    }
+
+    $tratte = array();
+    sc_lookup(bfTratteRows, "
+        SELECT
+            t.id,
+            t.merce,
+            t.caricatore,
+            t.proprietario_merce,
+            s.codice_sga
+        FROM tratte t
+        INNER JOIN subvettori s ON s.id = t.subvettore_id
+        WHERE s.codice_sga IS NOT NULL
+          AND TRIM(s.codice_sga) <> ''
+          AND (
+            t.merce IS NULL OR TRIM(t.merce) = ''
+            OR t.caricatore IS NULL OR TRIM(t.caricatore) = ''
+            OR t.proprietario_merce IS NULL OR TRIM(t.proprietario_merce) = ''
+          )
+        ORDER BY t.id
+    ", 'pigliacelli');
+
+    if (!empty({bfTratteRows})) {
+        foreach ({bfTratteRows} as $trattaRow) {
+            $tratta_id = (int)$trattaRow[0];
+            $carico_str = isset($loc_carico[$tratta_id]) ? implode(' + ', $loc_carico[$tratta_id]) : '';
+            $scarico_str = isset($loc_scarico[$tratta_id]) ? implode(' + ', $loc_scarico[$tratta_id]) : '';
+            if ($carico_str === '' || $scarico_str === '') {
+                continue;
+            }
+
+            $tratte[] = array(
+                'id' => $tratta_id,
+                'merce' => $trattaRow[1],
+                'caricatore' => $trattaRow[2],
+                'proprietario_merce' => $trattaRow[3],
+                'codice_sga' => trim((string)$trattaRow[4]),
+                'carico_str' => $carico_str,
+                'scarico_str' => $scarico_str,
+            );
+        }
+    }
+
+    return $tratte;
+}
+
+function bf_allegato_aggiorna_tratta($tratta_id, $merce, $caricatore, $proprietario_merce, $dry_run)
+{
+    $sql = "
+        UPDATE tratte
+        SET merce = " . bf_allegato_testo_sql($merce) . ",
+            caricatore = " . bf_allegato_testo_sql($caricatore) . ",
+            proprietario_merce = " . bf_allegato_testo_sql($proprietario_merce) . "
+        WHERE id = " . (int)$tratta_id . "
+    ";
+
+    if ($dry_run) {
+        return true;
+    }
+
+    sc_exec_sql($sql, 'pigliacelli');
+    return true;
+}
+
+function bf_allegato_aggiorna_contratti_tratte($tratta_id, $dry_run)
+{
+    $sql = "
+        UPDATE contratti_tratte ct
+        INNER JOIN tratte t ON t.id = ct.tratta_id
+        SET
+            ct.merce = CASE
+                WHEN ct.merce IS NULL OR TRIM(ct.merce) = '' THEN t.merce
+                ELSE ct.merce
+            END,
+            ct.caricatore = CASE
+                WHEN ct.caricatore IS NULL OR TRIM(ct.caricatore) = '' THEN t.caricatore
+                ELSE ct.caricatore
+            END,
+            ct.proprietario_merce = CASE
+                WHEN ct.proprietario_merce IS NULL OR TRIM(ct.proprietario_merce) = '' THEN t.proprietario_merce
+                ELSE ct.proprietario_merce
+            END
+        WHERE ct.tratta_id = " . (int)$tratta_id . "
+    ";
+
+    if ($dry_run) {
+        return true;
+    }
+
+    sc_exec_sql($sql, 'pigliacelli');
+    return true;
+}
+
+function bf_allegato_mostra_conferma()
+{
+    echo '<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">'
+        . '<title>Backfill allegato tratte</title>'
+        . '<style>body{font-family:Arial,sans-serif;max-width:720px;margin:40px auto;padding:0 16px;color:#1a202c}'
+        . 'h1{font-size:22px}p{line-height:1.5}ul{line-height:1.6}'
+        . '.btn{display:inline-block;margin:8px 8px 0 0;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:bold}'
+        . '.go{background:#1a3a5c;color:#fff}.dry{background:#fff;color:#1a3a5c;border:1px solid #cbd5e0}'
+        . '.warn{color:#b45309}</style></head><body>';
+    echo '<h1>Backfill caricatore / merce / proprietario merce</h1>';
+    echo '<p>Compila i campi allegato mancanti sulle <strong>tratte già importate</strong>, leggendo i dati da SGA '
+        . '(stessa logica delle app <code>*_basevettori_v2</code>).</p>';
+    echo '<ul>';
+    echo '<li>Aggiorna solo campi ancora <strong>vuoti</strong> su <code>tratte</code></li>';
+    echo '<li>Propaga su <code>contratti_tratte</code> collegati (solo campi vuoti)</li>';
+    echo '<li>Match tratta ↔ SGA: <code>codice_sga + carico + scarico</code> (case-insensitive)</li>';
+    echo '</ul>';
+    echo '<p class="warn">Operazione riservata agli admin. Può richiedere diversi minuti.</p>';
+    echo '<p><a class="btn go" href="?run=1">Esegui backfill</a>';
+    echo '<a class="btn dry" href="?run=1&amp;dry_run=1">Anteprima (dry run)</a></p>';
+    echo '</body></html>';
+}
+
+@set_time_limit(0);
+@ini_set('memory_limit', '1024M');
+
+if (!bf_allegato_utente_admin()) {
+    bf_allegato_log('ACCESSO NEGATO user=' . trim((string)[usr_login]));
+    sc_error_message('Operazione consentita solo agli amministratori.');
+    return;
+}
+
+$bf_allegato_run = isset($_GET['run']) && (string)$_GET['run'] === '1';
+$bf_allegato_dry_run = isset($_GET['dry_run']) && (string)$_GET['dry_run'] === '1';
+$bf_allegato_dry_suffix = $bf_allegato_dry_run ? ' [DRY_RUN]' : '';
+
+if (!$bf_allegato_run) {
+    bf_allegato_mostra_conferma();
+    return;
+}
+
+bf_allegato_log('START user=' . trim((string)[usr_login]) . $bf_allegato_dry_suffix);
+
+$conn = bf_allegato_connetti_sga();
+if ($conn === null) {
+    return;
+}
+
+$pdo_sga = $conn['pdo'];
+$societa = $conn['societa'];
+$anno_da = $conn['anno_da'];
+$anno_a = (int)date('Y');
+if ($anno_da > $anno_a) {
+    $anno_a = $anno_da;
+}
+
+try {
+    $route_map = bf_allegato_costruisci_indice_sga($pdo_sga, $societa, $anno_da, $anno_a);
+} catch (PDOException $e) {
+    bf_allegato_log('ERRORE indice SGA: ' . $e->getMessage() . $bf_allegato_dry_suffix);
+    sc_error_message('Errore lettura SGA: ' . $e->getMessage());
+    return;
+} catch (Throwable $e) {
+    bf_allegato_log('ERRORE indice SGA: ' . $e->getMessage() . $bf_allegato_dry_suffix);
+    sc_error_message('Errore lettura SGA: ' . $e->getMessage());
+    return;
+}
+
+bf_allegato_log(
+    'Indice SGA pronto | route_keys=' . count($route_map)
+    . ' | anni=' . $anno_da . '..' . $anno_a
+    . $bf_allegato_dry_suffix
+);
+
+$tratte = bf_allegato_carica_tratte_da_backfill();
+bf_allegato_log('Tratte candidate backfill=' . count($tratte) . $bf_allegato_dry_suffix);
+
+$aggiornate = 0;
+$senza_match = 0;
+$senza_dati_sga = 0;
+$errori = 0;
+
+foreach ($tratte as $tratta) {
+    $tratta_id = (int)$tratta['id'];
+    $route_key = bf_allegato_route_key(
+        $tratta['codice_sga'],
+        $tratta['carico_str'],
+        $tratta['scarico_str']
+    );
+    $route_label = $tratta['codice_sga'] . '|' . $tratta['carico_str'] . '|' . $tratta['scarico_str'];
+
+    if (!isset($route_map[$route_key])) {
+        $senza_match++;
+        bf_allegato_log(
+            'SKIP no_match tratta=' . $tratta_id
+            . ' route=' . $route_label
+            . $bf_allegato_dry_suffix
+        );
+        continue;
+    }
+
+    $sga = $route_map[$route_key];
+    $nuova_merce = bf_allegato_vuoto($tratta['merce']) ? $sga['merce'] : $tratta['merce'];
+    $nuovo_caricatore = bf_allegato_vuoto($tratta['caricatore']) ? $sga['caricatore'] : $tratta['caricatore'];
+    $nuovo_proprietario = bf_allegato_vuoto($tratta['proprietario_merce']) ? $sga['proprietario_merce'] : $tratta['proprietario_merce'];
+
+    $ha_nuovo_dato = false;
+    if (bf_allegato_vuoto($tratta['merce']) && !bf_allegato_vuoto($nuova_merce)) {
+        $ha_nuovo_dato = true;
+    }
+    if (bf_allegato_vuoto($tratta['caricatore']) && !bf_allegato_vuoto($nuovo_caricatore)) {
+        $ha_nuovo_dato = true;
+    }
+    if (bf_allegato_vuoto($tratta['proprietario_merce']) && !bf_allegato_vuoto($nuovo_proprietario)) {
+        $ha_nuovo_dato = true;
+    }
+
+    if (!$ha_nuovo_dato) {
+        $senza_dati_sga++;
+        continue;
+    }
+
+    try {
+        bf_allegato_aggiorna_tratta(
+            $tratta_id,
+            $nuova_merce,
+            $nuovo_caricatore,
+            $nuovo_proprietario,
+            $bf_allegato_dry_run
+        );
+        bf_allegato_aggiorna_contratti_tratte($tratta_id, $bf_allegato_dry_run);
+        $aggiornate++;
+
+        bf_allegato_log(
+            'OK tratta=' . $tratta_id
+            . ' merce=' . (bf_allegato_vuoto($nuova_merce) ? '-' : substr((string)$nuova_merce, 0, 40))
+            . ' caric=' . (bf_allegato_vuoto($nuovo_caricatore) ? '-' : substr((string)$nuovo_caricatore, 0, 40))
+            . $bf_allegato_dry_suffix
+        );
+    } catch (Exception $e) {
+        $errori++;
+        bf_allegato_log('ERRORE tratta=' . $tratta_id . ' — ' . $e->getMessage() . $bf_allegato_dry_suffix);
+    } catch (Throwable $e) {
+        $errori++;
+        bf_allegato_log('ERRORE tratta=' . $tratta_id . ' — ' . $e->getMessage() . $bf_allegato_dry_suffix);
+    }
+}
+
+$riepilogo = 'END tratte_candidate=' . count($tratte)
+    . ' aggiornate=' . $aggiornate
+    . ' senza_match_sga=' . $senza_match
+    . ' senza_dati_sga=' . $senza_dati_sga
+    . ' errori=' . $errori
+    . ' route_sga=' . count($route_map)
+    . $bf_allegato_dry_suffix;
+
+bf_allegato_log($riepilogo);
+sc_log_add('EXPORT_DATA', 'Backfill allegato tratte: ' . $riepilogo);
+sc_alert($riepilogo);
