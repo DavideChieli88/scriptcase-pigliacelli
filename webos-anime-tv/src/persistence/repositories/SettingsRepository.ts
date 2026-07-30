@@ -11,7 +11,13 @@ export class SettingsRepository extends BaseRepository<AppSettings> {
 
   async getOrCreate(config: AppConfig): Promise<AppSettings> {
     const existing = await this.get(SETTINGS_ID);
-    if (existing) return existing;
+    if (existing) {
+      // Replace localhost proxy (useless on TV) with the configured LAN default.
+      if (/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/?$/i.test(existing.proxyBaseUrl)) {
+        return this.update({ proxyBaseUrl: config.proxyBaseUrl });
+      }
+      return existing;
+    }
     const created = this.stamp({
       id: SETTINGS_ID,
       preferredProviderId: config.defaultProviderId,

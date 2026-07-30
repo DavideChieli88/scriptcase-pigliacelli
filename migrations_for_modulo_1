@@ -492,3 +492,52 @@ ALTER TABLE `subvettori` ADD `wizard_complete` TINYINT(1) NULL DEFAULT '0' AFTER
 ALTER TABLE `subvettori`
     ADD COLUMN `mail_credenziali_inviata_at` DATETIME NULL DEFAULT NULL
         AFTER `wizard_complete`;
+-- Autisti/mezzi: migration_subvettori_mezzi.sql (subvettori_mezzi + subvettori_autisti_mezzi)
+
+CREATE TABLE IF NOT EXISTS `subvettori_mezzi` (
+    `id` INT(11) NOT NULL AUTO_INCREMENT,
+    `subvettore_id` INT(11) NOT NULL,
+    `targa` VARCHAR(32) NOT NULL,
+    `anno_immatricolazione` DATE DEFAULT NULL,
+    `telaio` VARCHAR(64) DEFAULT NULL,
+    `marca_veicolo` VARCHAR(128) DEFAULT NULL,
+    `tipo_veicolo` VARCHAR(128) DEFAULT NULL,
+    `scadenza_carta_circolazione` DATE DEFAULT NULL,
+    `scadenza_assicurazioni` DATE DEFAULT NULL,
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_subvettori_mezzi_subvettore` (`subvettore_id`),
+    KEY `idx_subvettori_mezzi_targa` (`subvettore_id`, `targa`),
+    CONSTRAINT `subvettori_mezzi_subvettori_fk`
+        FOREIGN KEY (`subvettore_id`) REFERENCES `subvettori` (`id`)
+        ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `subvettori_autisti_mezzi` (
+    `id` INT(11) NOT NULL AUTO_INCREMENT,
+    `subvettore_id` INT(11) NOT NULL,
+    `autista_id` INT(11) NOT NULL,
+    `mezzo_id` INT(11) NOT NULL,
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_autista_mezzo` (`autista_id`, `mezzo_id`),
+    KEY `idx_sam_subvettore` (`subvettore_id`),
+    KEY `idx_sam_mezzo` (`mezzo_id`),
+    CONSTRAINT `sam_subvettori_fk`
+        FOREIGN KEY (`subvettore_id`) REFERENCES `subvettori` (`id`)
+        ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT `sam_autisti_fk`
+        FOREIGN KEY (`autista_id`) REFERENCES `subvettori_autisti` (`id`)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT `sam_mezzi_fk`
+        FOREIGN KEY (`mezzo_id`) REFERENCES `subvettori_mezzi` (`id`)
+        ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- documenti collegati ad autista / mezzo
+ALTER TABLE `documenti`
+    ADD COLUMN `subvettore_autista_id` INT(11) NULL AFTER `subvettore_id`,
+    ADD COLUMN `subvettore_mezzo_id` INT(11) NULL AFTER `subvettore_autista_id`,
+    ADD KEY `idx_documenti_autista` (`subvettore_autista_id`),
+    ADD KEY `idx_documenti_mezzo` (`subvettore_mezzo_id`);

@@ -19,7 +19,8 @@ export const defaultConfig: AppConfig = {
   appName: 'Anime TV',
   version: '0.1.0',
   defaultProviderId: 'mock',
-  proxyBaseUrl: import.meta.env.DEV ? '/proxy' : 'http://127.0.0.1:8787',
+  // webOS TV cannot reach the PC via 127.0.0.1 — use the PC LAN IP.
+  proxyBaseUrl: import.meta.env.DEV ? '/proxy' : 'http://192.168.1.8:8787',
   httpTimeoutMs: 12000,
   httpMaxRetries: 2,
   httpMinIntervalMs: 350,
@@ -28,7 +29,7 @@ export const defaultConfig: AppConfig = {
   cacheTtlMs: 1000 * 60 * 60 * 6,
   cacheMaxEntries: 400,
   enableAnimeSaturn: true,
-  enableAnimeUnity: false,
+  enableAnimeUnity: true,
   sampleVideoUrl: '/samples/sample.mp4',
 };
 

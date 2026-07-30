@@ -42,7 +42,7 @@ export async function renderSettingsPage(ctx: AppContext, root: HTMLElement): Pr
 
     items.push(
       row('Provider preferito (Home/Cerca)', preferredLabel, 'set-provider', async () => {
-        const enabled = providers.filter((p) => p.enabled && p.id !== 'animeunity');
+        const enabled = providers.filter((p) => p.enabled);
         const idx = enabled.findIndex((p) => p.id === settings.preferredProviderId);
         const next = enabled[(idx + 1) % Math.max(enabled.length, 1)];
         if (next) await ctx.persistence.settings.update({ preferredProviderId: next.id });
@@ -89,8 +89,11 @@ export async function renderSettingsPage(ctx: AppContext, root: HTMLElement): Pr
     );
 
     items.push(
-      row('Proxy URL', settings.proxyBaseUrl, 'set-proxy', async () => {
-        const next = window.prompt('Proxy base URL (es. http://192.168.1.10:8787)', settings.proxyBaseUrl);
+      row('Proxy URL (AnimeSaturn)', settings.proxyBaseUrl, 'set-proxy', async () => {
+        const next = window.prompt(
+          'Proxy base URL per AnimeSaturn (AnimeUnity non lo usa). Es. http://192.168.1.8:8787',
+          settings.proxyBaseUrl,
+        );
         if (next != null && next.trim()) {
           await ctx.persistence.settings.update({ proxyBaseUrl: next.trim() });
           ctx.http.setProxyBaseUrl(next.trim());
@@ -118,7 +121,6 @@ export async function renderSettingsPage(ctx: AppContext, root: HTMLElement): Pr
     for (const p of providers) {
       items.push(
         row(`Provider ${p.name}`, p.enabled ? 'Abilitato' : 'Disabilitato', `set-p-${p.id}`, async () => {
-          if (p.id === 'animeunity') return;
           p.enabled = !p.enabled;
           await ctx.persistence.providerState.setEnabled(p.id, p.enabled);
           await refresh();

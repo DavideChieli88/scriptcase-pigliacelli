@@ -7,10 +7,9 @@
 --            operatori sec_users (subvettore_id IS NULL), sec_settings (salvo sync_date)
 --
 -- Dopo questo script, ordine job consigliato:
---   1) insert_new_subvectors_basevettori
---   2) insert_subvectors_in_sec_users_basevettori
---   3) insert_new_trips_optimized_basevettori
---   4) check_new_trips_nuovo_contratto_basevettori (contratti incrementali)
+--   1) upsert_subvectors_basevettori (+ bootstrap documenti preset)
+--   2) send_credenziali_subvettori_batch
+--   3) insert_new_trips_optimized_basevettori / check_new_trips_*
 --
 -- Opzionale: cancellare PDF orfani nella cartella sec_settings.contratti_base_dir
 -- =============================================================================
@@ -18,34 +17,35 @@
 -- Verifica ambiente (opzionale: decommentare e adattare)
 -- SELECT DATABASE() AS db_corrente;
 
+-- Nota phpMyAdmin / client SQL:
+-- Esegui QUESTO blocco (da START TRANSACTION a COMMIT) in un'unica selezione.
+-- Non usare TRUNCATE sulle tabelle referenziate da FK: MySQL alza #1701
+-- anche se la tabella figlia è vuota. Qui usiamo DELETE in ordine figlio→padre
+-- + FOREIGN_KEY_CHECKS=0 come rete di sicurezza nella stessa sessione.
+
 START TRANSACTION;
 
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- ---------------------------------------------------------------------------
--- 1) Documenti collegati a utenze subvettore (FK documenti.login -> sec_users.login)
+-- 1) Documenti (UAT: azzera tutto) — possono FK su subvettori/autisti/mezzi
 -- ---------------------------------------------------------------------------
-DELETE d
-FROM documenti d
-INNER JOIN sec_users su ON su.login = d.login
-WHERE su.subvettore_id IS NOT NULL;
-
--- Se in UAT vuoi azzerare TUTTI i documenti (anche operatori), decommentare:
--- TRUNCATE TABLE documenti;
+DELETE FROM documenti;
 
 -- ---------------------------------------------------------------------------
--- 2) Contratti e tratte (ordine figli -> genitori)
+-- 2) Join / figlie prima, poi genitori (evita #1701 / #1451)
 -- ---------------------------------------------------------------------------
-TRUNCATE TABLE contratti_tratte;
-TRUNCATE TABLE tratte_localita;
-TRUNCATE TABLE subvettori_autisti;
-TRUNCATE TABLE subvettori_contratti;
-TRUNCATE TABLE contratti;
-TRUNCATE TABLE tratte;
-TRUNCATE TABLE subvettori;
+DELETE FROM subvettori_autisti_mezzi;   -- FK → autisti, mezzi
+DELETE FROM subvettori_mezzi;
+DELETE FROM subvettori_autisti;        -- FK → subvettori_contratti / subvettori
+DELETE FROM contratti_tratte;          -- FK → contratti, tratte
+DELETE FROM tratte_localita;           -- FK → tratte
+DELETE FROM subvettori_contratti;      -- FK → contratti, subvettori
+DELETE FROM contratti;
+DELETE FROM tratte;
 
 -- ---------------------------------------------------------------------------
--- 3) Utenze subvettore (gruppi prima, poi sec_users)
+-- 3) Utenze subvettore PRIMA di subvettori (sec_users.subvettore_id → subvettori)
 -- ---------------------------------------------------------------------------
 DELETE sug
 FROM sec_users_groups sug
@@ -55,12 +55,26 @@ WHERE su.subvettore_id IS NOT NULL;
 DELETE FROM sec_users
 WHERE subvettore_id IS NOT NULL;
 
+DELETE FROM subvettori;
+
+-- ---------------------------------------------------------------------------
+-- 4) Reset AUTO_INCREMENT (equivalente pratico al TRUNCATE)
+-- ---------------------------------------------------------------------------
+ALTER TABLE documenti AUTO_INCREMENT = 1;
+ALTER TABLE subvettori_autisti_mezzi AUTO_INCREMENT = 1;
+ALTER TABLE subvettori_mezzi AUTO_INCREMENT = 1;
+ALTER TABLE subvettori_autisti AUTO_INCREMENT = 1;
+ALTER TABLE contratti_tratte AUTO_INCREMENT = 1;
+ALTER TABLE tratte_localita AUTO_INCREMENT = 1;
+ALTER TABLE subvettori_contratti AUTO_INCREMENT = 1;
+ALTER TABLE contratti AUTO_INCREMENT = 1;
+ALTER TABLE tratte AUTO_INCREMENT = 1;
+ALTER TABLE subvettori AUTO_INCREMENT = 1;
+
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- ---------------------------------------------------------------------------
--- 4) sync_date — reset per import storico + job incrementale pulito
---    insert_new_trips_optimized_basevettori lo aggiornerà al max timestamp
---    dei viaggi importati (solo se > di questo valore).
+-- 5) sync_date — reset per import storico + job incrementale pulito
 -- ---------------------------------------------------------------------------
 UPDATE sec_settings
 SET set_value = '1900-01-01 00:00:00'
@@ -69,7 +83,7 @@ WHERE set_name = 'sync_date';
 COMMIT;
 
 -- ---------------------------------------------------------------------------
--- 5) Verifica post-bonifica
+-- 6) Verifica post-bonifica
 -- ---------------------------------------------------------------------------
 SELECT 'subvettori' AS tabella, COUNT(*) AS n FROM subvettori
 UNION ALL SELECT 'tratte', COUNT(*) FROM tratte
@@ -78,9 +92,13 @@ UNION ALL SELECT 'contratti', COUNT(*) FROM contratti
 UNION ALL SELECT 'subvettori_contratti', COUNT(*) FROM subvettori_contratti
 UNION ALL SELECT 'contratti_tratte', COUNT(*) FROM contratti_tratte
 UNION ALL SELECT 'subvettori_autisti', COUNT(*) FROM subvettori_autisti
+UNION ALL SELECT 'subvettori_mezzi', COUNT(*) FROM subvettori_mezzi
+UNION ALL SELECT 'subvettori_autisti_mezzi', COUNT(*) FROM subvettori_autisti_mezzi
 UNION ALL SELECT 'sec_users_sub', COUNT(*) FROM sec_users WHERE subvettore_id IS NOT NULL
-UNION ALL SELECT 'documenti_sub', COUNT(*) FROM documenti d
-    INNER JOIN sec_users su ON su.login = d.login WHERE su.subvettore_id IS NOT NULL;
+UNION ALL SELECT 'documenti_sub', COUNT(*) FROM documenti
+    WHERE subvettore_id IS NOT NULL
+       OR subvettore_autista_id IS NOT NULL
+       OR subvettore_mezzo_id IS NOT NULL;
 
 SELECT set_name, set_value
 FROM sec_settings
@@ -88,7 +106,7 @@ WHERE set_name IN ('sync_date', 'export_viaggi_anno', 'export_viaggi_societa');
 
 
 -- =============================================================================
--- 6) Bonifica chirurgica: tratte/contratti con importo non valido (tariffa/totale <= 0)
+-- 7) Bonifica chirurgica: tratte/contratti con importo non valido (tariffa/totale <= 0)
 --    Allineata a importo_unitario_valido() del job (importo > 0).
 --    NON tocca contratti firmati (firmato_il valorizzato).
 --    Eseguire su UAT dopo dump/backup; verificare SELECT pre/post, poi COMMIT.

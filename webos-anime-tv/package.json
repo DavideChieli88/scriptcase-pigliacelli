@@ -11,7 +11,9 @@
     "proxy": "node tools/cors-proxy/server.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "package:webos": "npm run build && ares-package dist -o release"
+    "package:webos": "npm run build && ares-package.cmd --no-minify dist -o release",
+    "install:webos": "ares-install.cmd -d lg-tv release\\*.ipk && ares-launch.cmd -d lg-tv com.personal.webanimetv",
+    "deploy": "npm run package:webos && npm run install:webos"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
