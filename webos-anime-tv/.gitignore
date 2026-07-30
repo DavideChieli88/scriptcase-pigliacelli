@@ -1,0 +1,9 @@
+node_modules
+dist
+release
+*.ipk
+.DS_Store
+*.local
+.vscode
+.idea
+coverage

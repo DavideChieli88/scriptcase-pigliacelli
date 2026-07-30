@@ -1,0 +1,46 @@
+:root {
+  --color-bg: #0b0d10;
+  --color-bg-elevated: #14181f;
+  --color-bg-rail: #10141a;
+  --color-surface: #1a212b;
+  --color-border: #2a3544;
+  --color-text: #f2f5f8;
+  --color-text-muted: #9aa8b8;
+  --color-accent: #3ecf8e;
+  --color-accent-soft: rgba(62, 207, 142, 0.18);
+  --color-danger: #ff6b6b;
+  --color-warning: #f0c14b;
+  --color-focus: #ffffff;
+  --color-hero-scrim: linear-gradient(90deg, rgba(11, 13, 16, 0.92) 0%, rgba(11, 13, 16, 0.55) 48%, rgba(11, 13, 16, 0.15) 100%);
+  --color-hero-bottom: linear-gradient(180deg, transparent 40%, rgba(11, 13, 16, 0.95) 100%);
+
+  --font-display: "Segoe UI", "Trebuchet MS", sans-serif;
+  --font-body: "Segoe UI", "Trebuchet MS", sans-serif;
+
+  --text-hero: 56px;
+  --text-title: 40px;
+  --text-section: 28px;
+  --text-card: 22px;
+  --text-body: 22px;
+  --text-meta: 18px;
+  --text-hint: 16px;
+
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --space-5: 48px;
+  --space-6: 64px;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  --focus-ring: 0 0 0 4px var(--color-focus), 0 0 0 8px var(--color-accent);
+  --safe-x: 5vw;
+  --safe-y: 4vh;
+  --nav-height: 72px;
+  --card-w: 220px;
+  --card-h: 320px;
+  --rail-gap: 20px;
+}

@@ -1,0 +1,26 @@
+{
+  "name": "webos-anime-tv",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Personal anime aggregator for LG webOS TV",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build && node scripts/copy-webos-assets.mjs",
+    "preview": "vite preview",
+    "proxy": "node tools/cors-proxy/server.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "package:webos": "npm run build && ares-package dist -o release"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "jsdom": "^30.0.1",
+    "typescript": "~5.7.2",
+    "vite": "^6.0.7",
+    "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "hls.js": "^1.6.16"
+  }
+}
