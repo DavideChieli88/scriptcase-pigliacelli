@@ -2,12 +2,18 @@ import type { FocusManager } from '../../core/focus/FocusManager';
 import type { RouteName } from '../../core/navigation/Router';
 
 const NAV: { name: RouteName; label: string; focusId: string }[] = [
-  { name: 'home', label: 'Home', focusId: 'nav-home' },
-  { name: 'search', label: 'Cerca', focusId: 'nav-search' },
+  { name: 'home', label: 'Anime', focusId: 'nav-home' },
+  { name: 'movies', label: 'Film', focusId: 'nav-movies' },
+  { name: 'search', label: 'Cerca anime', focusId: 'nav-search' },
+  { name: 'movies-search', label: 'Cerca film', focusId: 'nav-movies-search' },
   { name: 'watchlist', label: 'Preferiti', focusId: 'nav-watchlist' },
   { name: 'history', label: 'Cronologia', focusId: 'nav-history' },
   { name: 'settings', label: 'Impostazioni', focusId: 'nav-settings' },
 ];
+
+function isMoviesRoute(name: RouteName): boolean {
+  return name === 'movies' || name === 'movies-search';
+}
 
 export function createTopNav(
   active: RouteName,
@@ -15,8 +21,8 @@ export function createTopNav(
   onNavigate: (name: RouteName) => void,
 ): HTMLElement {
   const nav = document.createElement('nav');
-  nav.className = 'top-nav';
-  nav.innerHTML = `<div class="brand">ANIME TV</div>`;
+  nav.className = `top-nav${isMoviesRoute(active) ? ' top-nav--movies' : ''}`;
+  nav.innerHTML = `<div class="brand">${isMoviesRoute(active) ? 'FILM TV' : 'ANIME TV'}</div>`;
 
   for (const item of NAV) {
     const btn = document.createElement('button');

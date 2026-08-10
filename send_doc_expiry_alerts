@@ -1,0 +1,653 @@
+/**
+ * Scriptcase scheduled blank: send_doc_expiry_alerts
+ *
+ * Job giornaliero NUOVO (non sostituisce send_expired_doc_alert finché non
+ * si spegne lo schedule legacy).
+ * Alert calendariati da tipi_documento_alert.
+ *
+ * Match:
+ *   days_before = N  → delta == N
+ *   days_before = 0  → delta == 0  (solo giorno scadenza, no catch-up)
+ *   fixed_md         → oggi MM-DD == regola
+ *
+ * Destinatari:
+ *   dest_scope = sub  → solo subvettore (preavvisi)
+ *   dest_scope = both → subvettore + operatori group 1/3 (giorno scadenza)
+ *   dest_scope = ops  → solo operatori
+ *
+ * Nessun documenti_alert_log: 1 run/giorno + match esatto.
+ * Prerequisito: migration_documenti_alert_scadenze.sql
+ */
+
+$check_sql = "SELECT set_name, set_value FROM sec_settings";
+sc_lookup(rs_smtp_dea, $check_sql, 'pigliacelli');
+
+if (isset({rs_smtp_dea[0][0]})) {
+    foreach ({rs_smtp_dea} as $f) {
+        $_SESSION['sett_' . $f[0]] = $f[1];
+    }
+}
+
+if (isset($_SESSION['sett_smtp_api']) && $_SESSION['sett_smtp_api'] == 'custom') {
+    [sett_smtp] = array(
+        'settings' => array(
+            'gateway'       => 'smtp',
+            'smtp_server'   => $_SESSION['sett_smtp_server'],
+            'smtp_protocol' => $_SESSION['sett_smtp_security'],
+            'smtp_port'     => $_SESSION['sett_smtp_port'],
+            'smtp_user'     => $_SESSION['sett_smtp_user'],
+            'smtp_password' => $_SESSION['sett_smtp_pass'],
+            'from_email'    => $_SESSION['sett_smtp_from_email'],
+            'from_name'     => $_SESSION['sett_smtp_from_name'],
+        )
+    );
+} else {
+    [sett_smtp] = array('profile' => isset($_SESSION['sett_smtp_api']) ? $_SESSION['sett_smtp_api'] : '');
+}
+
+if (!function_exists('dea_email_pulisci')) {
+    function dea_email_pulisci($email)
+    {
+        $email = (string)$email;
+        if ($email === '') {
+            return '';
+        }
+        static $utf8_invisibili = array(
+            "\xEF\xBB\xBF", "\xE2\x80\x8B", "\xE2\x80\x8C", "\xE2\x80\x8D",
+            "\xE2\x81\xA0", "\xC2\xAD", "\xC2\xA0", "\xE2\x80\x89",
+            "\xE2\x80\x8E", "\xE2\x80\x8F",
+        );
+        do {
+            $prev = $email;
+            $email = str_replace($utf8_invisibili, '', $email);
+            $email = trim($email);
+        } while ($email !== $prev && $email !== '');
+        return $email;
+    }
+}
+
+if (!function_exists('dea_email_valida')) {
+    function dea_email_valida($email)
+    {
+        $email = dea_email_pulisci($email);
+        if ($email === '') {
+            return false;
+        }
+        if (strpos($email, ';') !== false || strpos($email, ',') !== false || strpos($email, ' ') !== false) {
+            return false;
+        }
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+}
+
+if (!function_exists('dea_resolve_operator_email')) {
+    function dea_resolve_operator_email($loginRaw, $emailRaw)
+    {
+        foreach (array($emailRaw, $loginRaw) as $cand) {
+            $clean = strtolower(dea_email_pulisci($cand));
+            if (dea_email_valida($clean)) {
+                return $clean;
+            }
+        }
+        return '';
+    }
+}
+
+if (!function_exists('dea_resolve_email')) {
+    function dea_resolve_email($login, $emailSub)
+    {
+        $emailSub = dea_email_pulisci($emailSub);
+        if (dea_email_valida($emailSub)) {
+            return strtolower($emailSub);
+        }
+        $login = dea_email_pulisci($login);
+        if ($login === '') {
+            return '';
+        }
+        $loginSql = str_replace("'", "''", $login);
+        sc_lookup(rsDeaUserMail, "
+            SELECT COALESCE(email, '')
+            FROM sec_users
+            WHERE login = '$loginSql'
+            LIMIT 1
+        ", 'pigliacelli');
+        if (!empty({rsDeaUserMail[0][0]}) && dea_email_valida({rsDeaUserMail[0][0]})) {
+            return trim((string){rsDeaUserMail[0][0]});
+        }
+        if (dea_email_valida($login)) {
+            return $login;
+        }
+        return '';
+    }
+}
+
+if (!function_exists('dea_load_operatori')) {
+    function dea_load_operatori()
+    {
+        $destinatari = array();
+        $logins = array();
+        $emailPlaceholder = array('admin@admin.com', 'admin@localhost', 'admin@example.com');
+
+        sc_lookup(rsDeaOps, "
+            SELECT DISTINCT su.login, su.email
+            FROM sec_users su
+            INNER JOIN sec_users_groups sug ON sug.login = su.login
+            WHERE su.active = 'Y'
+              AND su.login IS NOT NULL AND TRIM(su.login) <> ''
+              AND sug.group_id IN (1, 3)
+        ", 'pigliacelli');
+
+        if (!empty({rsDeaOps})) {
+            foreach ({rsDeaOps} as $row) {
+                $loginOpRaw = trim((string)$row[0]);
+                $loginOp = dea_email_pulisci($loginOpRaw);
+                if ($loginOp === '' || strcasecmp($loginOp, 'Guest') === 0) {
+                    continue;
+                }
+                $emailDest = dea_resolve_operator_email($loginOpRaw, isset($row[1]) ? $row[1] : '');
+                if ($emailDest === '' || in_array($emailDest, $emailPlaceholder, true)) {
+                    continue;
+                }
+                $destinatari[] = $emailDest;
+                $logins[] = $loginOpRaw;
+            }
+        }
+        return array(
+            'emails' => array_values(array_unique($destinatari)),
+            'logins' => array_values(array_unique($logins)),
+        );
+    }
+}
+
+if (!function_exists('dea_mail_setting')) {
+    function dea_mail_setting($name, $default = '')
+    {
+        $key = 'sett_' . $name;
+        if (isset($_SESSION[$key])) {
+            return (string)$_SESSION[$key];
+        }
+        $safeName = str_replace("'", "''", trim((string)$name));
+        sc_lookup(rsDeaMailSet, "SELECT set_value FROM sec_settings WHERE set_name = '$safeName' LIMIT 1", 'pigliacelli');
+        if (isset({rsDeaMailSet[0][0]})) {
+            return (string){rsDeaMailSet[0][0]};
+        }
+        return $default;
+    }
+}
+
+if (!function_exists('dea_mail_logo_read_embed')) {
+    function dea_mail_logo_read_embed($anchorFile = null)
+    {
+        $rel = '_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png';
+        $dir = realpath(dirname($anchorFile ?: __FILE__));
+        for ($i = 0; $i < 12 && $dir; $i++) {
+            $try = $dir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel);
+            if (is_readable($try)) {
+                $bin = @file_get_contents($try);
+                if ($bin !== false && $bin !== '' && strlen($bin) < 500000) {
+                    return 'data:image/png;base64,' . base64_encode($bin);
+                }
+            }
+            $p = dirname($dir);
+            if ($p === $dir) {
+                break;
+            }
+            $dir = $p;
+        }
+        return '';
+    }
+}
+
+if (!function_exists('dea_mail_logo_src')) {
+    function dea_mail_logo_src()
+    {
+        $embed = dea_mail_logo_read_embed();
+        if ($embed !== '') {
+            return $embed;
+        }
+        $base = rtrim(trim(dea_mail_setting('mail_base_url', '')), '/');
+        if ($base !== '' && preg_match('#^https?://#i', $base) === 1) {
+            return htmlspecialchars(
+                $base . '/_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png',
+                ENT_QUOTES,
+                'UTF-8'
+            );
+        }
+        return '';
+    }
+}
+
+if (!function_exists('dea_mail_layout')) {
+    function dea_mail_layout($title, $innerHtml, $mailLogoUrl)
+    {
+        $t = htmlspecialchars((string)$title, ENT_QUOTES, 'UTF-8');
+        $logoTd = '';
+        if ((string)$mailLogoUrl !== '') {
+            $logoTd = '<td align="right" valign="middle" style="width:148px;padding-left:16px;">'
+                . '<img src="' . (string)$mailLogoUrl . '" alt="Pigliacelli" width="140" '
+                . 'style="display:block;max-width:140px;width:140px;height:auto;border:0;" />'
+                . '</td>';
+        }
+        return '<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">'
+            . '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            . '<title>' . $t . '</title></head>'
+            . '<body style="margin:0;padding:0;background:#eef1f4;">'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef1f4;">'
+            . '<tr><td align="center" style="padding:32px 16px;">'
+            . '<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" '
+            . 'style="max-width:600px;width:100%;background:#fff;border-radius:12px;border:1px solid #dde1e6;">'
+            . '<tr><td style="padding:22px 28px 18px;border-bottom:1px solid #e8ebef;background:#fafbfc;">'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
+            . '<td valign="middle" style="font-family:Arial,Helvetica,sans-serif;font-size:19px;font-weight:bold;color:#1a3a5c;line-height:1.3;">' . $t . '</td>'
+            . $logoTd . '</tr></table></td></tr>'
+            . '<tr><td style="padding:26px 28px 22px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#2d3748;">'
+            . $innerHtml . '</td></tr>'
+            . '<tr><td style="padding:14px 28px;background:#f4f6f8;border-top:1px solid #e8ebef;'
+            . 'font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#718096;">'
+            . 'Messaggio automatico &mdash; non rispondere.</td></tr>'
+            . '</table></td></tr></table></body></html>';
+    }
+}
+
+if (!function_exists('dea_mail_info_box')) {
+    function dea_mail_info_box($rowsHtml)
+    {
+        return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+            . 'style="margin:16px 0;background:#f7f9fb;border:1px solid #e2e8f0;border-radius:8px;">'
+            . '<tr><td style="padding:14px 18px;font-size:14px;line-height:1.7;color:#2d3748;">'
+            . $rowsHtml . '</td></tr></table>';
+    }
+}
+
+if (!function_exists('dea_mail_detail_line')) {
+    function dea_mail_detail_line($label, $value)
+    {
+        return '<strong style="color:#1a3a5c;">'
+            . htmlspecialchars((string)$label, ENT_QUOTES, 'UTF-8') . ':</strong> '
+            . htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8') . '<br>';
+    }
+}
+
+if (!function_exists('dea_mail_btn')) {
+    function dea_mail_btn($href, $label)
+    {
+        $href = trim((string)$href);
+        if ($href === '') {
+            return '';
+        }
+        $safeHref = htmlspecialchars($href, ENT_QUOTES, 'UTF-8');
+        $safeLabel = htmlspecialchars((string)$label, ENT_QUOTES, 'UTF-8');
+        return '<p style="margin:24px 0 8px;text-align:center;">'
+            . '<a href="' . $safeHref . '" style="display:inline-block;padding:12px 26px;'
+            . 'background:#1a3a5c;color:#ffffff;text-decoration:none;border-radius:8px;'
+            . 'font-weight:bold;font-size:15px;">' . $safeLabel . '</a></p>';
+    }
+}
+
+if (!function_exists('dea_build_mails')) {
+    /**
+     * @param int $daysBefore  null per fixed; 0 = scaduto oggi/passato; >0 = in scadenza
+     */
+    function dea_build_mails(
+        $documento_id,
+        $nome_documento,
+        $data_scadenza_it,
+        $subvettore_label,
+        $ragione_label,
+        $loginUrl,
+        $daysBefore,
+        $isFixed,
+        $fixedMd
+    ) {
+        $mailLogoUrl = dea_mail_logo_src();
+        $ragione = trim((string)$ragione_label);
+        $salutoSub = $ragione !== '' && $ragione !== 'n/d' ? 'Gentile ' . $ragione : 'Gentile subvettore';
+        $safeSalutoSub = htmlspecialchars($salutoSub, ENT_QUOTES, 'UTF-8');
+        $subEtichetta = ($ragione !== '' && $ragione !== 'n/d')
+            ? $ragione . ' (ID ' . $subvettore_label . ')'
+            : 'ID ' . $subvettore_label;
+
+        $isExpiryDay = (!$isFixed && (int)$daysBefore === 0)
+            || ($isFixed && $fixedMd !== '' && substr($fixedMd, -2) === date('d') && (int)$daysBefore === 0);
+
+        if ($isFixed && (int)$daysBefore !== 0) {
+            // fixed pre: treat as reminder
+            $isExpiryDay = false;
+        }
+        if ($isFixed) {
+            // 01-31 = expiry day for Albo
+            $isExpiryDay = ($fixedMd === '01-31');
+        }
+
+        if ($isExpiryDay) {
+            $title = 'Documento scaduto';
+            $whenLabel = 'Scaduto il';
+            $whenVal = $data_scadenza_it;
+            $subjectSub = 'Documento scaduto — ' . $nome_documento . ' (#' . (int)$documento_id . ')';
+            $introSub = 'il seguente documento è scaduto. '
+                . 'La preghiamo di accedere alla sua <strong>area riservata</strong> per caricare una versione aggiornata.';
+            $introOp = 'il documento del subvettore <strong>'
+                . htmlspecialchars($subEtichetta, ENT_QUOTES, 'UTF-8')
+                . '</strong> è scaduto. Verificare in griglia documenti.';
+            $textWhen = "Scaduto il: $data_scadenza_it";
+        } else {
+            $gg = (int)$daysBefore;
+            $title = 'Documento in scadenza';
+            $whenLabel = 'Scade il';
+            $whenVal = $data_scadenza_it;
+            if ($isFixed) {
+                $subjectSub = 'Documento in scadenza — ' . $nome_documento . ' (#' . (int)$documento_id . ')';
+                $introSub = 'le ricordiamo che il seguente documento è in scadenza. '
+                    . 'Acceda alla <strong>area riservata</strong> per aggiornarlo per tempo.';
+                $textWhen = "Scade il: $data_scadenza_it (promemoria calendario)";
+            } else {
+                $subjectSub = 'Documento in scadenza tra ' . $gg . ' giorni — '
+                    . $nome_documento . ' (#' . (int)$documento_id . ')';
+                $introSub = 'il seguente documento scade tra <strong>' . $gg . ' giorni</strong>. '
+                    . 'Acceda alla <strong>area riservata</strong> per aggiornarlo.';
+                $textWhen = "Scade il: $data_scadenza_it (tra $gg giorni)";
+            }
+            $introOp = 'il documento del subvettore <strong>'
+                . htmlspecialchars($subEtichetta, ENT_QUOTES, 'UTF-8')
+                . '</strong> è in scadenza. Verificare in griglia documenti.';
+        }
+
+        $subjectOp = $subjectSub;
+
+        $textSub = $salutoSub . ",\n\n"
+            . strip_tags(str_replace(array('<strong>', '</strong>'), '', $introSub)) . "\n\n"
+            . "Tipo documento: $nome_documento\n"
+            . "Riferimento: #" . (int)$documento_id . "\n"
+            . $textWhen . "\n\n"
+            . ($loginUrl !== '' ? "Area riservata:\n$loginUrl\n\n" : '')
+            . "Messaggio automatico — non rispondere.";
+
+        $textOp = "Gentile operatore,\n\n"
+            . "Tipo documento: $nome_documento\n"
+            . "Riferimento: #" . (int)$documento_id . "\n"
+            . "Subvettore: $subEtichetta\n"
+            . $textWhen . "\n\n"
+            . ($loginUrl !== '' ? "Area gestione:\n$loginUrl\n\n" : '')
+            . "Messaggio automatico — non rispondere.";
+
+        $infoSub = dea_mail_detail_line('Tipo documento', $nome_documento)
+            . dea_mail_detail_line('Riferimento', '#' . (int)$documento_id)
+            . dea_mail_detail_line($whenLabel, $whenVal);
+
+        $innerSub = '<p style="margin:0 0 12px;">' . $safeSalutoSub . ',</p>'
+            . '<p style="margin:0 0 12px;">' . $introSub . '</p>'
+            . dea_mail_info_box($infoSub)
+            . dea_mail_btn($loginUrl, 'Accedi all\'area riservata');
+
+        $infoOp = dea_mail_detail_line('Tipo documento', $nome_documento)
+            . dea_mail_detail_line('Riferimento', '#' . (int)$documento_id)
+            . dea_mail_detail_line('Subvettore', $subEtichetta)
+            . dea_mail_detail_line($whenLabel, $whenVal);
+
+        $innerOp = '<p style="margin:0 0 12px;">Gentile operatore,</p>'
+            . '<p style="margin:0 0 12px;">' . $introOp . '</p>'
+            . dea_mail_info_box($infoOp)
+            . dea_mail_btn($loginUrl, 'Accedi all\'area di gestione');
+
+        return array(
+            'htmlSub'    => dea_mail_layout($title, $innerSub, $mailLogoUrl),
+            'textSub'    => $textSub,
+            'htmlOp'     => dea_mail_layout($title, $innerOp, $mailLogoUrl),
+            'textOp'     => $textOp,
+            'subjectSub' => $subjectSub,
+            'subjectOp'  => $subjectOp,
+            'title'      => $title,
+        );
+    }
+}
+
+// ---- main ----
+
+$loginUrl = isset($_SESSION['sett_login_url']) ? trim((string)$_SESSION['sett_login_url']) : '';
+if ($loginUrl === '') {
+    $loginUrl = rtrim(trim(dea_mail_setting('login_url', '')), '/');
+}
+
+$oggi = date('Y-m-d');
+$oggiMd = date('m-d');
+$notifyExpire = date('Y-m-d H:i:s', strtotime('+30 days'));
+$notifyFrom = 'admin';
+$notifyProfile = 'Pigliacelli_Notifications';
+
+sc_log_add('MAIL_DOCS_ALERT', 'START send_doc_expiry_alerts oggi=' . $oggi);
+
+$operatori = dea_load_operatori();
+$operatorEmails = $operatori['emails'];
+$operatorLogins = $operatori['logins'];
+
+// Carica regole attive
+$rulesByTipo = array();
+sc_lookup(rsDeaRules, "
+    SELECT id, tipo_documento_id, rule_type, days_before, fixed_md, dest_scope
+    FROM tipi_documento_alert
+    WHERE active = 1
+    ORDER BY tipo_documento_id, id
+", 'pigliacelli');
+
+if (!empty({rsDeaRules})) {
+    foreach ({rsDeaRules} as $r) {
+        $tid = (int)$r[1];
+        if (!isset($rulesByTipo[$tid])) {
+            $rulesByTipo[$tid] = array();
+        }
+        $rulesByTipo[$tid][] = array(
+            'id'          => (int)$r[0],
+            'rule_type'   => (string)$r[2],
+            'days_before' => $r[3] === null || $r[3] === '' ? null : (int)$r[3],
+            'fixed_md'    => $r[4] !== null ? (string)$r[4] : '',
+            'dest_scope'  => (string)$r[5],
+        );
+    }
+}
+
+if (empty($rulesByTipo)) {
+    sc_log_add('MAIL_DOCS_ALERT', 'Nessuna regola in tipi_documento_alert — END');
+    return;
+}
+
+$sql = "
+    SELECT
+        d.id,
+        d.tipo_documento_id,
+        td.nome,
+        d.data_scadenza,
+        d.login,
+        d.subvettore_id,
+        COALESCE(s.login_subvettore, '') AS email_sub,
+        COALESCE(s.ragione_sociale, '') AS ragione_sociale
+    FROM documenti d
+    INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+    LEFT JOIN subvettori s ON s.id = d.subvettore_id
+    WHERE d.data_scadenza IS NOT NULL
+      AND d.file IS NOT NULL AND TRIM(d.file) <> ''
+      AND d.stato_documento_id IN (2, 3)
+      AND d.tipo_documento_id IN (
+          SELECT DISTINCT tipo_documento_id FROM tipi_documento_alert WHERE active = 1
+      )
+    ORDER BY d.data_scadenza, d.id
+";
+
+sc_select(dsDea, $sql, 'pigliacelli');
+
+$statLetti = 0;
+$statMatch = 0;
+$statMailSub = 0;
+$statMailOp = 0;
+$statNotifSub = 0;
+$statNotifOp = 0;
+
+if ({dsDea} === false) {
+    sc_log_add('MAIL_DOCS_ALERT', 'ERRORE query documenti');
+} else {
+    while (!{dsDea}->EOF) {
+        $statLetti++;
+        $documento_id    = (int){dsDea}->fields[0];
+        $tipo_id         = (int){dsDea}->fields[1];
+        $nome_documento  = trim((string){dsDea}->fields[2]);
+        $data_scadenza_db = (string){dsDea}->fields[3];
+        $login           = trim((string){dsDea}->fields[4]);
+        $subvettore_id   = (int){dsDea}->fields[5];
+        $emailSub        = trim((string){dsDea}->fields[6]);
+        $ragione_sociale = trim((string){dsDea}->fields[7]);
+
+        if (!isset($rulesByTipo[$tipo_id])) {
+            {dsDea}->MoveNext();
+            continue;
+        }
+
+        $tsScad = strtotime($data_scadenza_db);
+        if ($tsScad === false) {
+            {dsDea}->MoveNext();
+            continue;
+        }
+        $data_scadenza_it = date('d/m/Y', $tsScad);
+        $delta = (int)floor(($tsScad - strtotime($oggi)) / 86400);
+
+        foreach ($rulesByTipo[$tipo_id] as $rule) {
+            $match = false;
+            $daysBeforeForMail = $rule['days_before'];
+            $isFixed = ($rule['rule_type'] === 'fixed_md');
+
+            if ($rule['rule_type'] === 'days_before') {
+                $db = (int)$rule['days_before'];
+                $match = ($delta === $db);
+            } elseif ($rule['rule_type'] === 'fixed_md') {
+                $match = ($oggiMd === $rule['fixed_md']);
+                $daysBeforeForMail = ($rule['fixed_md'] === '01-31') ? 0 : 1;
+            }
+
+            if (!$match) {
+                continue;
+            }
+
+            $statMatch++;
+            $destScope = $rule['dest_scope'];
+            $sendSub = ($destScope === 'sub' || $destScope === 'both');
+            $sendOp  = ($destScope === 'ops' || $destScope === 'both');
+
+            $emailSubvettore = dea_resolve_email($login, $emailSub);
+            $subvettore_label = $subvettore_id > 0 ? (string)$subvettore_id : 'n/d';
+            $ragione_label = $ragione_sociale !== '' ? $ragione_sociale : 'n/d';
+
+            $mails = dea_build_mails(
+                $documento_id,
+                $nome_documento,
+                $data_scadenza_it,
+                $subvettore_label,
+                $ragione_label,
+                $loginUrl,
+                $daysBeforeForMail,
+                $isFixed,
+                $rule['fixed_md']
+            );
+
+            $channels = array();
+
+            if ($sendSub && $login !== '' && function_exists('sc_send_notification')) {
+                try {
+                    sc_send_notification(array(
+                        'title'        => $mails['subjectSub'],
+                        'message'      => $mails['textSub'],
+                        'destiny_type' => 'user',
+                        'to'           => $login,
+                        'from'         => $notifyFrom,
+                        'link'         => '',
+                        'dtexpire'     => $notifyExpire,
+                        'profile'      => $notifyProfile,
+                    ));
+                    $statNotifSub++;
+                    $channels[] = 'notif_sub';
+                } catch (Throwable $e) {
+                    sc_log_add('MAIL_DOCS_ALERT', "notif sub ERR doc=$documento_id — " . $e->getMessage());
+                }
+            }
+
+            if ($sendOp && !empty($operatorLogins) && function_exists('sc_send_notification')) {
+                try {
+                    sc_send_notification(array(
+                        'title'        => $mails['subjectOp'],
+                        'message'      => $mails['textOp'],
+                        'destiny_type' => 'user',
+                        'to'           => implode(';', $operatorLogins),
+                        'from'         => $notifyFrom,
+                        'link'         => '',
+                        'dtexpire'     => $notifyExpire,
+                        'profile'      => $notifyProfile,
+                    ));
+                    $statNotifOp++;
+                    $channels[] = 'notif_op';
+                } catch (Throwable $e) {
+                    sc_log_add('MAIL_DOCS_ALERT', "notif op ERR doc=$documento_id — " . $e->getMessage());
+                }
+            }
+
+            if ($sendSub && $emailSubvettore !== '') {
+                try {
+                    $mailOk = sc_send_mail_api(array_merge([sett_smtp], array(
+                        'message' => array(
+                            'html'    => $mails['htmlSub'],
+                            'text'    => $mails['textSub'],
+                            'to'      => $emailSubvettore,
+                            'subject' => $mails['subjectSub'],
+                        ),
+                    )));
+                    if ($mailOk !== false && $mailOk !== null) {
+                        $statMailSub++;
+                        $channels[] = 'mail_sub';
+                    } else {
+                        sc_log_add('MAIL_DOCS_ALERT', "mail sub FAIL doc=$documento_id dest=$emailSubvettore");
+                    }
+                } catch (Throwable $e) {
+                    sc_log_add('MAIL_DOCS_ALERT', "mail sub ERR doc=$documento_id — " . $e->getMessage());
+                }
+            }
+
+            if ($sendOp) {
+                foreach ($operatorEmails as $emailOp) {
+                    try {
+                        $mailOkOp = sc_send_mail_api(array_merge([sett_smtp], array(
+                            'message' => array(
+                                'html'    => $mails['htmlOp'],
+                                'text'    => $mails['textOp'],
+                                'to'      => $emailOp,
+                                'subject' => $mails['subjectOp'],
+                            ),
+                        )));
+                        if ($mailOkOp !== false && $mailOkOp !== null) {
+                            $statMailOp++;
+                            if (!in_array('mail_op', $channels, true)) {
+                                $channels[] = 'mail_op';
+                            }
+                        }
+                    } catch (Throwable $e) {
+                        sc_log_add('MAIL_DOCS_ALERT', "mail op ERR doc=$documento_id dest=$emailOp — " . $e->getMessage());
+                    }
+                }
+            }
+
+            sc_log_add(
+                'MAIL_DOCS_ALERT',
+                "SENT doc=$documento_id tipo=$tipo_id delta=$delta scope=$destScope ch=" . implode(',', $channels)
+            );
+        }
+
+        {dsDea}->MoveNext();
+    }
+    {dsDea}->Close();
+}
+
+sc_log_add(
+    'MAIL_DOCS_ALERT',
+    'END letti=' . $statLetti
+    . ' match=' . $statMatch
+    . ' mail_sub=' . $statMailSub
+    . ' mail_op=' . $statMailOp
+    . ' notif_sub=' . $statNotifSub
+    . ' notif_op=' . $statNotifOp
+    . ' operatori=' . count($operatorLogins)
+);

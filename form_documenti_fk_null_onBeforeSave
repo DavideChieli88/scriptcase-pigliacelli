@@ -1,0 +1,13 @@
+/**
+ * form_documenti → onBeforeInsert / onBeforeUpdate
+ *
+ * ScriptCase: campi Number vuoti diventano 0 in DB.
+ * Per FK opzionali 0 è sbagliato → NULL.
+ */
+
+if (!isset({subvettore_mezzo_id}) || (int){subvettore_mezzo_id} <= 0) {
+    {subvettore_mezzo_id} = 'null';
+}
+if (!isset({subvettore_autista_id}) || (int){subvettore_autista_id} <= 0) {
+    {subvettore_autista_id} = 'null';
+}

@@ -1,0 +1,19 @@
+/**
+ * form_subvettori_mezzi → onBeforeInsert
+ * Allinea subvettore_id (stesso pattern di form_subvettori_autisti_onBeforeInsert).
+ */
+
+$subId = 0;
+if (isset({subvettore_id}) && (int){subvettore_id} > 0) {
+    $subId = (int){subvettore_id};
+}
+if ($subId <= 0 && isset([subvettoreId]) && (int)[subvettoreId] > 0) {
+    $subId = (int)[subvettoreId];
+}
+
+if ($subId <= 0) {
+    sc_error_message('Subvettore non identificato.');
+    sc_error_exit();
+}
+
+{subvettore_id} = $subId;

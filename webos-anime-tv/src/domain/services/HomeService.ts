@@ -2,7 +2,7 @@ import type { AnimeSummary, ContinueWatchingItem, HomeSection } from '../models'
 import type { ProviderRegistry } from '../../providers/registry';
 import type { Persistence } from '../../persistence';
 import { logger } from '../../core/logging/Logger';
-
+import { isMovieProviderId, orderProviders, sleep } from '../../providers/failover';
 export class HomeService {
   constructor(
     private registry: ProviderRegistry,
@@ -15,27 +15,40 @@ export class HomeService {
     continueWatching: ContinueWatchingItem[];
     recent: AnimeSummary[];
     errors: string[];
+    usedProviderId?: string;
   }> {
     const errors: string[] = [];
-    const provider = this.registry.preferred(preferredProviderId);
     const sections: HomeSection[] = [];
+    let usedProviderId: string | undefined;
 
-    // Solo il provider preferito alimenta il catalogo Home.
-    // Continue watching / cronologia restano locali e possono mixare provider.
-    if (provider) {
+    const kind = isMovieProviderId(preferredProviderId) ? 'movies' : 'anime';
+    const candidates = this.registry
+      .list(true)
+      .filter((p) => (kind === 'movies' ? isMovieProviderId(p.id) : !isMovieProviderId(p.id)));
+    const ordered = orderProviders(candidates, preferredProviderId);
+
+    for (let i = 0; i < ordered.length; i++) {
+      const provider = ordered[i]!;
       const result = await provider.getHome();
-      if (result.ok && result.data) {
+      if (result.ok && result.data && result.data.some((s) => s.items.length > 0)) {
         sections.push(
           ...result.data.map((section) => ({
             ...section,
             title: `${section.title} · ${provider.name}`,
           })),
         );
-      } else {
-        errors.push(`${provider.name}: ${result.error?.message ?? 'errore'}`);
-        logger.warn('Home provider failed', result.error);
+        usedProviderId = provider.id;
+        break;
       }
-    } else {
+      const message = result.error?.message ?? 'catalogo vuoto';
+      errors.push(`${provider.name}: ${message}`);
+      logger.warn('Home provider failed', result.error);
+      if (result.error?.code === 'RATE_LIMITED' && i < ordered.length - 1) {
+        await sleep(2000);
+      }
+    }
+
+    if (!ordered.length) {
       errors.push('Nessun provider abilitato');
     }
 
@@ -76,7 +89,6 @@ export class HomeService {
       if (row.coverUrl) coverByKey.set(`${row.providerId}:${row.animeId}`, row.coverUrl);
     }
 
-    // Persist enriched covers back into history when we know a better poster.
     for (const h of history) {
       const key = `${h.providerId}:${h.animeId}`;
       const better = coverByKey.get(key);
@@ -96,6 +108,6 @@ export class HomeService {
 
     const hero = sections[0]?.items[0] ?? recent[0] ?? continueWatching[0]?.anime;
 
-    return { hero, sections, continueWatching, recent, errors };
+    return { hero, sections, continueWatching, recent, errors, usedProviderId };
   }
 }

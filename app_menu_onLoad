@@ -7,7 +7,7 @@ if ($usrLogin === '' || strcasecmp($usrLogin, 'Guest') === 0) {
 } else {
     $loginSql = str_replace("'", "''", $usrLogin);
 
-    // group 2 + wizard incompleto → solo starting wizard
+    // group 2 + wizard incompleto → pagina atterraggio (non direttamente lo step)
     sc_lookup(rsWizMenu, "
         SELECT sug.group_id, COALESCE(s.wizard_complete, 0)
         FROM sec_users su
@@ -21,7 +21,7 @@ if ($usrLogin === '' || strcasecmp($usrLogin, 'Guest') === 0) {
         && (int){rsWizMenu[0][0]} === 2
         && (int){rsWizMenu[0][1]} === 0
     ) {
-        sc_redir('form_subvettori_starting_wizard');
+        sc_redir('blank_wizard_landing');
     }
 
     // primo accesso menu

@@ -1,0 +1,15 @@
+node_modules
+dist
+.wgt
+*.wgt
+.env.local
+.DS_Store
+coverage
+*.log
+.tizen
+.tizen-pkg/
+Debug/
+Release/
+Build/
+*.map
+

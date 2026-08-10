@@ -14,12 +14,23 @@ Every provider implements `ContentProvider`:
 | `mock` | MVP | Catalogo locale + video sample |
 | `animesaturn` | MVP | Home/search/details + stream via `/api/watch` + decode playlist |
 | `animeunity` | MVP | Home/search/details/stream; **fetch diretto senza proxy** |
+| `altadefinizione` | MVP | Film · `altadefinizionex.co` + mirror auto |
+| `altadefinizione-alt` | MVP | Film · `altadefinizionegratis.trade` (+ mirror inverso) |
+
+## Failover
+
+- **Home/Cerca anime:** se il preferito fallisce (403/429/vuoto), prova il successivo abilitato (Mock → Saturn → Unity).
+- **Film:** stesso schema tra `altadefinizione` e `altadefinizione-alt`; ogni provider prova anche i propri mirror host.
+- **Stream film:** prova host/mirror in sequenza.
+- Ricerca film: minimo **3** caratteri + debounce 800ms per ridurre 429.
 
 ## Search
 
 AnimeSaturn: `GET /api/search?q=...`
 
 AnimeUnity: `GET /archivio?title=...` → JSON in `records` su `#archivio`
+
+Altadefinizione: `GET /?do=search&subaction=search&story=...`
 
 ### AnimeSaturn stream
 
@@ -39,12 +50,13 @@ In `AppConfig`:
 
 - `enableAnimeSaturn` (default `true`)
 - `enableAnimeUnity` (default `true`)
+- `enableAltadefinizione` (default `true`)
 
-Runtime toggle in Settings for all registered providers.
+Runtime toggle in Settings for all registered providers. Preferred provider in Settings applies only to **Anime** Home/Cerca; Film usa sempre Altadefinizione.
 
 ## Proxy
 
-- **AnimeSaturn** richiede il proxy CORS personale (PC LAN).
+- **AnimeSaturn** e **Altadefinizione** usano il proxy CORS personale (PC LAN).
 - **AnimeUnity** chiama il sito in diretto (`useProxy=false`): su TV packaged di solito basta; in browser desktop può fallire per CORS.
 
 ## AnimeSaturn notes
@@ -60,6 +72,13 @@ Runtime toggle in Settings for all registered providers.
 - Parser in `src/providers/animeunity/parser.ts`
 - Episodi via `/info_api/{id}/1?start_range=&end_range=` (pagine da 120)
 - Stream host: `vixcloud.co`
+
+## Altadefinizione notes
+
+- Base URL: `https://altadefinizionex.co` (mirror: `altadefinizionegratis.trade`)
+- UI dedicata: route `movies` / `movies-search`, tema cinematico in `styles/movies.css`
+- Film = un solo “episodio”; player condiviso
+- Embed: `https://v.vidxgo.co/{imdbDigits}` (Referer richiesto)
 
 ## Adding a provider
 

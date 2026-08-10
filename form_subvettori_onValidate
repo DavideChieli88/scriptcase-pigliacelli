@@ -1,11 +1,18 @@
 /**
- * form_subvettori → onValidate
+ * form_subvettori → onValidate (operatori / admin)
  *
  * Se login_subvettore è stato modificato (sc_changed):
  * - blocca email vuota / non valida
  * - blocca se la mail è già login di un altro subvettore (o utente senza subvettore_id)
  *
  * Su update, se la mail non è cambiata, nessun controllo email.
+ *
+ * Il gate wizard (anagrafica, docs mandatory, autisti/mezzi) sta in
+ * form_subvettori_starting_wizard_onValidate — non qui.
+ *
+ * Richiede globali di progetto:
+ *   glo_sub_login_subvettore_changed
+ *   glo_sub_login_subvettore_old
  */
 
 $subvettore_id = isset({id}) ? (int){id} : 0;

@@ -9,6 +9,7 @@ import { ProviderRegistry } from '../providers/registry';
 import { MockProvider } from '../providers/mock/MockProvider';
 import { AnimeSaturnProvider } from '../providers/animesaturn/AnimeSaturnProvider';
 import { AnimeUnityProvider } from '../providers/animeunity/AnimeUnityProvider';
+import { AltadefinizioneProvider } from '../providers/altadefinizione/AltadefinizioneProvider';
 import { HomeService } from '../domain/services/HomeService';
 import { SearchService } from '../domain/services/SearchService';
 import { LibraryService } from '../domain/services/LibraryService';
@@ -54,6 +55,22 @@ export async function bootstrap(root: HTMLElement, overrides: Partial<AppConfig>
   registry.register(new MockProvider(config, true));
   registry.register(new AnimeSaturnProvider(providerCtx, config.enableAnimeSaturn));
   registry.register(new AnimeUnityProvider(providerCtx, config.enableAnimeUnity));
+  registry.register(
+    new AltadefinizioneProvider(providerCtx, config.enableAltadefinizione, {
+      id: 'altadefinizione',
+      name: 'Altadefinizione',
+      baseUrl: 'https://altadefinizionex.co',
+      mirrors: ['https://altadefinizionegratis.trade'],
+    }),
+  );
+  registry.register(
+    new AltadefinizioneProvider(providerCtx, config.enableAltadefinizione, {
+      id: 'altadefinizione-alt',
+      name: 'Altadefinizione (mirror)',
+      baseUrl: 'https://altadefinizionegratis.trade',
+      mirrors: ['https://altadefinizionex.co'],
+    }),
+  );
 
   // Restore provider enabled flags from IDB when present
   for (const p of registry.list()) {

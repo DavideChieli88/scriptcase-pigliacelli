@@ -66,12 +66,12 @@ export class AnimeSaturnProvider implements ContentProvider {
 
   async getHome() {
     try {
-      const pages = await Promise.all([
-        this.ctx.http.getJson<{ items?: HomeEpisodeItem[] }>(`${this.baseUrl}/api/home/episodes?page=1`),
-        this.ctx.http.getJson<{ items?: HomeEpisodeItem[] }>(`${this.baseUrl}/api/home/episodes?page=2`).catch(() => ({ items: [] })),
-      ]);
+      // Single page — second page doubled proxy latency for little UI gain.
+      const page = await this.ctx.http.getJson<{ items?: HomeEpisodeItem[] }>(
+        `${this.baseUrl}/api/home/episodes?page=1`,
+      );
 
-      const rows = [...(pages[0].items ?? []), ...(pages[1].items ?? [])];
+      const rows = page.items ?? [];
       if (!rows.length) {
         return errResult(this.id, 'PARSE_ERROR', 'Home API AnimeSaturn vuota', true);
       }

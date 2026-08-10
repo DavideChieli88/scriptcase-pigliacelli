@@ -12,7 +12,13 @@ export async function renderDetailsPage(
   root.innerHTML = '';
   root.className = 'page';
 
-  root.appendChild(createTopNav('home', ctx.focus, (name) => void ctx.router.navigate(name, {}, true)));
+  root.appendChild(
+    createTopNav(
+      params.providerId?.startsWith('altadefinizione') ? 'movies' : 'home',
+      ctx.focus,
+      (name) => void ctx.router.navigate(name, {}, true),
+    ),
+  );
 
   const provider = ctx.registry.get(params.providerId);
   if (!provider) {
@@ -58,7 +64,7 @@ export async function renderDetailsPage(
       </div>
       <p class="hero-desc">${escapeHtml(anime.description ?? 'Nessuna descrizione disponibile.')}</p>
       <div class="hero-actions" style="margin: 24px 0;"></div>
-      <h2 class="rail-title">Episodi</h2>
+      <h2 class="rail-title">${params.providerId?.startsWith('altadefinizione') ? 'Riproduzione' : 'Episodi'}</h2>
       <div class="episode-list"></div>
     </div>
   `;

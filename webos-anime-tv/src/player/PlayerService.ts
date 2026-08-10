@@ -51,6 +51,20 @@ function preferSources(sources: StreamSource[]): StreamSource[] {
   return [...sources].sort((a, b) => score(a) - score(b));
 }
 
+/** True for direct .m3u8 and proxied playlists (`/fetch?url=...m3u8...`). */
+function isHlsSource(source: StreamSource): boolean {
+  if (source.type === 'hls') return true;
+  if (/\.m3u8(\?|$)/i.test(source.url) || /\/hls\//i.test(source.url)) return true;
+  try {
+    const outer = new URL(source.url, typeof window !== 'undefined' ? window.location.href : 'http://local/');
+    const inner = outer.searchParams.get('url');
+    if (inner && (/\.m3u8(\?|$)/i.test(inner) || /\/hls\//i.test(inner))) return true;
+  } catch {
+    // ignore
+  }
+  return false;
+}
+
 export class PlayerService {
   private video: HTMLVideoElement | null = null;
   private source: StreamSource | null = null;
@@ -99,9 +113,7 @@ export class PlayerService {
     this.video.crossOrigin = null;
     this.video.removeAttribute('src');
 
-    const isHls = source.type === 'hls' || /\.m3u8(\?|$)/i.test(source.url);
-
-    if (isHls) {
+    if (isHlsSource(source)) {
       await this.attachHls(source.url);
     } else {
       this.video.src = source.url;
@@ -120,38 +132,41 @@ export class PlayerService {
   private async attachHls(url: string): Promise<void> {
     if (!this.video) throw new Error('Video element not bound');
 
+    // Prefer hls.js: webOS often claims native HLS via canPlayType but then fails
+    // on proxied playlists (CORS rewrite / non-.m3u8 URL shape) with SRC_NOT_SUPPORTED.
+    const { default: Hls } = (await import('hls.js')) as { default: HlsConstructor };
+    if (Hls.isSupported()) {
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+      });
+      this.hls = hls;
+
+      await new Promise<void>((resolve, reject) => {
+        const onError = (...args: never[]) => {
+          const data = args[1] as { fatal?: boolean; type?: string; details?: string } | undefined;
+          if (!data?.fatal) return;
+          logger.warn('HLS fatal error', data);
+          hls.destroy();
+          if (this.hls === hls) this.hls = null;
+          reject(new Error(`HLS error: ${data.details || data.type || 'fatal'}`));
+        };
+        hls.on(Hls.Events.MANIFEST_PARSED, (() => resolve()) as (...args: never[]) => void);
+        hls.on(Hls.Events.ERROR, onError);
+        hls.loadSource(url);
+        hls.attachMedia(this.video!);
+      });
+      return;
+    }
+
     if (this.video.canPlayType('application/vnd.apple.mpegurl')) {
       this.video.src = url;
       return;
     }
 
-    const { default: Hls } = (await import('hls.js')) as { default: HlsConstructor };
-    if (!Hls.isSupported()) {
-      throw new Error('HLS non supportato su questo dispositivo');
-    }
-
-    const hls = new Hls({
-      enableWorker: true,
-      lowLatencyMode: false,
-      maxBufferLength: 30,
-      maxMaxBufferLength: 60,
-    });
-    this.hls = hls;
-
-    await new Promise<void>((resolve, reject) => {
-      const onError = (...args: never[]) => {
-        const data = args[1] as { fatal?: boolean; type?: string; details?: string } | undefined;
-        if (!data?.fatal) return;
-        logger.warn('HLS fatal error', data);
-        hls.destroy();
-        if (this.hls === hls) this.hls = null;
-        reject(new Error(`HLS error: ${data.details || data.type || 'fatal'}`));
-      };
-      hls.on(Hls.Events.MANIFEST_PARSED, (() => resolve()) as (...args: never[]) => void);
-      hls.on(Hls.Events.ERROR, onError);
-      hls.loadSource(url);
-      hls.attachMedia(this.video!);
-    });
+    throw new Error('HLS non supportato su questo dispositivo');
   }
 
   private waitForMetadata(meta: PlayerBindMeta): Promise<void> {

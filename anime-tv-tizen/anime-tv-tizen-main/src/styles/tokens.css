@@ -1,0 +1,65 @@
+:root {
+  /* Cinematic dark — red accent, high contrast for 2–3m viewing */
+  --color-bg: #0b0d10;
+  --color-bg-elevated: #12151a;
+  --color-surface: #161a20;
+  --color-surface-hover: #1e2430;
+  --color-border: #2a3140;
+  --color-text: #f2f4f8;
+  --color-text-muted: #a8b0c0;
+  --color-text-dim: #6b7385;
+  --color-accent: #cd3639;
+  --color-accent-soft: rgba(205, 54, 57, 0.18);
+  --color-danger: #e85a5a;
+  --color-success: #5ac88a;
+  --color-focus: #ffffff;
+  --color-focus-glow: rgba(255, 255, 255, 0.35);
+  --color-overlay: rgba(0, 0, 0, 0.72);
+  --color-hero-gradient: linear-gradient(
+    90deg,
+    rgba(11, 13, 16, 0.95) 0%,
+    rgba(11, 13, 16, 0.55) 45%,
+    rgba(11, 13, 16, 0.15) 100%
+  );
+  --color-hero-bottom: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(11, 13, 16, 0.4) 40%,
+    var(--color-bg) 100%
+  );
+
+  --font-sans: "Segoe UI", "TizenSans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-display: "Segoe UI", "TizenSans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+
+  --text-xs: 18px;
+  --text-sm: 22px;
+  --text-md: 28px;
+  --text-lg: 36px;
+  --text-xl: 48px;
+  --text-hero: 64px;
+
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --space-5: 48px;
+  --space-6: 64px;
+  --space-7: 96px;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --poster-w: 280px;
+  --poster-h: 420px;
+  --focus-ring: 4px;
+  --focus-glow: 24px;
+  --focus-outset: 32px;
+  --focus-scale: 1.08;
+  --transition-fast: 160ms ease-out;
+  --transition-med: 240ms ease-out;
+
+  --topbar-h: 96px;
+  --safe-x: 80px;
+  --rail-gap: 24px;
+}

@@ -43,7 +43,9 @@ export async function renderSearchPage(ctx: AppContext, root: HTMLElement): Prom
       return;
     }
     status.textContent = 'Ricerca in corso…';
-    const { items, errors } = await ctx.services.search.search(query, settings.preferredProviderId);
+    const { items, errors } = await ctx.services.search.search(query, settings.preferredProviderId, {
+      kind: 'anime',
+    });
     status.textContent = errors.length
       ? `${items.length} risultati · ${errors.join(' · ')}`
       : `${items.length} risultati`;

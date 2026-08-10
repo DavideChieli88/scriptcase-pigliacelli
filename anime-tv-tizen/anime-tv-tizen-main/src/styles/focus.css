@@ -1,0 +1,55 @@
+[data-focusable="true"] {
+  outline: none;
+  transition:
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+[data-focusable="true"].is-focused {
+  z-index: 2;
+  box-shadow:
+    0 0 0 var(--focus-ring) var(--color-focus),
+    0 0 24px var(--color-focus-glow);
+  transform: scale(var(--focus-scale));
+}
+
+.topbar [data-focusable="true"].is-focused,
+.btn [data-focusable="true"].is-focused,
+.btn.is-focused {
+  transform: scale(1.04);
+}
+
+.hero-cta.is-focused {
+  background: var(--color-accent);
+  color: #fff;
+  transform: scale(1.05);
+}
+
+.poster-card.is-focused {
+  /* Keep scale off — scaled cards get clipped by rail overflow-x */
+  transform: none;
+  z-index: 3;
+}
+
+.episode-row.is-focused {
+  background: var(--color-surface-hover);
+  transform: none;
+  z-index: 3;
+}
+
+.episode-row .btn.is-focused {
+  /* Nested controls: keep ring inside the list padding box */
+  transform: none;
+}
+
+.settings-row.is-focused {
+  background: var(--color-surface-hover);
+  transform: none;
+}
+
+.search-input.is-focused,
+.settings-proxy-input.is-focused {
+  box-shadow: 0 0 0 var(--focus-ring) var(--color-focus);
+  transform: none;
+}

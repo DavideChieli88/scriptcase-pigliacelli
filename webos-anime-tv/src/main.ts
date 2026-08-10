@@ -1,6 +1,7 @@
 import './styles/tokens.css';
 import './styles/base.css';
 import './styles/tv.css';
+import './styles/movies.css';
 import { App } from './app/App';
 import { logger } from './core/logging/Logger';
 

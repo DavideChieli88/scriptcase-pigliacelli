@@ -1,0 +1,78 @@
+/* Cinema section — warm amber / deep wine, distinct from anime green */
+
+.page--movies {
+  --color-accent: #e8a54b;
+  --color-accent-soft: rgba(232, 165, 75, 0.18);
+  --color-focus: #fff4e0;
+  --focus-ring: 0 0 0 4px var(--color-focus), 0 0 0 8px var(--color-accent);
+  --color-hero-scrim: linear-gradient(
+    90deg,
+    rgba(18, 8, 10, 0.94) 0%,
+    rgba(18, 8, 10, 0.55) 48%,
+    rgba(18, 8, 10, 0.12) 100%
+  );
+  --color-hero-bottom: linear-gradient(180deg, transparent 35%, rgba(18, 8, 10, 0.96) 100%);
+  --font-display: "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  background:
+    radial-gradient(ellipse 90% 55% at 12% -10%, rgba(180, 48, 48, 0.28), transparent 55%),
+    radial-gradient(ellipse 70% 45% at 95% 10%, rgba(232, 165, 75, 0.12), transparent 50%),
+    linear-gradient(180deg, #12080a 0%, #0b0d10 45%, #0b0d10 100%);
+}
+
+.page--movies .brand {
+  color: var(--color-accent);
+  letter-spacing: 0.14em;
+}
+
+.page--movies .nav-item.is-active {
+  color: var(--color-accent);
+  box-shadow: inset 0 -3px 0 var(--color-accent);
+}
+
+.movies-masthead {
+  padding: 8px var(--safe-x) 12px;
+}
+
+.movies-kicker {
+  font-size: var(--text-hint);
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  margin-bottom: 6px;
+}
+
+.movies-headline {
+  font-family: var(--font-display);
+  font-size: clamp(36px, 4.5vw, 52px);
+  font-weight: 600;
+  margin: 0 0 8px;
+  color: #fff8ee;
+}
+
+.movies-sub {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-meta);
+  max-width: 42ch;
+}
+
+.page--movies .movies-hero .hero-title,
+.page--movies .rail-title {
+  font-family: var(--font-display);
+}
+
+.page--movies .hero-cta.primary {
+  background: var(--color-accent);
+  color: #1a0e08;
+}
+
+.page--movies .search-input.movies-search-input:focus,
+.page--movies .search-input.movies-search-input.is-focused {
+  border-color: var(--color-accent);
+  box-shadow: var(--focus-ring);
+}
+
+.page--movies .card.is-focused,
+.page--movies .nav-item.is-focused {
+  box-shadow: var(--focus-ring);
+}

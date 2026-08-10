@@ -1,0 +1,27 @@
+/**
+ * grid tipi_documento_alert → onRecord
+ * Rende leggibili rule_type e dest_scope in griglia.
+ */
+
+$ruleType = isset({rule_type}) ? trim((string){rule_type}) : '';
+switch ($ruleType) {
+    case 'days_before':
+        {rule_type} = 'Giorni prima della scadenza';
+        break;
+    case 'fixed_md':
+        {rule_type} = 'Data fissa annuale (MM-GG)';
+        break;
+}
+
+$destScope = isset({dest_scope}) ? trim((string){dest_scope}) : '';
+switch ($destScope) {
+    case 'sub':
+        {dest_scope} = 'Solo subvettore';
+        break;
+    case 'ops':
+        {dest_scope} = 'Solo operatori';
+        break;
+    case 'both':
+        {dest_scope} = 'Subvettore e operatori';
+        break;
+}

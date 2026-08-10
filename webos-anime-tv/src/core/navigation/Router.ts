@@ -1,6 +1,8 @@
 export type RouteName =
   | 'home'
   | 'search'
+  | 'movies'
+  | 'movies-search'
   | 'details'
   | 'player'
   | 'watchlist'

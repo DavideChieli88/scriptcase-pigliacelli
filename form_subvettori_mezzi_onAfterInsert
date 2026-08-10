@@ -1,0 +1,64 @@
+/**
+ * form_subvettori_mezzi → onAfterInsert
+ * Virtuali: carta_circolazione (Document), autista_id (Select 1:1)
+ */
+
+$mezzoId = (int){id};
+$subId   = (int){subvettore_id};
+
+sc_log_add('MEZ_DOCS', "onAfterInsert START mezzo=$mezzoId sub=$subId");
+
+if ($mezzoId <= 0 || $subId <= 0) {
+    sc_error_message("MEZ_DOCS: id mezzo o subvettore mancante.");
+} else {
+
+    $login = trim((string)[usr_login]);
+    sc_lookup(rsMezLogin, "
+        SELECT login FROM sec_users
+        WHERE subvettore_id = $subId
+        ORDER BY login LIMIT 1
+    ", 'pigliacelli');
+    if (!empty({rsMezLogin[0][0]})) {
+        $login = trim((string){rsMezLogin[0][0]});
+    }
+    $loginSql = str_replace("'", "''", $login);
+
+    // --- documento carta circolazione (tipo 22) ---
+    $fCarta = trim((string){carta_circolazione});
+    sc_log_add('MEZ_DOCS', "FILE carta=[$fCarta] login=$login");
+
+    if ($fCarta !== '') {
+        $fileSql = str_replace("'", "''", basename($fCarta));
+        $scadSql = 'NULL';
+        if (isset({scadenza_carta_circolazione})
+            && {scadenza_carta_circolazione} !== ''
+            && {scadenza_carta_circolazione} !== 'null'
+        ) {
+            $scadSql = "'" . str_replace("'", "''", (string){scadenza_carta_circolazione}) . "'";
+        }
+        sc_exec_sql("
+            INSERT INTO documenti (
+                tipo_documento_id, subvettore_id, subvettore_mezzo_id,
+                login, stato_documento_id, file, data_scadenza
+            ) VALUES (
+                22, $subId, $mezzoId, '$loginSql', 1, '$fileSql', $scadSql
+            )
+        ", 'pigliacelli');
+        sc_log_add('MEZ_DOCS', "INSERT 22 $fileSql");
+    }
+
+    // --- ponte 1 autista ---
+    $autId = isset({autista_id}) ? (int){autista_id} : 0;
+    sc_exec_sql("
+        DELETE FROM subvettori_autisti_mezzi WHERE mezzo_id = $mezzoId
+    ", 'pigliacelli');
+    if ($autId > 0) {
+        sc_exec_sql("
+            INSERT INTO subvettori_autisti_mezzi (subvettore_id, autista_id, mezzo_id)
+            VALUES ($subId, $autId, $mezzoId)
+        ", 'pigliacelli');
+        sc_log_add('MEZ_DOCS', "PONTE autista=$autId mezzo=$mezzoId");
+    }
+
+    sc_log_add('MEZ_DOCS', "FINE onAfterInsert mezzo=$mezzoId");
+}

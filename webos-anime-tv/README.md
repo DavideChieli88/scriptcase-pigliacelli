@@ -4,6 +4,14 @@ Aggregatore personale di anime per **LG webOS TV** (target 1920×1080, telecoman
 
 > **Disclaimer:** progetto sperimentale per uso personale. Non redistribuire, non pubblicare su LG Content Store, non esporre il proxy in Internet. I provider scrapano siti di terze parti: rispettane i termini e la legge sul copyright. L’app non ospita file video.
 
+## Documentazione
+
+- **[docs/GUIDA.md](docs/GUIDA.md)** — installazione Windows, collegare la TV, `npm run deploy`, proxy, come aggiungere provider/host fetch
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/PROVIDERS.md](docs/PROVIDERS.md)
+- [docs/WEBOS.md](docs/WEBOS.md)
+- [docs/ROADMAP.md](docs/ROADMAP.md)
+
 ## Stack
 
 - TypeScript + Vite (no React/Vue)
@@ -44,10 +52,12 @@ Il Vite server inoltra `/proxy` → `http://127.0.0.1:8787`.
 | `npm run proxy` | Proxy CORS personale |
 | `npm test` | Test unitari |
 | `npm run package:webos` | Build + `ares-package` |
+| `npm run install:webos` | Install + launch su `lg-tv` |
+| `npm run deploy` | Package + install + launch |
 
 ## Architettura (sintesi)
 
-Vedi [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PROVIDERS.md](docs/PROVIDERS.md), [docs/WEBOS.md](docs/WEBOS.md), [docs/ROADMAP.md](docs/ROADMAP.md).
+Vedi [docs/GUIDA.md](docs/GUIDA.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PROVIDERS.md](docs/PROVIDERS.md), [docs/WEBOS.md](docs/WEBOS.md), [docs/ROADMAP.md](docs/ROADMAP.md).
 
 Layer principali:
 

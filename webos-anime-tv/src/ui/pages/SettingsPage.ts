@@ -41,8 +41,10 @@ export async function renderSettingsPage(ctx: AppContext, root: HTMLElement): Pr
     const items: HTMLElement[] = [];
 
     items.push(
-      row('Provider preferito (Home/Cerca)', preferredLabel, 'set-provider', async () => {
-        const enabled = providers.filter((p) => p.enabled);
+      row('Provider preferito (Anime)', preferredLabel, 'set-provider', async () => {
+        const enabled = providers.filter(
+          (p) => p.enabled && p.id !== 'altadefinizione',
+        );
         const idx = enabled.findIndex((p) => p.id === settings.preferredProviderId);
         const next = enabled[(idx + 1) % Math.max(enabled.length, 1)];
         if (next) await ctx.persistence.settings.update({ preferredProviderId: next.id });
@@ -91,7 +93,7 @@ export async function renderSettingsPage(ctx: AppContext, root: HTMLElement): Pr
     items.push(
       row('Proxy URL (AnimeSaturn)', settings.proxyBaseUrl, 'set-proxy', async () => {
         const next = window.prompt(
-          'Proxy base URL per AnimeSaturn (AnimeUnity non lo usa). Es. http://192.168.1.8:8787',
+          'Proxy base URL per AnimeSaturn/Altadefinizione (AnimeUnity no). Es. http://192.168.1.8:8787',
           settings.proxyBaseUrl,
         );
         if (next != null && next.trim()) {

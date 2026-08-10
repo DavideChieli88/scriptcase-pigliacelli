@@ -4,6 +4,7 @@ import { createHero } from '../components/Hero';
 import { createRail } from '../components/Rail';
 import { createSkeletonRail } from '../components/Card';
 import type { AnimeSummary, ContinueWatchingItem } from '../../domain/models';
+import { isMovieProviderId } from '../../providers/failover';
 
 export async function renderHomePage(ctx: AppContext, root: HTMLElement): Promise<void> {
   ctx.focus.clear();
@@ -22,6 +23,11 @@ export async function renderHomePage(ctx: AppContext, root: HTMLElement): Promis
 
   const settings = await ctx.persistence.settings.getOrCreate(ctx.config);
   const feed = await ctx.services.home.getHomeFeed(settings.preferredProviderId);
+  feed.continueWatching = feed.continueWatching.filter((c) => !isMovieProviderId(c.anime.providerId));
+  feed.recent = feed.recent.filter((r) => !isMovieProviderId(r.providerId));
+  if (feed.hero && isMovieProviderId(feed.hero.providerId)) {
+    feed.hero = feed.sections[0]?.items[0] ?? feed.recent[0] ?? feed.continueWatching[0]?.anime;
+  }
 
   root.innerHTML = '';
   ctx.focus.clear();

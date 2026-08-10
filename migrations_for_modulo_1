@@ -541,3 +541,25 @@ ALTER TABLE `documenti`
     ADD COLUMN `subvettore_mezzo_id` INT(11) NULL AFTER `subvettore_autista_id`,
     ADD KEY `idx_documenti_autista` (`subvettore_autista_id`),
     ADD KEY `idx_documenti_mezzo` (`subvettore_mezzo_id`);
+
+-- Legale rappresentante su subvettori: migration_subvettori_legale_rappresentante.sql
+ALTER TABLE `subvettori`
+    ADD COLUMN `nome_rappresentante` VARCHAR(255) NULL DEFAULT NULL
+        AFTER `mail_credenziali_inviata_at`,
+    ADD COLUMN `cognome_rappresentante` VARCHAR(255) NULL DEFAULT NULL
+        AFTER `nome_rappresentante`,
+    ADD COLUMN `email_rappresentante` VARCHAR(255) NULL DEFAULT NULL
+        AFTER `cognome_rappresentante`,
+    ADD COLUMN `telefono_rappresentante` VARCHAR(64) NULL DEFAULT NULL
+        AFTER `email_rappresentante`,
+    ADD COLUMN `luogo_nascita_rappresentante` VARCHAR(255) NULL DEFAULT NULL
+        AFTER `telefono_rappresentante`,
+    ADD COLUMN `prov_luogo_nascita_rappresentante` VARCHAR(16) NULL DEFAULT NULL
+        AFTER `luogo_nascita_rappresentante`,
+    ADD COLUMN `data_nascita_rappresentante` DATE NULL DEFAULT NULL
+        AFTER `prov_luogo_nascita_rappresentante`;
+
+        ALTER TABLE subvettori
+  ADD COLUMN wizard_step TINYINT UNSIGNED NOT NULL DEFAULT 1
+    COMMENT '1=anagrafica 2=autisti 3=mezzi 4=documenti 0=completato'
+    AFTER wizard_complete;

@@ -12,15 +12,28 @@ export class SettingsRepository extends BaseRepository<AppSettings> {
   async getOrCreate(config: AppConfig): Promise<AppSettings> {
     const existing = await this.get(SETTINGS_ID);
     if (existing) {
+      const patch: Partial<AppSettings> = {};
       // Replace localhost proxy (useless on TV) with the configured LAN default.
       if (/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/?$/i.test(existing.proxyBaseUrl)) {
-        return this.update({ proxyBaseUrl: config.proxyBaseUrl });
+        patch.proxyBaseUrl = config.proxyBaseUrl;
       }
+      // Refresh stale LAN default from older installs (.8 → current build default).
+      if (
+        /^https?:\/\/192\.168\.1\.8(:\d+)?\/?$/i.test(existing.proxyBaseUrl) &&
+        existing.proxyBaseUrl !== config.proxyBaseUrl
+      ) {
+        patch.proxyBaseUrl = config.proxyBaseUrl;
+      }
+      if (!existing.preferredMoviesProviderId) {
+        patch.preferredMoviesProviderId = config.defaultMoviesProviderId;
+      }
+      if (Object.keys(patch).length) return this.update(patch);
       return existing;
     }
     const created = this.stamp({
       id: SETTINGS_ID,
       preferredProviderId: config.defaultProviderId,
+      preferredMoviesProviderId: config.defaultMoviesProviderId,
       autoplayNext: true,
       completionThreshold: config.completionThreshold,
       debugMode: false,

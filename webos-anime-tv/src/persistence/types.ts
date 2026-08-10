@@ -6,6 +6,8 @@ export interface BaseRecord {
 
 export interface AppSettings extends BaseRecord {
   preferredProviderId: string;
+  /** Film section preferred provider (altadefinizione*). */
+  preferredMoviesProviderId: string;
   autoplayNext: boolean;
   completionThreshold: number;
   debugMode: boolean;

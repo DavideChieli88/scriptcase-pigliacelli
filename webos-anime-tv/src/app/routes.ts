@@ -2,6 +2,8 @@ import type { AppContext } from './context';
 import type { RouteState } from '../core/navigation/Router';
 import { renderHomePage } from '../ui/pages/HomePage';
 import { renderSearchPage } from '../ui/pages/SearchPage';
+import { renderMoviesHomePage } from '../ui/pages/MoviesHomePage';
+import { renderMoviesSearchPage } from '../ui/pages/MoviesSearchPage';
 import { renderDetailsPage } from '../ui/pages/DetailsPage';
 import { renderPlayerPage } from '../ui/pages/PlayerPage';
 import { renderWatchlistPage } from '../ui/pages/WatchlistPage';
@@ -18,6 +20,14 @@ export function registerRoutes(ctx: AppContext): void {
 
   router.on('search', async () => {
     await renderSearchPage(ctx, root);
+  });
+
+  router.on('movies', async () => {
+    await renderMoviesHomePage(ctx, root);
+  });
+
+  router.on('movies-search', async () => {
+    await renderMoviesSearchPage(ctx, root);
   });
 
   router.on('details', async (state: RouteState) => {
