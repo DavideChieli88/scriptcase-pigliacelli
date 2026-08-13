@@ -24,6 +24,16 @@ export class SettingsRepository extends BaseRepository<AppSettings> {
       ) {
         patch.proxyBaseUrl = config.proxyBaseUrl;
       }
+      if (existing.preferredMoviesProviderId === 'altadefinizione-alt') {
+        patch.preferredMoviesProviderId = config.defaultMoviesProviderId;
+      }
+      // Drop unknown movie provider ids (e.g. removed mirrors).
+      if (
+        existing.preferredMoviesProviderId &&
+        !existing.preferredMoviesProviderId.startsWith('altadefinizione')
+      ) {
+        patch.preferredMoviesProviderId = config.defaultMoviesProviderId;
+      }
       if (!existing.preferredMoviesProviderId) {
         patch.preferredMoviesProviderId = config.defaultMoviesProviderId;
       }

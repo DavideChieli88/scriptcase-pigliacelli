@@ -1,6 +1,7 @@
 import type { AppContext } from '../../app/context';
 import { createTopNav } from '../components/TopNav';
 import { logger } from '../../core/logging/Logger';
+import { isAnimeProviderId, isMovieProviderId } from '../../providers/failover';
 
 function row(
   label: string,
@@ -35,19 +36,34 @@ export async function renderSettingsPage(ctx: AppContext, root: HTMLElement): Pr
     list.forEach((n) => n.remove());
 
     const providers = ctx.registry.list();
-    const preferredLabel =
-      providers.find((p) => p.id === settings.preferredProviderId)?.name ?? settings.preferredProviderId;
+    const animeProviders = providers.filter((p) => isAnimeProviderId(p.id));
+    const movieProviders = providers.filter((p) => isMovieProviderId(p.id));
+
+    const preferredAnime =
+      animeProviders.find((p) => p.id === settings.preferredProviderId)?.name ??
+      settings.preferredProviderId;
+    const preferredMovies =
+      movieProviders.find((p) => p.id === settings.preferredMoviesProviderId)?.name ??
+      settings.preferredMoviesProviderId;
 
     const items: HTMLElement[] = [];
 
     items.push(
-      row('Provider preferito (Anime)', preferredLabel, 'set-provider', async () => {
-        const enabled = providers.filter(
-          (p) => p.enabled && p.id !== 'altadefinizione',
-        );
+      row('Provider preferito (Anime)', preferredAnime, 'set-provider', async () => {
+        const enabled = animeProviders.filter((p) => p.enabled);
         const idx = enabled.findIndex((p) => p.id === settings.preferredProviderId);
         const next = enabled[(idx + 1) % Math.max(enabled.length, 1)];
         if (next) await ctx.persistence.settings.update({ preferredProviderId: next.id });
+        await refresh();
+      }),
+    );
+
+    items.push(
+      row('Provider preferito (Film)', preferredMovies, 'set-movies-provider', async () => {
+        const enabled = movieProviders.filter((p) => p.enabled);
+        const idx = enabled.findIndex((p) => p.id === settings.preferredMoviesProviderId);
+        const next = enabled[(idx + 1) % Math.max(enabled.length, 1)];
+        if (next) await ctx.persistence.settings.update({ preferredMoviesProviderId: next.id });
         await refresh();
       }),
     );
@@ -65,7 +81,10 @@ export async function renderSettingsPage(ctx: AppContext, root: HTMLElement): Pr
         `${Math.round(settings.completionThreshold * 100)}%`,
         'set-threshold',
         async () => {
-          const next = settings.completionThreshold >= 0.95 ? 0.8 : Math.min(0.95, settings.completionThreshold + 0.05);
+          const next =
+            settings.completionThreshold >= 0.95
+              ? 0.8
+              : Math.min(0.95, settings.completionThreshold + 0.05);
           await ctx.persistence.settings.update({ completionThreshold: next });
           ctx.progressTracker.setCompletionThreshold(next);
           await refresh();
@@ -91,21 +110,29 @@ export async function renderSettingsPage(ctx: AppContext, root: HTMLElement): Pr
     );
 
     items.push(
-      row('Proxy URL (AnimeSaturn)', settings.proxyBaseUrl, 'set-proxy', async () => {
-        const next = window.prompt(
-          'Proxy base URL per AnimeSaturn/Altadefinizione (AnimeUnity no). Es. http://192.168.1.8:8787',
-          settings.proxyBaseUrl,
-        );
-        if (next != null && next.trim()) {
-          await ctx.persistence.settings.update({ proxyBaseUrl: next.trim() });
-          ctx.http.setProxyBaseUrl(next.trim());
-        }
-        await refresh();
-      }),
+      row(
+        'Proxy URL (opzionale)',
+        settings.proxyBaseUrl || '(disattivo — solo diretto)',
+        'set-proxy',
+        async () => {
+          const next = window.prompt(
+            'Proxy LAN opzionale (fallback se il TV blocca CORS). Vuoto = solo diretto.\nEs. http://192.168.1.14:8787',
+            settings.proxyBaseUrl,
+          );
+          if (next == null) {
+            await refresh();
+            return;
+          }
+          const trimmed = next.trim();
+          await ctx.persistence.settings.update({ proxyBaseUrl: trimmed });
+          ctx.http.setProxyBaseUrl(trimmed);
+          await refresh();
+        },
+      ),
     );
 
     items.push(
-      row('Pulisci cache', 'Esegui', 'set-cache', async () => {
+      row('Pulisci cache catalogo', 'Esegui', 'set-cache', async () => {
         await ctx.persistence.cache.clear();
         await refresh();
       }),
@@ -120,13 +147,33 @@ export async function renderSettingsPage(ctx: AppContext, root: HTMLElement): Pr
       }),
     );
 
-    for (const p of providers) {
+    for (const p of animeProviders) {
       items.push(
-        row(`Provider ${p.name}`, p.enabled ? 'Abilitato' : 'Disabilitato', `set-p-${p.id}`, async () => {
-          p.enabled = !p.enabled;
-          await ctx.persistence.providerState.setEnabled(p.id, p.enabled);
-          await refresh();
-        }),
+        row(
+          `Anime · ${p.name}`,
+          p.enabled ? 'Abilitato' : 'Disabilitato',
+          `set-p-${p.id}`,
+          async () => {
+            p.enabled = !p.enabled;
+            await ctx.persistence.providerState.setEnabled(p.id, p.enabled);
+            await refresh();
+          },
+        ),
+      );
+    }
+
+    for (const p of movieProviders) {
+      items.push(
+        row(
+          `Film · ${p.name}`,
+          p.enabled ? 'Abilitato' : 'Disabilitato',
+          `set-p-${p.id}`,
+          async () => {
+            p.enabled = !p.enabled;
+            await ctx.persistence.providerState.setEnabled(p.id, p.enabled);
+            await refresh();
+          },
+        ),
       );
     }
 

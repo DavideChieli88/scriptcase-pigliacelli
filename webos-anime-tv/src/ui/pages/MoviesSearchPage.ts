@@ -1,7 +1,6 @@
 import type { AppContext } from '../../app/context';
 import { createTopNav } from '../components/TopNav';
 import { createCard } from '../components/Card';
-import { debounce } from '../../core/utils';
 import { isMovieProviderId } from '../../providers/failover';
 
 const MIN_QUERY = 3;
@@ -21,18 +20,30 @@ export async function renderMoviesSearchPage(ctx: AppContext, root: HTMLElement)
   title.textContent = 'Cerca film';
   root.appendChild(title);
 
+  const form = document.createElement('div');
+  form.className = 'movies-search-form';
+  root.appendChild(form);
+
   const input = document.createElement('input');
   input.className = 'search-input movies-search-input';
   input.type = 'search';
   input.placeholder = `Almeno ${MIN_QUERY} caratteri…`;
   input.dataset.focusId = 'movies-search-input';
   input.tabIndex = -1;
-  root.appendChild(input);
+  form.appendChild(input);
   ctx.focus.register({ id: 'movies-search-input', el: input, group: 'search', row: 1, col: 0 });
+
+  const searchBtn = document.createElement('button');
+  searchBtn.type = 'button';
+  searchBtn.className = 'hero-cta primary movies-search-btn';
+  searchBtn.textContent = 'Cerca';
+  searchBtn.dataset.focusId = 'movies-search-btn';
+  form.appendChild(searchBtn);
+  ctx.focus.register({ id: 'movies-search-btn', el: searchBtn, group: 'search', row: 1, col: 1 });
 
   const status = document.createElement('div');
   status.className = 'muted';
-  status.textContent = `Digita almeno ${MIN_QUERY} caratteri. In caso di 429 si prova il mirror.`;
+  status.textContent = `Scrivi il titolo, poi premi Cerca (o Enter). Minimo ${MIN_QUERY} caratteri.`;
   root.appendChild(status);
 
   const grid = document.createElement('div');
@@ -41,50 +52,67 @@ export async function renderMoviesSearchPage(ctx: AppContext, root: HTMLElement)
 
   const settings = await ctx.persistence.settings.getOrCreate(ctx.config);
   let requestId = 0;
+  let searching = false;
 
   const runSearch = async (query: string) => {
+    if (searching) return;
     const id = ++requestId;
     grid.innerHTML = '';
+    // Clear previous result focus nodes (nav + form stay registered).
+    for (const node of [...ctx.focus.graph.all()]) {
+      if (node.id.startsWith('movies-search-result-')) ctx.focus.graph.unregister(node.id);
+    }
+
     const q = query.trim();
     if (q.length < MIN_QUERY) {
-      status.textContent = `Inserisci almeno ${MIN_QUERY} caratteri (evita 429 sul sito).`;
+      status.textContent = `Inserisci almeno ${MIN_QUERY} caratteri, poi premi Cerca.`;
       return;
     }
+
+    searching = true;
+    searchBtn.disabled = true;
     status.textContent = 'Ricerca film…';
-    const preferred =
-      settings.preferredMoviesProviderId || ctx.config.defaultMoviesProviderId || 'altadefinizione';
-    const { items, errors, usedProviderId } = await ctx.services.search.search(q, preferred, {
-      kind: 'movies',
-    });
-    if (id !== requestId) return;
-
-    const via = usedProviderId
-      ? ctx.registry.get(usedProviderId)?.name ?? usedProviderId
-      : undefined;
-    status.textContent = errors.length
-      ? `${items.length} risultati${via ? ` · via ${via}` : ''} · ${errors.join(' · ')}`
-      : `${items.length} risultati${via ? ` · via ${via}` : ''}`;
-
-    items.forEach((item, index) => {
-      const focusId = `movies-search-result-${index}`;
-      const card = createCard(item, focusId);
-      card.addEventListener('click', () => {
-        void ctx.services.library.openAnime(item);
-        void ctx.router.navigate('details', { providerId: item.providerId, animeId: item.id });
+    try {
+      const preferred =
+        settings.preferredMoviesProviderId ||
+        ctx.config.defaultMoviesProviderId ||
+        'altadefinizione';
+      const { items, errors, usedProviderId } = await ctx.services.search.search(q, preferred, {
+        kind: 'movies',
       });
-      grid.appendChild(card);
-      ctx.focus.register({
-        id: focusId,
-        el: card,
-        group: 'results',
-        row: 2 + Math.floor(index / 6),
-        col: index % 6,
+      if (id !== requestId) return;
+
+      const via = usedProviderId
+        ? ctx.registry.get(usedProviderId)?.name ?? usedProviderId
+        : undefined;
+      status.textContent = errors.length
+        ? `${items.length} risultati${via ? ` · via ${via}` : ''} · ${errors.join(' · ')}`
+        : `${items.length} risultati${via ? ` · via ${via}` : ''}`;
+
+      items.forEach((item, index) => {
+        const focusId = `movies-search-result-${index}`;
+        const card = createCard(item, focusId);
+        card.addEventListener('click', () => {
+          void ctx.services.library.openAnime(item);
+          void ctx.router.navigate('details', { providerId: item.providerId, animeId: item.id });
+        });
+        grid.appendChild(card);
+        ctx.focus.register({
+          id: focusId,
+          el: card,
+          group: 'results',
+          row: 2 + Math.floor(index / 6),
+          col: index % 6,
+        });
       });
-    });
+    } finally {
+      searching = false;
+      searchBtn.disabled = false;
+    }
   };
 
-  const debounced = debounce((q: string) => void runSearch(q), 800);
-  input.addEventListener('input', () => debounced(input.value));
+  // No search-on-type: only button / Enter (avoids 429 from multi-page fetches).
+  searchBtn.addEventListener('click', () => void runSearch(input.value));
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -92,7 +120,6 @@ export async function renderMoviesSearchPage(ctx: AppContext, root: HTMLElement)
     }
   });
 
-  // Quick cycle movies provider from search page (optional affordance via long label in status click)
   status.style.cursor = 'pointer';
   status.title = 'Tocca per cambiare provider Film preferito';
   status.addEventListener('click', async () => {
@@ -103,8 +130,7 @@ export async function renderMoviesSearchPage(ctx: AppContext, root: HTMLElement)
     if (!next) return;
     await ctx.persistence.settings.update({ preferredMoviesProviderId: next.id });
     settings.preferredMoviesProviderId = next.id;
-    status.textContent = `Provider Film: ${next.name} — digita per cercare`;
-    if (input.value.trim().length >= MIN_QUERY) void runSearch(input.value);
+    status.textContent = `Provider Film: ${next.name} — premi Cerca per avviare`;
   });
 
   ctx.focus.focus('movies-search-input');

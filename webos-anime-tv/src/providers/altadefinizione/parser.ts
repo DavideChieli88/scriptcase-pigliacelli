@@ -18,18 +18,102 @@ export function titleFromSlug(slug: string): string {
     .trim();
 }
 
+/** `/genre/123-slug-streaming.html` or `/genre/123-slug.html` → catalog id parts. */
+export function filmIdFromHref(href: string): {
+  id: string;
+  genre: string;
+  numericId: string;
+  slug: string;
+} | null {
+  try {
+    const path = href.startsWith('http') ? new URL(href).pathname : href;
+    const m = path.match(
+      /\/([a-z0-9-]+)\/(\d+)-([a-z0-9-]+?)(?:-(?:streaming|stream))?\.html$/i,
+    );
+    if (!m) return null;
+    const genre = m[1]!;
+    const numericId = m[2]!;
+    const slug = m[3]!;
+    if (/serie-tv|miniserie/i.test(genre)) return null;
+    return { id: `${genre}/${numericId}-${slug}`, genre, numericId, slug };
+  } catch {
+    return null;
+  }
+}
+
+export function parseSearchTotal(html: string): number | undefined {
+  const m = html.match(/Found\s+(\d+)\s+responses/i);
+  if (!m) return undefined;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/** Highest `/film/page/N/` link in pagination (DLE catalog). */
+export function parseMaxFilmPage(html: string): number | undefined {
+  let max = 0;
+  for (const m of html.matchAll(/\/film\/page\/(\d+)\//gi)) {
+    const n = Number(m[1]);
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return max > 0 ? max : undefined;
+}
+
+/**
+ * Search pages use `<div class="movie" data-link="…">` (cleaner than all page hrefs).
+ * Also picks titles from `.movie-title` when present.
+ */
+export function parseFilmSearchResults(html: string, baseUrl: string, limit = 120): AnimeSummary[] {
+  const out: AnimeSummary[] = [];
+  const seen = new Set<string>();
+  const blocks = html.split(/<div\s+class="movie"/i).slice(1);
+
+  for (const block of blocks) {
+    if (out.length >= limit) break;
+    const head = block.slice(0, 900);
+    const body = block.slice(0, 2500);
+    const link =
+      head.match(/data-link="([^"]+)"/i)?.[1] ||
+      body.match(/href="((?:https?:\/\/[^"]+)?\/[^"]+\.html)"/i)?.[1];
+    if (!link) continue;
+    const parsed = filmIdFromHref(link);
+    if (!parsed || seen.has(parsed.id)) continue;
+    if (/serie-tv/i.test(link)) continue;
+    seen.add(parsed.id);
+
+    const title =
+      body.match(/class="movie-title"[^>]*>\s*<a[^>]*>([^<]+)</i)?.[1]?.trim() ||
+      titleFromSlug(parsed.slug);
+    const yearRaw = head.match(/data-year="(\d{4})"/i)?.[1];
+    const img =
+      body.match(/(?:src|data-src)="([^"]*\/uploads\/[^"]+)"/i)?.[1] ||
+      body.match(/(?:src|data-src)="([^"]+\.(?:jpg|jpeg|png|webp)[^"]*)"/i)?.[1];
+
+    out.push({
+      id: parsed.id,
+      providerId: PROVIDER_ID,
+      title,
+      slug: parsed.id,
+      coverUrl: absUrl(baseUrl, img),
+      year: yearRaw ? Number(yearRaw) : undefined,
+      genres: parsed.genre !== 'film' ? [titleFromSlug(parsed.genre)] : undefined,
+      status: 'unknown',
+    });
+  }
+  return out;
+}
+
 export function parseFilmCards(html: string, baseUrl: string, limit = 36): AnimeSummary[] {
   const out: AnimeSummary[] = [];
   const seen = new Set<string>();
-  // Absolute or root-relative film detail links.
+  // Absolute or root-relative film detail links (-streaming optional).
   const re =
-    /href="((?:https?:\/\/[^"]+)?\/([a-z0-9-]+)\/(\d+)-([a-z0-9-]+)-(?:streaming|stream)[^"]*\.html)"/gi;
+    /href="((?:https?:\/\/[^"]+)?\/([a-z0-9-]+)\/(\d+)-([a-z0-9-]+?)(?:-(?:streaming|stream))?\.html)"/gi;
   let match: RegExpExecArray | null;
   while ((match = re.exec(html)) && out.length < limit) {
-    const href = match[1];
-    const genre = match[2];
-    const numericId = match[3];
-    const slug = match[4];
+    const href = match[1]!;
+    const genre = match[2]!;
+    const numericId = match[3]!;
+    const slug = match[4]!;
     if (/serie-tv|miniserie/i.test(genre) || /serie-tv/i.test(href)) continue;
     const id = `${genre}/${numericId}-${slug}`;
     if (seen.has(id)) continue;

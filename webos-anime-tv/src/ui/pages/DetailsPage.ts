@@ -1,6 +1,7 @@
 import type { AppContext } from '../../app/context';
 import { createTopNav } from '../components/TopNav';
 import { escapeHtml } from '../../core/utils';
+import { bindLazyPoster } from '../../core/media/LazyPoster';
 
 export async function renderDetailsPage(
   ctx: AppContext,
@@ -48,26 +49,30 @@ export async function renderDetailsPage(
 
   const layout = document.createElement('div');
   layout.className = 'details-layout';
-  layout.innerHTML = `
-    ${
-      anime.coverUrl
-        ? `<img class="details-cover" src="${escapeHtml(anime.coverUrl)}" alt="" />`
-        : `<div class="details-cover"></div>`
-    }
-    <div>
-      <h1 class="details-title">${escapeHtml(anime.title)}</h1>
-      <div class="hero-meta">
-        ${anime.year ? escapeHtml(String(anime.year)) : ''}
-        ${anime.genres?.length ? ` · ${escapeHtml(anime.genres.join(', '))}` : ''}
-        ${anime.status && anime.status !== 'unknown' ? ` · ${escapeHtml(anime.status)}` : ''}
-        ${anime.studio ? ` · ${escapeHtml(anime.studio)}` : ''}
-      </div>
-      <p class="hero-desc">${escapeHtml(anime.description ?? 'Nessuna descrizione disponibile.')}</p>
-      <div class="hero-actions" style="margin: 24px 0;"></div>
-      <h2 class="rail-title">${params.providerId?.startsWith('altadefinizione') ? 'Riproduzione' : 'Episodi'}</h2>
-      <div class="episode-list"></div>
+  if (anime.coverUrl) {
+    const cover = document.createElement('img');
+    cover.className = 'details-cover';
+    cover.alt = '';
+    bindLazyPoster(cover, anime.coverUrl, { eager: true });
+    layout.appendChild(cover);
+  } else {
+    layout.appendChild(Object.assign(document.createElement('div'), { className: 'details-cover' }));
+  }
+  const info = document.createElement('div');
+  info.innerHTML = `
+    <h1 class="details-title">${escapeHtml(anime.title)}</h1>
+    <div class="hero-meta">
+      ${anime.year ? escapeHtml(String(anime.year)) : ''}
+      ${anime.genres?.length ? ` · ${escapeHtml(anime.genres.join(', '))}` : ''}
+      ${anime.status && anime.status !== 'unknown' ? ` · ${escapeHtml(anime.status)}` : ''}
+      ${anime.studio ? ` · ${escapeHtml(anime.studio)}` : ''}
     </div>
+    <p class="hero-desc">${escapeHtml(anime.description ?? 'Nessuna descrizione disponibile.')}</p>
+    <div class="hero-actions" style="margin: 24px 0;"></div>
+    <h2 class="rail-title">${params.providerId?.startsWith('altadefinizione') ? 'Riproduzione' : 'Episodi'}</h2>
+    <div class="episode-list"></div>
   `;
+  layout.appendChild(info);
   root.appendChild(layout);
 
   const actions = layout.querySelector('.hero-actions')!;

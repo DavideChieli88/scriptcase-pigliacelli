@@ -1,3 +1,5 @@
+import { lazyPoster } from '../media/LazyPoster';
+
 export type FocusDirection = 'up' | 'down' | 'left' | 'right';
 
 export interface FocusNode {
@@ -148,6 +150,8 @@ export class FocusManager {
     if (scroll) {
       node.el.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
     }
+    // Preload focused poster + rail neighbors; unload happens via LazyPoster IO.
+    lazyPoster.prioritizeNear(node.el);
     return true;
   }
 

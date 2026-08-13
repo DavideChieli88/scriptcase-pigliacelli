@@ -4,6 +4,9 @@ import type { AnimeDetails, AnimeSummary, Episode, HomeSection } from '../../dom
 import {
   parseFilmCards,
   parseFilmDetails,
+  parseFilmSearchResults,
+  parseMaxFilmPage,
+  parseSearchTotal,
   sourcesFromVidxgoEmbed,
 } from './parser';
 import { isFailoverError, isRateLimited, sleep } from '../failover';
@@ -17,12 +20,23 @@ const CAPABILITIES: ProviderCapabilities = {
   offlineCache: true,
 };
 
+/** First home load + each "Carica altri" batch (site ≈ 20 films/page). */
+const CATALOG_BATCH_PAGES = 10;
+
 export interface AltadefinizioneOptions {
   id: string;
   name: string;
   baseUrl: string;
   /** Tried automatically on 403/429/network errors. */
   mirrors?: string[];
+}
+
+export interface CatalogPageResult {
+  items: AnimeSummary[];
+  hasMore: boolean;
+  nextPage: number;
+  maxPage?: number;
+  loadedCount: number;
 }
 
 /**
@@ -38,6 +52,11 @@ export class AltadefinizioneProvider implements ContentProvider {
   readonly kind = 'movies' as const;
 
   private readonly hosts: string[];
+  /** Next catalog page to fetch (1-based). */
+  private catalogNextPage = 1;
+  private catalogMaxPage: number | undefined;
+  private catalogSeen = new Set<string>();
+  private catalogLoaded = 0;
 
   constructor(
     private ctx: ProviderContext,
@@ -46,7 +65,7 @@ export class AltadefinizioneProvider implements ContentProvider {
       id: 'altadefinizione',
       name: 'Altadefinizione',
       baseUrl: 'https://altadefinizionex.co',
-      mirrors: ['https://altadefinizionegratis.trade'],
+      mirrors: [],
     },
   ) {
     this.enabled = enabled;
@@ -55,6 +74,111 @@ export class AltadefinizioneProvider implements ContentProvider {
     this.baseUrl = options.baseUrl.replace(/\/$/, '');
     const mirrors = (options.mirrors ?? []).map((h) => h.replace(/\/$/, ''));
     this.hosts = [...new Set([this.baseUrl, ...mirrors])];
+  }
+
+  /** Whether more catalog pages can be loaded via loadMoreCatalog(). */
+  hasMoreCatalog(): boolean {
+    if (this.catalogNextPage <= 0) return false;
+    if (this.catalogMaxPage != null) return this.catalogNextPage <= this.catalogMaxPage;
+    return true;
+  }
+
+  getCatalogLoadedCount(): number {
+    return this.catalogLoaded;
+  }
+
+  getCatalogMaxPage(): number | undefined {
+    return this.catalogMaxPage;
+  }
+
+  getCatalogNextPage(): number {
+    return this.catalogNextPage;
+  }
+
+  private filmPath(page: number): string {
+    return page <= 1 ? '/film/?tipo=1' : `/film/page/${page}/?tipo=1`;
+  }
+
+  private async fetchCatalogPages(
+    fromPage: number,
+    pageCount: number,
+  ): Promise<{ items: AnimeSummary[]; lastHtml?: string }> {
+    const items: AnimeSummary[] = [];
+    let lastHtml: string | undefined;
+    const end = fromPage + pageCount - 1;
+
+    for (let page = fromPage; page <= end; page++) {
+      try {
+        const { html, host } = await this.fetchHtml(this.filmPath(page));
+        lastHtml = html;
+        if (this.catalogMaxPage == null) {
+          const max = parseMaxFilmPage(html);
+          if (max) this.catalogMaxPage = max;
+        }
+        for (const item of parseFilmCards(html, host, 60)) {
+          if (this.catalogSeen.has(item.id)) continue;
+          this.catalogSeen.add(item.id);
+          items.push({ ...item, providerId: this.id });
+        }
+        if (page < end) await sleep(350);
+      } catch (e) {
+        this.ctx.logger.warn('Altadefinizione catalog page failed', { page, e });
+        if (isRateLimited(e)) {
+          await sleep(2500);
+          break;
+        }
+      }
+    }
+    return { items, lastHtml };
+  }
+
+  /**
+   * Load next batch of catalog pages (progressive — site has 1000+ pages).
+   * Call after getHome(); use until hasMore is false.
+   */
+  async loadMoreCatalog(): Promise<ReturnType<typeof okResult<CatalogPageResult>>> {
+    try {
+      if (this.catalogMaxPage != null && this.catalogNextPage > this.catalogMaxPage) {
+        return okResult(this.id, {
+          items: [],
+          hasMore: false,
+          nextPage: this.catalogNextPage,
+          maxPage: this.catalogMaxPage,
+          loadedCount: this.catalogLoaded,
+        });
+      }
+
+      const from = this.catalogNextPage;
+      const { items } = await this.fetchCatalogPages(from, CATALOG_BATCH_PAGES);
+      this.catalogNextPage = from + CATALOG_BATCH_PAGES;
+      this.catalogLoaded += items.length;
+
+      const hasMore =
+        items.length > 0 &&
+        (this.catalogMaxPage == null || this.catalogNextPage <= this.catalogMaxPage);
+
+      if (items.length === 0) {
+        // No new titles — stop to avoid endless empty scans.
+        this.catalogMaxPage = Math.min(this.catalogMaxPage ?? from, from - 1);
+      }
+
+      await this.ctx.providerState.recordSuccess(this.id);
+      return okResult(this.id, {
+        items,
+        hasMore,
+        nextPage: this.catalogNextPage,
+        maxPage: this.catalogMaxPage,
+        loadedCount: this.catalogLoaded,
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      await this.ctx.providerState.recordError(this.id, message);
+      return errResult(this.id, isRateLimited(e) ? 'RATE_LIMITED' : 'NETWORK_ERROR', message, true);
+    }
+  }
+
+  private isDnsSinkholeError(message: string): boolean {
+    return /ECONNREFUSED\s+127\.|ECONNREFUSED 127\.|::1|sinkhole/i.test(message);
   }
 
   private async fetchHtml(pathOrUrl: string): Promise<{ html: string; host: string }> {
@@ -76,6 +200,8 @@ export class AltadefinizioneProvider implements ContentProvider {
         const message = e instanceof Error ? e.message : String(e);
         errors.push(`${host}: ${message}`);
         this.ctx.logger.warn('Altadefinizione host failed', { host, message });
+        // ISP DNS blocks often map mirrors to 127.0.0.1 — try next host.
+        if (this.isDnsSinkholeError(message)) continue;
         if (!isFailoverError(e)) throw e;
         if (isRateLimited(e) && i < this.hosts.length - 1) {
           await sleep(2000);
@@ -102,46 +228,21 @@ export class AltadefinizioneProvider implements ContentProvider {
 
   async getHome() {
     try {
-      // Site lists ~20 films/page across 1000+ pages — pull several for a usable catalog.
-      const pageCount = 8;
-      const seen = new Set<string>();
-      const catalog: AnimeSummary[] = [];
+      // Reset progressive catalog cursor — full archive is 1000+ pages; load in batches.
+      this.catalogSeen = new Set();
+      this.catalogNextPage = 1;
+      this.catalogMaxPage = undefined;
+      this.catalogLoaded = 0;
 
-      const paths = Array.from({ length: pageCount }, (_, i) =>
-        i === 0 ? '/film/?tipo=1' : `/film/page/${i + 1}/?tipo=1`,
-      );
-
-      // Parallel batches of 2 to stay polite with rate limits.
-      for (let i = 0; i < paths.length; i += 2) {
-        const batch = paths.slice(i, i + 2);
-        const pages = await Promise.all(
-          batch.map(async (path) => {
-            try {
-              return await this.fetchHtml(path);
-            } catch (e) {
-              this.ctx.logger.warn('Altadefinizione catalog page failed', { path, e });
-              return null;
-            }
-          }),
-        );
-        for (const page of pages) {
-          if (!page) continue;
-          for (const item of parseFilmCards(page.html, page.host, 60)) {
-            if (seen.has(item.id)) continue;
-            seen.add(item.id);
-            catalog.push({ ...item, providerId: this.id });
-          }
-        }
-      }
+      const { items } = await this.fetchCatalogPages(1, CATALOG_BATCH_PAGES);
+      this.catalogNextPage = 1 + CATALOG_BATCH_PAGES;
+      this.catalogLoaded = items.length;
 
       const sections: HomeSection[] = [];
-      if (catalog.length) {
-        sections.push({ id: 'ad-films', title: 'Ultimi film', items: catalog.slice(0, 24) });
-        if (catalog.length > 24) {
-          sections.push({ id: 'ad-more', title: 'Altri titoli', items: catalog.slice(24, 72) });
-        }
-        if (catalog.length > 72) {
-          sections.push({ id: 'ad-more-2', title: 'Continua a esplorare', items: catalog.slice(72) });
+      if (items.length) {
+        sections.push({ id: 'ad-films', title: 'Ultimi film', items: items.slice(0, 24) });
+        if (items.length > 24) {
+          sections.push({ id: 'ad-catalog', title: 'Catalogo film', items: items.slice(24) });
         }
       }
       if (!sections.length) {
@@ -161,13 +262,36 @@ export class AltadefinizioneProvider implements ContentProvider {
     try {
       const q = query.trim();
       if (!q) return okResult(this.id, []);
-      const { html, host } = await this.fetchHtml(
-        `/?do=search&subaction=search&story=${encodeURIComponent(q)}`,
-      );
-      const items = parseFilmCards(html, host, 80).map((item) => ({
-        ...item,
-        providerId: this.id,
-      }));
+
+      // Paginate until Found N is covered (DLE ~30/page). Soft cap avoids endless 429 loops.
+      const HARD_MAX_PAGES = 40;
+      const seen = new Set<string>();
+      const items: AnimeSummary[] = [];
+      let total: number | undefined;
+
+      for (let page = 1; page <= HARD_MAX_PAGES; page++) {
+        const path =
+          page === 1
+            ? `/?do=search&subaction=search&story=${encodeURIComponent(q)}`
+            : `/?do=search&subaction=search&story=${encodeURIComponent(q)}&search_start=${page}`;
+        const { html, host } = await this.fetchHtml(path);
+        if (total == null) total = parseSearchTotal(html);
+
+        const batch = parseFilmSearchResults(html, host, 40);
+        let added = 0;
+        for (const item of batch) {
+          if (seen.has(item.id)) continue;
+          seen.add(item.id);
+          items.push({ ...item, providerId: this.id });
+          added++;
+        }
+
+        if (added === 0 && page > 1) break;
+        if (total != null && page * 30 >= total) break;
+        if (page > 1 && batch.length < 5) break;
+        if (page < HARD_MAX_PAGES) await sleep(700);
+      }
+
       await this.ctx.providerState.recordSuccess(this.id);
       return okResult(this.id, items);
     } catch (e) {
@@ -177,12 +301,31 @@ export class AltadefinizioneProvider implements ContentProvider {
     }
   }
 
+  /** Detail pages may be `…-streaming.html` or plain `….html`. */
+  private detailPathsForId(animeId: string): string[] {
+    if (animeId.startsWith('http')) return [animeId];
+    const base = animeId.replace(/^\/+/, '').replace(/-streaming\.html$/i, '').replace(/\.html$/i, '');
+    return [`/${base}-streaming.html`, `/${base}.html`];
+  }
+
+  private async fetchDetailsHtml(animeId: string): Promise<{ html: string; host: string; path: string }> {
+    const errors: string[] = [];
+    for (const path of this.detailPathsForId(animeId)) {
+      try {
+        const page = await this.fetchHtml(path);
+        return { ...page, path };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        errors.push(`${path}: ${message}`);
+        if (!isFailoverError(e) && !/HTTP 404/i.test(message)) throw e;
+      }
+    }
+    throw new Error(errors.join(' · ') || 'Dettaglio film non trovato');
+  }
+
   async getAnimeDetails(animeId: string) {
     try {
-      const detailPath = animeId.startsWith('http')
-        ? animeId
-        : `/${animeId.replace(/^\/+/, '').replace(/-streaming\.html$/i, '')}-streaming.html`;
-      const { html, host } = await this.fetchHtml(detailPath);
+      const { html, host } = await this.fetchDetailsHtml(animeId);
       const meta = parseFilmDetails(html, host, animeId);
       const episode: Episode = {
         id: animeId,
@@ -228,12 +371,9 @@ export class AltadefinizioneProvider implements ContentProvider {
   async getStreamSources(episodeId: string) {
     try {
       // Film IDs are site-specific: do not retry the same path on mirrors (404).
-      const detailPath = episodeId.startsWith('http')
-        ? episodeId
-        : `/${episodeId.replace(/^\/+/, '').replace(/-streaming\.html$/i, '')}-streaming.html`;
-      const pageUrl = detailPath.startsWith('http') ? detailPath : `${this.baseUrl}${detailPath}`;
-      const pageHtml = await this.ctx.http.getText(pageUrl);
-      const meta = parseFilmDetails(pageHtml, this.baseUrl, episodeId);
+      const { html: pageHtml, host, path } = await this.fetchDetailsHtml(episodeId);
+      const pageUrl = path.startsWith('http') ? path : `${host}${path}`;
+      const meta = parseFilmDetails(pageHtml, host, episodeId);
       if (!meta.imdbDigits && !meta.embedUrl) {
         return errResult(this.id, 'PARSE_ERROR', 'Player film non trovato nella pagina', true);
       }
@@ -243,22 +383,40 @@ export class AltadefinizioneProvider implements ContentProvider {
         return errResult(this.id, 'PARSE_ERROR', 'IMDB id mancante per Vidxgo', true);
       }
 
-      const proxyRoot = (this.ctx.http.getProxyBaseUrl() || 'http://192.168.1.8:8787').replace(
-        /\/$/,
-        '',
-      );
-      const api = `${proxyRoot}/vidxgo/playlist?imdb=${encodeURIComponent(imdb)}&referer=${encodeURIComponent(pageUrl)}`;
-      const resolved = await this.ctx.http.getJson<{
-        ok?: boolean;
-        url?: string;
-        embedUrl?: string;
-        error?: string;
-      }>(api, { timeoutMs: 30000 }, false);
+      const embedReferer = meta.embedUrl || `https://v.vidxgo.co/${imdb}`;
+      const proxyRoot = this.ctx.http.getProxyBaseUrl()?.replace(/\/$/, '');
 
-      if (resolved.url) {
-        const embedReferer = resolved.embedUrl || `https://v.vidxgo.co/${imdb}`;
-        // Play through CORS proxy + m3u8 rewrite (CDN blocks non-vidxgo Origin).
-        const playUrl = `${proxyRoot}/fetch?url=${encodeURIComponent(resolved.url)}&referer=${encodeURIComponent(embedReferer)}`;
+      // Prefer direct Vidxgo token (webOS allowCrossDomain) — no PC proxy needed.
+      let signedUrl: string | undefined;
+      let resolveError: string | undefined;
+      try {
+        signedUrl = await this.resolveVidxgoDirect(imdb, pageUrl);
+      } catch (e) {
+        resolveError = e instanceof Error ? e.message : String(e);
+        this.ctx.logger.warn('Vidxgo direct resolve failed', e);
+      }
+
+      // Fallback: Node helper on LAN proxy (sets Referer/cookies reliably).
+      if (!signedUrl && proxyRoot) {
+        try {
+          const api = `${proxyRoot}/vidxgo/playlist?imdb=${encodeURIComponent(imdb)}&referer=${encodeURIComponent(pageUrl)}`;
+          const resolved = await this.ctx.http.getJson<{
+            ok?: boolean;
+            url?: string;
+            embedUrl?: string;
+            error?: string;
+          }>(api, { timeoutMs: 30000 }, false);
+          if (resolved.url) signedUrl = resolved.url;
+          else resolveError = resolved.error || resolveError;
+        } catch (e) {
+          resolveError = e instanceof Error ? e.message : String(e);
+        }
+      }
+
+      if (signedUrl) {
+        const playUrl = proxyRoot
+          ? `${proxyRoot}/fetch?url=${encodeURIComponent(signedUrl)}&referer=${encodeURIComponent(embedReferer)}`
+          : signedUrl;
         await this.ctx.providerState.recordSuccess(this.id);
         return okResult(this.id, [
           {
@@ -270,15 +428,14 @@ export class AltadefinizioneProvider implements ContentProvider {
         ]);
       }
 
-      // Fallback: scrape embed HTML currentSrc (often expired / cache-blocked).
+      // Fallback: scrape embed HTML currentSrc.
       if (meta.embedUrl) {
         const embedHtml = await this.ctx.http.getText(meta.embedUrl, {
           headers: { 'X-Proxy-Referer': pageUrl },
           timeoutMs: 28000,
         });
-        const embedReferer = meta.embedUrl;
         const sources = sourcesFromVidxgoEmbed(embedHtml).map((s) =>
-          s.type === 'hls'
+          s.type === 'hls' && proxyRoot
             ? {
                 ...s,
                 url: `${proxyRoot}/fetch?url=${encodeURIComponent(s.url)}&referer=${encodeURIComponent(embedReferer)}`,
@@ -294,7 +451,7 @@ export class AltadefinizioneProvider implements ContentProvider {
       return errResult(
         this.id,
         'PARSE_ERROR',
-        resolved.error || 'Playlist Vidxgo non disponibile',
+        resolveError || 'Playlist Vidxgo non disponibile',
         true,
       );
     } catch (e) {
@@ -303,5 +460,23 @@ export class AltadefinizioneProvider implements ContentProvider {
       this.ctx.logger.warn('Altadefinizione getStreamSources failed', e);
       return errResult(this.id, 'NETWORK_ERROR', message, true);
     }
+  }
+
+  /** Client-side embed → /t/{imdb} (works when webOS skips CORS). */
+  private async resolveVidxgoDirect(imdb: string, pageReferer: string): Promise<string> {
+    const id = imdb.replace(/^tt/i, '');
+    const embedUrl = `https://v.vidxgo.co/${id}`;
+    await this.ctx.http.getText(
+      embedUrl,
+      { headers: { 'X-Proxy-Referer': pageReferer }, timeoutMs: 20000 },
+      'auto',
+    );
+    const token = await this.ctx.http.getJson<{ url?: string }>(
+      `https://v.vidxgo.co/t/${encodeURIComponent(id)}`,
+      { timeoutMs: 20000 },
+      'auto',
+    );
+    if (!token?.url) throw new Error('Vidxgo token senza url');
+    return String(token.url).replace(/\\\//g, '/');
   }
 }

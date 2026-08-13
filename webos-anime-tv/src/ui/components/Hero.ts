@@ -10,7 +10,7 @@ export function createHero(
   const bg = anime.backdropUrl || anime.coverUrl || '';
 
   el.innerHTML = `
-    <div class="hero-media" style="${bg ? `background-image:url('${escapeHtml(bg)}')` : ''}"></div>
+    <div class="hero-media"></div>
     <div class="hero-scrim"></div>
     <div class="hero-content">
       <h1 class="hero-title">${escapeHtml(anime.title)}</h1>
@@ -26,5 +26,21 @@ export function createHero(
       </div>
     </div>
   `;
+
+  const media = el.querySelector('.hero-media') as HTMLElement | null;
+  if (media && bg) {
+    // One on-screen decode; probe first so layout paints without waiting on CSS url().
+    const probe = new Image();
+    probe.decoding = 'async';
+    probe.onload = () => {
+      media.style.backgroundImage = `url("${bg.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")`;
+      media.classList.add('is-ready');
+    };
+    probe.onerror = () => {
+      media.classList.add('is-missing');
+    };
+    probe.src = bg;
+  }
+
   return el;
 }

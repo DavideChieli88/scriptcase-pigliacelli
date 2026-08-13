@@ -14,14 +14,12 @@ Every provider implements `ContentProvider`:
 | `mock` | MVP | Catalogo locale + video sample |
 | `animesaturn` | MVP | Home/search/details + stream via `/api/watch` + decode playlist |
 | `animeunity` | MVP | Home/search/details/stream; **fetch diretto senza proxy** |
-| `altadefinizione` | MVP | Film · `altadefinizionex.co` + mirror auto |
-| `altadefinizione-alt` | MVP | Film · `altadefinizionegratis.trade` (+ mirror inverso) |
+| `altadefinizione` | MVP | Film · `altadefinizionex.co` (mirror ISP-bloccati rimossi) |
 
 ## Failover
 
 - **Home/Cerca anime:** se il preferito fallisce (403/429/vuoto), prova il successivo abilitato (Mock → Saturn → Unity).
-- **Film:** stesso schema tra `altadefinizione` e `altadefinizione-alt`; ogni provider prova anche i propri mirror host.
-- **Stream film:** prova host/mirror in sequenza.
+- **Film:** un provider (`altadefinizione`); host mirror opzionali se raggiungibili (evitare domini sinkhole `127.0.0.1`).
 - Ricerca film: minimo **3** caratteri + debounce 800ms per ridurre 429.
 
 ## Search
@@ -75,9 +73,12 @@ Runtime toggle in Settings for all registered providers. Preferred provider in S
 
 ## Altadefinizione notes
 
-- Base URL: `https://altadefinizionex.co` (mirror: `altadefinizionegratis.trade`)
+- Base URL: `https://altadefinizionex.co`
+- Molti mirror storici (`*.trade`, `*.you`, …) risultano **sinkhole DNS** (`127.0.0.1`) sulle reti italiane — non usarli come fallback.
+- Proxy allowlist: qualsiasi hostname con `altadefinizione` + CDN `*.d2b.you` / `vidxgo`
 - UI dedicata: route `movies` / `movies-search`, tema cinematico in `styles/movies.css`
 - Film = un solo “episodio”; player condiviso
+- Il repo Tizen di riferimento **non** ha un adapter Altadefinizione (solo AnimeSaturn / AnimeUnity)
 - Embed: `https://v.vidxgo.co/{imdbDigits}` (Referer richiesto)
 
 ## Adding a provider

@@ -9,6 +9,9 @@ export interface HttpRequestOptions {
   signal?: AbortSignal;
 }
 
+/** true = always proxy · false = never · auto = direct first, proxy on CORS/block */
+export type ProxyMode = boolean | 'auto';
+
 export class RateLimiter {
   private chain: Promise<void> = Promise.resolve();
   private lastAt = 0;
@@ -34,16 +37,37 @@ export class RateLimiter {
   }
 }
 
-function formatFetchError(err: unknown, url: string): Error {
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
+}
+
+function isLikelyCorsOrOpaqueBlock(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const m = err.message || '';
+  return (
+    /Failed to fetch|NetworkError|Load failed|CORS|cross-origin|TypeError/i.test(m) ||
+    err.name === 'TypeError'
+  );
+}
+
+function formatFetchError(err: unknown, url: string, viaProxy: boolean): Error {
   if (err instanceof DOMException && err.name === 'AbortError') {
     return new Error(
-      'Timeout: proxy lento o non raggiungibile (controlla npm run proxy e IP in Impostazioni)',
+      viaProxy
+        ? 'Timeout: proxy lento o non raggiungibile (controlla npm run proxy e IP in Impostazioni)'
+        : 'Timeout rete (sito lento o bloccato)',
     );
   }
   if (err instanceof Error) {
     if (/aborted|AbortError/i.test(err.message)) {
       return new Error(
-        'Timeout: proxy lento o non raggiungibile (controlla npm run proxy e IP in Impostazioni)',
+        viaProxy
+          ? 'Timeout: proxy lento o non raggiungibile (controlla npm run proxy e IP in Impostazioni)'
+          : 'Timeout rete (sito lento o bloccato)',
       );
     }
     return err;
@@ -51,8 +75,20 @@ function formatFetchError(err: unknown, url: string): Error {
   return new Error(`${String(err)} (${url})`);
 }
 
+function withoutProxyOnlyHeaders(options: HttpRequestOptions): HttpRequestOptions {
+  if (!options.headers) return options;
+  const headers = { ...options.headers };
+  delete headers['X-Proxy-Referer'];
+  delete headers['X-Proxy-UA'];
+  delete headers['x-proxy-referer'];
+  delete headers['x-proxy-ua'];
+  return { ...options, headers };
+}
+
 export class HttpClient {
   private limiter: RateLimiter;
+  /** Per-host preference learned this session (auto mode). */
+  private hostMode = new Map<string, 'direct' | 'proxy'>();
 
   constructor(
     private defaults: {
@@ -67,32 +103,78 @@ export class HttpClient {
   }
 
   setProxyBaseUrl(url: string): void {
-    this.defaults.proxyBaseUrl = url;
+    this.defaults.proxyBaseUrl = url.trim() || undefined;
+    this.hostMode.clear();
   }
 
   getProxyBaseUrl(): string | undefined {
     return this.defaults.proxyBaseUrl;
   }
 
-  /** Fetch URL, optionally through personal CORS proxy. */
-  async getText(url: string, options: HttpRequestOptions = {}, useProxy = true): Promise<string> {
-    const target =
-      useProxy && this.defaults.proxyBaseUrl ? this.buildProxyUrl(url) : url;
-    const res = await this.request(target, options);
-    return res.text();
+  /**
+   * Fetch URL text.
+   * Default `auto`: try direct (webOS may allow it with allowCrossDomain),
+   * fall back to LAN proxy only if the browser blocks the response.
+   */
+  async getText(
+    url: string,
+    options: HttpRequestOptions = {},
+    useProxy: ProxyMode = 'auto',
+  ): Promise<string> {
+    const proxyBase = this.defaults.proxyBaseUrl?.replace(/\/$/, '');
+
+    if (useProxy === false || !proxyBase) {
+      const res = await this.request(url, withoutProxyOnlyHeaders(options), false);
+      return res.text();
+    }
+
+    if (useProxy === true) {
+      const res = await this.request(this.buildProxyUrl(url, proxyBase), options, true);
+      return res.text();
+    }
+
+    // auto
+    const host = hostOf(url);
+    const learned = this.hostMode.get(host);
+
+    if (learned === 'proxy') {
+      const res = await this.request(this.buildProxyUrl(url, proxyBase), options, true);
+      return res.text();
+    }
+
+    try {
+      const res = await this.request(url, withoutProxyOnlyHeaders(options), false);
+      this.hostMode.set(host, 'direct');
+      return res.text();
+    } catch (directErr) {
+      if (!isLikelyCorsOrOpaqueBlock(directErr)) {
+        throw directErr;
+      }
+      logger.info('HttpClient direct blocked — falling back to proxy', { host, directErr });
+      this.hostMode.set(host, 'proxy');
+      const res = await this.request(this.buildProxyUrl(url, proxyBase), options, true);
+      return res.text();
+    }
   }
 
-  async getJson<T>(url: string, options: HttpRequestOptions = {}, useProxy = true): Promise<T> {
+  async getJson<T>(
+    url: string,
+    options: HttpRequestOptions = {},
+    useProxy: ProxyMode = 'auto',
+  ): Promise<T> {
     const text = await this.getText(url, options, useProxy);
     return JSON.parse(text) as T;
   }
 
-  private buildProxyUrl(url: string): string {
-    const base = this.defaults.proxyBaseUrl!.replace(/\/$/, '');
+  private buildProxyUrl(url: string, base: string): string {
     return `${base}/fetch?url=${encodeURIComponent(url)}`;
   }
 
-  private async request(url: string, options: HttpRequestOptions): Promise<Response> {
+  private async request(
+    url: string,
+    options: HttpRequestOptions,
+    viaProxy: boolean,
+  ): Promise<Response> {
     const retries = options.retries ?? this.defaults.maxRetries;
     let lastError: unknown;
 
@@ -107,7 +189,9 @@ export class HttpClient {
           Accept: 'text/html,application/json,*/*',
           ...options.headers,
         };
-        if (this.defaults.userAgent) headers['X-Proxy-UA'] = this.defaults.userAgent;
+        if (viaProxy && this.defaults.userAgent) {
+          headers['X-Proxy-UA'] = this.defaults.userAgent;
+        }
 
         const res = await fetch(url, {
           method: options.method ?? 'GET',
@@ -126,9 +210,8 @@ export class HttpClient {
         }
         return res;
       } catch (err) {
-        lastError = formatFetchError(err, url);
-        logger.warn('HttpClient attempt failed', { url, attempt, err: lastError });
-        // Timeouts: do not burn another full timeout window on retries.
+        lastError = formatFetchError(err, url, viaProxy);
+        logger.warn('HttpClient attempt failed', { url, attempt, viaProxy, err: lastError });
         if (
           lastError instanceof Error &&
           /Timeout:|aborted|AbortError/i.test(lastError.message)

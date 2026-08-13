@@ -22,6 +22,13 @@ export const ALLOWED_HOSTS = new Set([
   'www.altadefinizionex.co',
   'altadefinizionegratis.trade',
   'www.altadefinizionegratis.trade',
+  'altadefinizione.you',
+  'www.altadefinizione.you',
+  'altadefinizione.hot',
+  'altadefinizione.okinawa',
+  'altadefinizione.casa',
+  'altadefinizione.click',
+  'altadefinizione.pink',
   'v.vidxgo.co',
   'vidxgo.co',
   'd2b.you',
@@ -39,6 +46,10 @@ export function isAllowedUrl(target) {
     const u = new URL(target);
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
     if (ALLOWED_HOSTS.has(u.hostname)) return true;
+    // Any Altadefinizione / vidxgo / d2b CDN host (mirrors change often).
+    if (/altadefinizione/i.test(u.hostname)) return true;
+    if (/vidxgo\.co$/i.test(u.hostname)) return true;
+    if (/\.d2b\.you$/i.test(u.hostname) || u.hostname === 'd2b.you') return true;
     return [...ALLOWED_HOSTS].some((h) => u.hostname.endsWith(`.${h}`) || u.hostname === h);
   } catch {
     return false;

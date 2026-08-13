@@ -39,7 +39,8 @@ export async function bootstrap(root: HTMLElement, overrides: Partial<AppConfig>
     timeoutMs: config.httpTimeoutMs,
     maxRetries: config.httpMaxRetries,
     minIntervalMs: config.httpMinIntervalMs,
-    proxyBaseUrl: settings.proxyBaseUrl || config.proxyBaseUrl,
+    // Empty string in settings = direct only (no fallback).
+    proxyBaseUrl: (settings.proxyBaseUrl ?? config.proxyBaseUrl).trim() || undefined,
     userAgent: 'WebOSAnimeTV/0.1 (personal)',
   });
 
@@ -60,14 +61,16 @@ export async function bootstrap(root: HTMLElement, overrides: Partial<AppConfig>
       id: 'altadefinizione',
       name: 'Altadefinizione',
       baseUrl: 'https://altadefinizionex.co',
-      mirrors: ['https://altadefinizionegratis.trade'],
+      // Host failover inside the same provider (path-compatible mirrors).
+      mirrors: ['https://altadefinizione.you'],
     }),
   );
+  // Second film provider: used when the primary catalog/search fails or misses titles.
   registry.register(
     new AltadefinizioneProvider(providerCtx, config.enableAltadefinizione, {
-      id: 'altadefinizione-alt',
+      id: 'altadefinizione-you',
       name: 'Altadefinizione (mirror)',
-      baseUrl: 'https://altadefinizionegratis.trade',
+      baseUrl: 'https://altadefinizione.you',
       mirrors: ['https://altadefinizionex.co'],
     }),
   );
@@ -120,6 +123,12 @@ function wireInput(ctx: AppContext): void {
       event.preventDefault();
       void (async () => {
         if (route === 'player') {
+          const nextBox = document.querySelector('.next-episode:not([hidden])') as HTMLElement | null;
+          const cancel = nextBox?.querySelector('[data-focus-id="next-cancel"]') as HTMLElement | null;
+          if (cancel) {
+            cancel.click();
+            return;
+          }
           await ctx.player.stop();
         }
         const wentBack = await ctx.router.back();
@@ -145,6 +154,12 @@ function wireInput(ctx: AppContext): void {
     if (key === 'ArrowLeft') {
       event.preventDefault();
       if (route === 'player') {
+        const id = ctx.focus.getCurrentId() || '';
+        if (id.startsWith('seek-') || id.startsWith('next-') || id.startsWith('ep-')) {
+          ctx.focus.move('left');
+          document.querySelector('.player-overlay')?.classList.add('is-visible');
+          return;
+        }
         ctx.player.seekBy(-10);
         document.querySelector('.player-overlay')?.classList.add('is-visible');
         return;
@@ -155,6 +170,12 @@ function wireInput(ctx: AppContext): void {
     if (key === 'ArrowRight') {
       event.preventDefault();
       if (route === 'player') {
+        const id = ctx.focus.getCurrentId() || '';
+        if (id.startsWith('seek-') || id.startsWith('next-') || id.startsWith('ep-')) {
+          ctx.focus.move('right');
+          document.querySelector('.player-overlay')?.classList.add('is-visible');
+          return;
+        }
         ctx.player.seekBy(10);
         document.querySelector('.player-overlay')?.classList.add('is-visible');
         return;
@@ -167,7 +188,13 @@ function wireInput(ctx: AppContext): void {
       const el = ctx.focus.getCurrentElement();
       if (route === 'player') {
         event.preventDefault();
+        const id = ctx.focus.getCurrentId() || '';
+        if (id.startsWith('seek-') || id.startsWith('next-') || id.startsWith('ep-')) {
+          el?.click();
+          return;
+        }
         ctx.player.togglePlayPause();
+        document.querySelector('.player-overlay')?.classList.add('is-visible');
         return;
       }
       if (el && el !== document.activeElement) {

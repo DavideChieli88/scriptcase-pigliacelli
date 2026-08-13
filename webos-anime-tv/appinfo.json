@@ -10,5 +10,8 @@
   "resolution": "1920x1080",
   "bgColor": "#0b0d10",
   "disableBackHistoryAPI": true,
-  "requiredPermissions": []
+  "requiredPermissions": [],
+  "vendorExtension": {
+    "allowCrossDomain": true
+  }
 }

@@ -1,5 +1,6 @@
 import type { AnimeSummary } from '../../domain/models';
 import { escapeHtml } from '../../core/utils';
+import { bindLazyPoster } from '../../core/media/LazyPoster';
 
 export function createCard(anime: AnimeSummary, focusId: string): HTMLElement {
   const el = document.createElement('article');
@@ -9,27 +10,28 @@ export function createCard(anime: AnimeSummary, focusId: string): HTMLElement {
   el.setAttribute('role', 'button');
   el.setAttribute('aria-label', anime.title);
 
-  const poster = anime.coverUrl
-    ? `<img class="card-poster" src="${escapeHtml(anime.coverUrl)}" alt="" loading="lazy" />`
-    : `<div class="card-poster placeholder">Nessuna cover</div>`;
+  if (anime.coverUrl) {
+    const img = document.createElement('img');
+    img.className = 'card-poster';
+    img.alt = '';
+    bindLazyPoster(img, anime.coverUrl);
+    el.appendChild(img);
+  } else {
+    const ph = document.createElement('div');
+    ph.className = 'card-poster placeholder';
+    ph.textContent = 'Nessuna cover';
+    el.appendChild(ph);
+  }
 
-  el.innerHTML = `
-    ${poster}
-    <div class="card-body">
-      <h3 class="card-title">${escapeHtml(anime.title)}</h3>
-      <div class="card-meta">${anime.year ? escapeHtml(String(anime.year)) : ''}${
-        anime.genres?.length ? ` · ${escapeHtml(anime.genres.slice(0, 2).join(', '))}` : ''
-      }</div>
-    </div>
+  const body = document.createElement('div');
+  body.className = 'card-body';
+  body.innerHTML = `
+    <h3 class="card-title">${escapeHtml(anime.title)}</h3>
+    <div class="card-meta">${anime.year ? escapeHtml(String(anime.year)) : ''}${
+      anime.genres?.length ? ` · ${escapeHtml(anime.genres.slice(0, 2).join(', '))}` : ''
+    }</div>
   `;
-
-  const img = el.querySelector('img.card-poster');
-  img?.addEventListener('error', () => {
-    img.replaceWith(Object.assign(document.createElement('div'), {
-      className: 'card-poster placeholder',
-      textContent: 'Nessuna cover',
-    }));
-  });
+  el.appendChild(body);
 
   return el;
 }

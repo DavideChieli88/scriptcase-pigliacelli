@@ -10,6 +10,13 @@ function formatTime(sec: number): string {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
+const SEEK_STEPS = [-60, -30, -10, -5, 5, 10, 30, 60] as const;
+const NEXT_COUNTDOWN_SEC = 8;
+
+function seekLabel(delta: number): string {
+  return delta < 0 ? `${delta}s` : `+${delta}s`;
+}
+
 export async function renderPlayerPage(
   ctx: AppContext,
   root: HTMLElement,
@@ -40,7 +47,9 @@ export async function renderPlayerPage(
       </div>
       <div class="player-time"><span data-cur>0:00</span> / <span data-dur>0:00</span></div>
     </div>
-    <div class="muted">Back esci · Enter play/pausa · ← → ±10s</div>
+    <div class="player-seek-row" role="group" aria-label="Salta nel tempo"></div>
+    <div class="player-episode-row" role="group" aria-label="Episodi"></div>
+    <div class="muted">Back esci · Enter play/pausa · ← → tra i tasti o ±10s</div>
   `;
   root.appendChild(overlay);
 
@@ -49,6 +58,8 @@ export async function renderPlayerPage(
   const thumbEl = overlay.querySelector('.player-progress-thumb') as HTMLElement;
   const curEl = overlay.querySelector('[data-cur]') as HTMLElement;
   const durEl = overlay.querySelector('[data-dur]') as HTMLElement;
+  const seekRow = overlay.querySelector('.player-seek-row') as HTMLElement;
+  const episodeRow = overlay.querySelector('.player-episode-row') as HTMLElement;
 
   const updateProgressUi = () => {
     const ratio = ctx.player.getProgressRatio();
@@ -59,12 +70,59 @@ export async function renderPlayerPage(
     durEl.textContent = formatTime(ctx.player.getDuration());
   };
 
+  let hideTimer = 0;
+  const bumpOverlay = () => {
+    overlay.classList.add('is-visible');
+    window.clearTimeout(hideTimer);
+    hideTimer = window.setTimeout(() => overlay.classList.remove('is-visible'), 4500);
+  };
+
+  SEEK_STEPS.forEach((delta, i) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'player-seek-btn';
+    btn.textContent = seekLabel(delta);
+    btn.dataset.focusId = `seek-${delta}`;
+    btn.addEventListener('click', () => {
+      ctx.player.seekBy(delta);
+      updateProgressUi();
+      bumpOverlay();
+    });
+    seekRow.appendChild(btn);
+    ctx.focus.register({
+      id: `seek-${delta}`,
+      el: btn,
+      group: 'seek',
+      row: 1,
+      col: i,
+    });
+  });
+
   const nextBox = document.createElement('div');
   nextBox.className = 'next-episode';
   nextBox.hidden = true;
-  nextBox.innerHTML = `<div class="rail-title" style="font-size:22px;margin:0 0 8px">Prossimo episodio</div>
-    <button class="hero-cta primary" data-focus-id="next-ep">Riproduci</button>`;
+  nextBox.innerHTML = `
+    <div class="next-episode__kicker">Fine episodio</div>
+    <div class="rail-title next-episode__title" style="font-size:22px;margin:6px 0 10px">Prossimo episodio</div>
+    <div class="next-episode__countdown muted" data-next-count></div>
+    <div class="next-episode__actions">
+      <button type="button" class="hero-cta primary" data-focus-id="next-play">Riproduci ora</button>
+      <button type="button" class="hero-cta" data-focus-id="next-cancel">Annulla</button>
+    </div>
+  `;
   root.appendChild(nextBox);
+
+  let nextTimer: number | undefined;
+  let nextTick: number | undefined;
+  const clearNextPrompt = () => {
+    if (nextTimer != null) window.clearTimeout(nextTimer);
+    if (nextTick != null) window.clearInterval(nextTick);
+    nextTimer = undefined;
+    nextTick = undefined;
+    nextBox.hidden = true;
+    ctx.focus.graph.unregister('next-play');
+    ctx.focus.graph.unregister('next-cancel');
+  };
 
   const provider = ctx.registry.get(params.providerId);
   if (!provider) {
@@ -102,6 +160,47 @@ export async function renderPlayerPage(
     ? `Episodio ${episode.number}${episode.title ? ` — ${episode.title}` : ''}`
     : 'Riproduzione';
 
+  const epIdx = anime?.episodes.findIndex((e) => e.id === params.episodeId) ?? -1;
+  const prevEp = epIdx > 0 ? anime!.episodes[epIdx - 1] : undefined;
+  const nextEp = epIdx >= 0 && anime ? anime.episodes[epIdx + 1] : undefined;
+
+  const goToEpisode = (episodeId: string) => {
+    clearNextPrompt();
+    void ctx.router.navigate(
+      'player',
+      { providerId: params.providerId, animeId: params.animeId, episodeId },
+      true,
+    );
+  };
+
+  const prevBtn = document.createElement('button');
+  prevBtn.type = 'button';
+  prevBtn.className = 'player-seek-btn player-ep-btn';
+  prevBtn.textContent = prevEp ? `← Ep. ${prevEp.number}` : '← Precedente';
+  prevBtn.disabled = !prevEp;
+  prevBtn.dataset.focusId = 'ep-prev';
+  if (prevEp) {
+    prevBtn.addEventListener('click', () => goToEpisode(prevEp.id));
+    ctx.focus.register({ id: 'ep-prev', el: prevBtn, group: 'episode', row: 2, col: 0 });
+  }
+  episodeRow.appendChild(prevBtn);
+
+  const nextBtn = document.createElement('button');
+  nextBtn.type = 'button';
+  nextBtn.className = 'player-seek-btn player-ep-btn';
+  nextBtn.textContent = nextEp ? `Ep. ${nextEp.number} →` : 'Successivo →';
+  nextBtn.disabled = !nextEp;
+  nextBtn.dataset.focusId = 'ep-next';
+  if (nextEp) {
+    nextBtn.addEventListener('click', () => goToEpisode(nextEp.id));
+    ctx.focus.register({ id: 'ep-next', el: nextBtn, group: 'episode', row: 2, col: 1 });
+  }
+  episodeRow.appendChild(nextBtn);
+
+  if (!prevEp && !nextEp) {
+    episodeRow.hidden = true;
+  }
+
   try {
     await ctx.player.playFirstWorking(streams.data, {
       providerId: params.providerId,
@@ -119,12 +218,7 @@ export async function renderPlayerPage(
     overlay.classList.add('is-visible');
   }
 
-  let hideTimer = window.setTimeout(() => overlay.classList.remove('is-visible'), 4000);
-  const bumpOverlay = () => {
-    overlay.classList.add('is-visible');
-    window.clearTimeout(hideTimer);
-    hideTimer = window.setTimeout(() => overlay.classList.remove('is-visible'), 4000);
-  };
+  hideTimer = window.setTimeout(() => overlay.classList.remove('is-visible'), 4500);
 
   video.addEventListener('timeupdate', () => {
     updateProgressUi();
@@ -151,26 +245,60 @@ export async function renderPlayerPage(
   });
 
   const settings = await ctx.persistence.settings.getOrCreate(ctx.config);
+
+  const goNext = (episodeId: string) => {
+    goToEpisode(episodeId);
+  };
+
+  const showNextPrompt = (next: { id: string; number: number; title?: string }) => {
+    clearNextPrompt();
+    nextBox.hidden = false;
+    overlay.classList.remove('is-visible');
+
+    const titleEl = nextBox.querySelector('.next-episode__title') as HTMLElement;
+    const countEl = nextBox.querySelector('[data-next-count]') as HTMLElement;
+    const playBtn = nextBox.querySelector('[data-focus-id="next-play"]') as HTMLButtonElement;
+    const cancelBtn = nextBox.querySelector('[data-focus-id="next-cancel"]') as HTMLButtonElement;
+
+    titleEl.textContent = next.title
+      ? `Ep. ${next.number} — ${next.title}`
+      : `Episodio ${next.number}`;
+
+    ctx.focus.register({ id: 'next-play', el: playBtn, group: 'next', row: 0, col: 0 });
+    ctx.focus.register({ id: 'next-cancel', el: cancelBtn, group: 'next', row: 0, col: 1 });
+    ctx.focus.focus('next-play');
+
+    playBtn.onclick = () => goNext(next.id);
+    cancelBtn.onclick = () => {
+      clearNextPrompt();
+      ctx.focus.focus('player-progress', false);
+      bumpOverlay();
+    };
+
+    if (!settings.autoplayNext) {
+      countEl.textContent = 'Autoplay disattivato — premi Riproduci ora';
+      return;
+    }
+
+    let left = NEXT_COUNTDOWN_SEC;
+    countEl.textContent = `Avvio automatico tra ${left}s…`;
+    nextTick = window.setInterval(() => {
+      left -= 1;
+      if (left <= 0) {
+        countEl.textContent = 'Avvio…';
+        return;
+      }
+      countEl.textContent = `Avvio automatico tra ${left}s…`;
+    }, 1000);
+    nextTimer = window.setTimeout(() => goNext(next.id), NEXT_COUNTDOWN_SEC * 1000);
+  };
+
   video.addEventListener('ended', () => {
-    if (!settings.autoplayNext || !anime) return;
+    if (!anime) return;
     const idx = anime.episodes.findIndex((e) => e.id === params.episodeId);
     const next = anime.episodes[idx + 1];
     if (!next) return;
-    nextBox.hidden = false;
-    nextBox.querySelector('.rail-title')!.textContent = `Prossimo: Ep. ${next.number}`;
-    const btn = nextBox.querySelector('[data-focus-id="next-ep"]') as HTMLElement;
-    ctx.focus.register({ id: 'next-ep', el: btn, group: 'next', row: 0, col: 0 });
-    ctx.focus.focus('next-ep');
-    btn.onclick = () => {
-      void ctx.router.navigate(
-        'player',
-        { providerId: params.providerId, animeId: params.animeId, episodeId: next.id },
-        true,
-      );
-    };
-    if (settings.autoplayNext) {
-      window.setTimeout(() => btn.click(), 4000);
-    }
+    showNextPrompt(next);
   });
 
   ctx.focus.register({ id: 'player-progress', el: progressEl, group: 'player', row: 0, col: 0 });

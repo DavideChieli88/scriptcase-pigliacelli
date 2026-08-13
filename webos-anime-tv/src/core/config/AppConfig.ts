@@ -22,12 +22,11 @@ export const defaultConfig: AppConfig = {
   version: '0.1.0',
   defaultProviderId: 'mock',
   defaultMoviesProviderId: 'altadefinizione',
-  // webOS TV cannot reach the PC via 127.0.0.1 — use the PC LAN IP.
-  // `npm run deploy` injects VITE_PROXY_BASE_URL from the current Wi‑Fi IP.
+  // Optional LAN CORS proxy (fallback). HttpClient tries direct first on webOS.
+  // `npm run deploy` can inject VITE_PROXY_BASE_URL; leave empty in Settings to force direct-only.
   proxyBaseUrl: import.meta.env.DEV
     ? '/proxy'
     : import.meta.env.VITE_PROXY_BASE_URL || 'http://192.168.1.14:8787',
-  // TV → PC proxy → upstream: allow more time; fail fast on abort (no triple retry).
   httpTimeoutMs: 22000,
   httpMaxRetries: 1,
   httpMinIntervalMs: 80,
