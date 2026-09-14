@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Supermarket Helper</string>
+    <string name="nav_scan">Scansiona</string>
+    <string name="nav_history">I miei prezzi</string>
+    <string name="nav_lookup">Community</string>
+    <string name="offline_banner">Sei offline. I prezzi restano sul telefono e partiranno da soli.</string>
+    <string name="saved">Prezzo salvato.</string>
+    <string name="saved_pending">In attesa di connessione</string>
+    <string name="sync_pending">In attesa</string>
+    <string name="sync_synced">Sincronizzato</string>
+    <string name="sync_failed">Errore</string>
+    <string name="retry">Riprova</string>
+    <string name="privacy">Informativa privacy</string>
+</resources>

@@ -1,0 +1,45 @@
+/**
+ * grid_documenti_to_sign_wizard → Action Bar sign_doc_btn (Ajax)
+ *
+ * Avvia EasyGN sul documento verde della riga corrente.
+ */
+
+$documentoId = isset({id}) ? (int){id} : 0;
+$subId = 0;
+if (isset([subvettoreId]) && (int)[subvettoreId] > 0) {
+    $subId = (int)[subvettoreId];
+}
+
+if ($documentoId <= 0) {
+    sc_error_message('Documento non valido.');
+    sc_error_exit();
+}
+
+sc_lookup(rsSignOk, "
+    SELECT d.id, d.subvettore_id
+    FROM documenti d
+    INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+    WHERE d.id = $documentoId
+      AND COALESCE(td.is_readonly, 0) = 1
+      AND d.firmato_il IS NULL
+    LIMIT 1
+", 'pigliacelli');
+
+if (empty({rsSignOk[0][0]})) {
+    sc_error_message('Documento non firmabile (già firmato o non verde).');
+    sc_error_exit();
+}
+
+$docSub = (int){rsSignOk[0][1]};
+if ($subId > 0 && $docSub !== $subId) {
+    sc_error_message('Documento non appartenente al subvettore corrente.');
+    sc_error_exit();
+}
+if ($subId <= 0) {
+    $subId = $docSub;
+}
+
+[documentoId] = $documentoId;
+[subvettoreId] = $subId;
+
+sc_redir('easygn_start_wf_documento', 'documentoId=' . $documentoId . '&subvettoreId=' . $subId);

@@ -20,8 +20,13 @@ const CAPABILITIES: ProviderCapabilities = {
   offlineCache: true,
 };
 
-/** First home load + each "Carica altri" batch (site ≈ 20 films/page). */
-const CATALOG_BATCH_PAGES = 10;
+/** First home paint — 1 page (~20 titles). More via "Carica altri". */
+export const HOME_CATALOG_PAGES = 1;
+/** Each "Carica altri" batch (site ≈ 20 films/page). */
+export const CATALOG_BATCH_PAGES = 5;
+/** Search pages (~30 hits each). Fallback provider covers the rest. */
+export const SEARCH_MAX_PAGES = 8;
+const HOST_DEAD_MS = 10 * 60 * 1000;
 
 export interface AltadefinizioneOptions {
   id: string;
@@ -52,6 +57,8 @@ export class AltadefinizioneProvider implements ContentProvider {
   readonly kind = 'movies' as const;
 
   private readonly hosts: string[];
+  private lastGoodHost: string | undefined;
+  private deadUntil = new Map<string, number>();
   /** Next catalog page to fetch (1-based). */
   private catalogNextPage = 1;
   private catalogMaxPage: number | undefined;
@@ -120,7 +127,7 @@ export class AltadefinizioneProvider implements ContentProvider {
           this.catalogSeen.add(item.id);
           items.push({ ...item, providerId: this.id });
         }
-        if (page < end) await sleep(350);
+        if (page < end) await sleep(200);
       } catch (e) {
         this.ctx.logger.warn('Altadefinizione catalog page failed', { page, e });
         if (isRateLimited(e)) {
@@ -181,6 +188,21 @@ export class AltadefinizioneProvider implements ContentProvider {
     return /ECONNREFUSED\s+127\.|ECONNREFUSED 127\.|::1|sinkhole/i.test(message);
   }
 
+  private orderedHosts(): string[] {
+    const now = Date.now();
+    const live = this.hosts.filter((h) => (this.deadUntil.get(h) ?? 0) < now);
+    const list = live.length ? live : [...this.hosts];
+    if (this.lastGoodHost && list.includes(this.lastGoodHost)) {
+      return [this.lastGoodHost, ...list.filter((h) => h !== this.lastGoodHost)];
+    }
+    return list;
+  }
+
+  private markHostDead(host: string): void {
+    this.deadUntil.set(host, Date.now() + HOST_DEAD_MS);
+    if (this.lastGoodHost === host) this.lastGoodHost = undefined;
+  }
+
   private async fetchHtml(pathOrUrl: string): Promise<{ html: string; host: string }> {
     if (pathOrUrl.startsWith('http')) {
       const html = await this.fetchOne(pathOrUrl);
@@ -189,21 +211,26 @@ export class AltadefinizioneProvider implements ContentProvider {
 
     const path = pathOrUrl.startsWith('/') ? pathOrUrl : `/${pathOrUrl}`;
     const errors: string[] = [];
+    const hosts = this.orderedHosts();
 
-    for (let i = 0; i < this.hosts.length; i++) {
-      const host = this.hosts[i]!;
+    for (let i = 0; i < hosts.length; i++) {
+      const host = hosts[i]!;
       const url = `${host}${path}`;
       try {
         const html = await this.fetchOne(url);
+        this.lastGoodHost = host;
         return { html, host };
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
         errors.push(`${host}: ${message}`);
         this.ctx.logger.warn('Altadefinizione host failed', { host, message });
-        // ISP DNS blocks often map mirrors to 127.0.0.1 — try next host.
-        if (this.isDnsSinkholeError(message)) continue;
+        if (this.isDnsSinkholeError(message) || /Timeout rete|Timeout:/i.test(message)) {
+          this.markHostDead(host);
+          continue;
+        }
         if (!isFailoverError(e)) throw e;
-        if (isRateLimited(e) && i < this.hosts.length - 1) {
+        this.markHostDead(host);
+        if (isRateLimited(e) && i < hosts.length - 1) {
           await sleep(2000);
         }
       }
@@ -234,8 +261,8 @@ export class AltadefinizioneProvider implements ContentProvider {
       this.catalogMaxPage = undefined;
       this.catalogLoaded = 0;
 
-      const { items } = await this.fetchCatalogPages(1, CATALOG_BATCH_PAGES);
-      this.catalogNextPage = 1 + CATALOG_BATCH_PAGES;
+      const { items } = await this.fetchCatalogPages(1, HOME_CATALOG_PAGES);
+      this.catalogNextPage = 1 + HOME_CATALOG_PAGES;
       this.catalogLoaded = items.length;
 
       const sections: HomeSection[] = [];
@@ -263,8 +290,8 @@ export class AltadefinizioneProvider implements ContentProvider {
       const q = query.trim();
       if (!q) return okResult(this.id, []);
 
-      // Paginate until Found N is covered (DLE ~30/page). Soft cap avoids endless 429 loops.
-      const HARD_MAX_PAGES = 40;
+      // Paginate until Found N is covered (DLE ~30/page). Soft cap keeps search snappy.
+      const HARD_MAX_PAGES = SEARCH_MAX_PAGES;
       const seen = new Set<string>();
       const items: AnimeSummary[] = [];
       let total: number | undefined;
@@ -289,7 +316,7 @@ export class AltadefinizioneProvider implements ContentProvider {
         if (added === 0 && page > 1) break;
         if (total != null && page * 30 >= total) break;
         if (page > 1 && batch.length < 5) break;
-        if (page < HARD_MAX_PAGES) await sleep(700);
+        if (page < HARD_MAX_PAGES) await sleep(250);
       }
 
       await this.ctx.providerState.recordSuccess(this.id);

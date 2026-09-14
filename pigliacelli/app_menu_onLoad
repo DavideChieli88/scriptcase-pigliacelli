@@ -1,0 +1,70 @@
+// Scriptcase — app_menu → onLoad
+// NON usare "return" (pagina bianca).
+
+[menu_description] = "";
+
+if (!is_numeric([usr_login])) {
+    [menu_description] .= [usr_login];
+}
+
+if (!empty([usr_email])) {
+    [menu_description] .= !empty([menu_description]) ? ' / ' : '';
+    [menu_description] .= [usr_email];
+}
+
+if (!empty([usr_phone])) {
+    [menu_description] .= !empty([menu_description]) ? ' / ' : '';
+    [menu_description] .= [usr_phone];
+}
+
+// Flash da Completa wizard / firme verdi (redirect qui dopo wizard_complete=1)
+if (!empty($_SESSION['wizard_flash_msg'])) {
+    $flashMsg = (string)$_SESSION['wizard_flash_msg'];
+    unset($_SESSION['wizard_flash_msg']);
+    sc_error_message($flashMsg);
+}
+
+$usrLogin = trim((string)[usr_login]);
+if ($usrLogin === '' || strcasecmp($usrLogin, 'Guest') === 0) {
+    // skip
+} else {
+    $loginSql = str_replace("'", "''", $usrLogin);
+
+    // group 2 + wizard incompleto → solo starting wizard
+    sc_lookup(rsWizMenu, "
+        SELECT sug.group_id, COALESCE(s.wizard_complete, 0)
+        FROM sec_users su
+        INNER JOIN sec_users_groups sug ON sug.login = su.login
+        LEFT JOIN subvettori s ON s.id = su.subvettore_id
+        WHERE su.login = '$loginSql'
+        LIMIT 1
+    ", 'pigliacelli');
+
+    if (!empty({rsWizMenu[0][0]})
+        && (int){rsWizMenu[0][0]} === 2
+        && (int){rsWizMenu[0][1]} === 0
+    ) {
+        sc_redir('blank_wizard_landing');
+    }
+
+    // primo accesso menu
+    try {
+        sc_lookup(rsHasLogged, "
+            SELECT COALESCE(hasLoggedFirst, 0)
+            FROM sec_users
+            WHERE login = '$loginSql'
+            LIMIT 1
+        ", 'pigliacelli');
+        if (isset({rsHasLogged[0][0]}) && (int){rsHasLogged[0][0]} === 0) {
+            sc_exec_sql("
+                UPDATE sec_users
+                SET hasLoggedFirst = 1
+                WHERE login = '$loginSql'
+                  AND COALESCE(hasLoggedFirst, 0) = 0
+            ", 'pigliacelli');
+            sc_log_add('FIRST_LOGIN', "hasLoggedFirst=1 login=$usrLogin (app_menu onLoad)");
+        }
+    } catch (Throwable $e) {
+        sc_log_add('FIRST_LOGIN', 'ERRORE onLoad login=' . $usrLogin . ' — ' . $e->getMessage());
+    }
+}

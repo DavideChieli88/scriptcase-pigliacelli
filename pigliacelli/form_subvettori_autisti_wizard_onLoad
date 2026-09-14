@@ -1,0 +1,159 @@
+/**
+ * form_subvettori_autisti_wizard → onLoad
+ *
+ * Grid editabile (View) + form modal: SC genera anche *_wizard_inline
+ * (non la crei tu). In modale spesso gira solo onLoad (con {id}), NON onLoadRecord.
+ * Per questo il caricamento documenti è QUI quando id > 0.
+ *
+ * 1) Tasti wizard: ON in griglia, OFF in modale
+ * 2) Precarica docs virtuali se id > 0 (fallback modale inline)
+ * 3) Show/hide permesso_soggiorno da flag
+ *
+ * Setup radio permesso_soggiorno_flag:
+ *   - Valore iniziale = 0
+ *   - Reload = OFF
+ *   - Ajax onClick (non onChange)
+ *
+ * Name Buttons: next_step_btn_mezzi, back_step_btn_autisti
+ */
+
+// --- Tasti wizard ---
+$op = '';
+if (isset($this->nmgp_opcao)) {
+    $op = strtolower(trim((string)$this->nmgp_opcao));
+} elseif (isset($_POST['nmgp_opcao'])) {
+    $op = strtolower(trim((string)$_POST['nmgp_opcao']));
+} elseif (isset($_GET['nmgp_opcao'])) {
+    $op = strtolower(trim((string)$_GET['nmgp_opcao']));
+}
+
+sc_log_add('WIZ_BTN', 'autisti onLoad op=[' . $op . ']');
+
+$isModal = in_array($op, array(
+    'igual', '', 'busca',
+    'alterar', 'incluir', 'novo',
+    'edit', 'update', 'insert',
+    'reload', 'refresh'
+), true);
+
+if ($isModal) {
+    sc_btn_display('next_step_btn_mezzi', 'off');
+    sc_btn_display('back_step_btn_autisti', 'off');
+} else {
+    sc_btn_display('next_step_btn_mezzi', 'on');
+    sc_btn_display('back_step_btn_autisti', 'on');
+}
+
+// --- Precarica documenti (necessario in modale *_inline dove manca onLoadRecord) ---
+$autistaId = isset({id}) ? (int){id} : 0;
+
+if ($autistaId > 0) {
+    // Solo se i virtuali sono ancora vuoti (evita doppio lavoro se onLoadRecord ha già popolato)
+    $patNow = trim((string){patente});
+    if ($patNow === '') {
+        sc_lookup(rsOL18, "
+            SELECT file FROM documenti
+            WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = 18
+              AND file IS NOT NULL AND TRIM(file) <> ''
+            ORDER BY id ASC LIMIT 1
+        ", 'pigliacelli');
+        {idoneita_sanitaria} = !empty({rsOL18[0][0]}) ? basename(trim((string){rsOL18[0][0]})) : '';
+
+        sc_lookup(rsOL19a, "
+            SELECT file FROM documenti
+            WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = 19
+              AND file IS NOT NULL AND TRIM(file) <> ''
+            ORDER BY id ASC LIMIT 1
+        ", 'pigliacelli');
+        {patente} = !empty({rsOL19a[0][0]}) ? basename(trim((string){rsOL19a[0][0]})) : '';
+
+        $idPrima = 0;
+        sc_lookup(rsOL19id, "
+            SELECT id FROM documenti
+            WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = 19
+            ORDER BY id ASC LIMIT 1
+        ", 'pigliacelli');
+        if (!empty({rsOL19id[0][0]})) {
+            $idPrima = (int){rsOL19id[0][0]};
+        }
+
+        sc_lookup(rsOL19b, "
+            SELECT file FROM documenti
+            WHERE subvettore_autista_id = $autistaId
+              AND tipo_documento_id = 19
+              AND id <> $idPrima
+              AND file IS NOT NULL AND TRIM(file) <> ''
+            ORDER BY id ASC LIMIT 1
+        ", 'pigliacelli');
+        {cqc} = !empty({rsOL19b[0][0]}) ? basename(trim((string){rsOL19b[0][0]})) : '';
+
+        sc_lookup(rsOL20, "
+            SELECT file FROM documenti
+            WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = 20
+              AND file IS NOT NULL AND TRIM(file) <> ''
+            ORDER BY id ASC LIMIT 1
+        ", 'pigliacelli');
+        {formazione_sicurezza} = !empty({rsOL20[0][0]}) ? basename(trim((string){rsOL20[0][0]})) : '';
+
+        sc_lookup(rsOL21, "
+            SELECT file FROM documenti
+            WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = 21
+              AND file IS NOT NULL AND TRIM(file) <> ''
+            ORDER BY id ASC LIMIT 1
+        ", 'pigliacelli');
+        {dpi_iii_categoria} = !empty({rsOL21[0][0]}) ? basename(trim((string){rsOL21[0][0]})) : '';
+
+        sc_lookup(rsOL30, "
+            SELECT file, in_possesso FROM documenti
+            WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = 30
+            ORDER BY id ASC LIMIT 1
+        ", 'pigliacelli');
+
+        $file30 = '';
+        if (!empty({rsOL30[0][0]})) {
+            $file30 = basename(trim((string){rsOL30[0][0]}));
+        }
+        {permesso_soggiorno} = $file30;
+
+        $inPoss30 = 0;
+        if (isset({rsOL30[0][1]}) && {rsOL30[0][1]} !== '' && {rsOL30[0][1]} !== null && (string){rsOL30[0][1]} !== 'null') {
+            $inPoss30 = ((int){rsOL30[0][1]} === 1) ? 1 : 0;
+        }
+        if ($inPoss30 === 1 || $file30 !== '') {
+            {permesso_soggiorno_flag} = 1;
+        } else {
+            {permesso_soggiorno_flag} = 0;
+        }
+
+        sc_log_add(
+            'AUT_LOAD',
+            'onLoad FILL id=' . $autistaId
+            . ' pat=[' . (string){patente} . ']'
+            . ' perm=[' . $file30 . ']'
+            . ' flag=' . (int){permesso_soggiorno_flag}
+        );
+    }
+}
+
+// --- Display permesso ---
+sc_field_display({permesso_soggiorno_flag}, 'on');
+
+$flagPermesso = {permesso_soggiorno_flag};
+if ($flagPermesso === '' || $flagPermesso === null || $flagPermesso === 'undefined' || $flagPermesso === 'null') {
+    $flagPermesso = 0;
+}
+$flagPermesso = ((int)$flagPermesso === 1) ? 1 : 0;
+{permesso_soggiorno_flag} = $flagPermesso;
+
+if ($flagPermesso === 1) {
+    sc_field_display({permesso_soggiorno}, 'on');
+} else {
+    sc_field_display({permesso_soggiorno}, 'off');
+}
+
+sc_log_add(
+    'AUT_LOAD',
+    'onLoad display flag=' . $flagPermesso
+    . ' pat=[' . trim((string){patente}) . ']'
+    . ' id=' . $autistaId
+);

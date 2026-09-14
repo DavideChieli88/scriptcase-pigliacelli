@@ -1,0 +1,22 @@
+/**
+ * form_subvettori_autisti_wizard → Ajax onClick di permesso_soggiorno_flag
+ *
+ * Setup SC sul campo permesso_soggiorno_flag (Radio):
+ *   1) "Reload form when value has changed" = OFF
+ *   2) Ajax Events → nuovo evento → campo permesso_soggiorno_flag → onClick
+ *      (NON onChange: la doc SC dice che il radio non è compatibile con onChange)
+ *
+ * Solo show/hide del file: niente reload, così il flag resta fino al save.
+ */
+
+$flagPermesso = {permesso_soggiorno_flag};
+if ($flagPermesso === '' || $flagPermesso === null || $flagPermesso === 'undefined' || $flagPermesso === 'null') {
+    $flagPermesso = 0;
+}
+$flagPermesso = ((int)$flagPermesso === 1) ? 1 : 0;
+
+if ($flagPermesso === 1) {
+    sc_field_display({permesso_soggiorno}, 'on');
+} else {
+    sc_field_display({permesso_soggiorno}, 'off');
+}

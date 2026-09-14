@@ -1,0 +1,197 @@
+/**
+ * Scriptcase blank: blank_wizard_landing → onExecute
+ *
+ * Pagina di atterraggio onboarding subvettore (wizard_complete = 0).
+ * Logo + testo introduttivo + pulsante verso il primo step incompleto
+ * (wizard_step: 1 anagrafica, 2 autisti, 3 mezzi, 4 documenti, 5 firma verdi/grid).
+ *
+ * Setup:
+ * 1) New Application → Blank → blank_wizard_landing
+ * 2) Connessione pigliacelli, stesso gruppo sicurezza del menu
+ * 3) onExecute: incolla questo file
+ * 4) app_menu onLoad: redir qui se group=2 e wizard_complete=0
+ *
+ * Nomi app step (adattare se diversi in Scriptcase):
+ */
+
+$WIZ_APP = array(
+    1 => 'form_subvettori_starting_wizard', // anagrafica
+    2 => 'form_subvettori_autisti',
+    3 => 'form_subvettori_mezzi',
+    4 => 'form_documenti_wizard',
+    5 => 'grid_documenti_to_sign_wizard',
+);
+
+$WIZ_LABEL = array(
+    1 => 'Anagrafica aziendale',
+    2 => 'Autisti',
+    3 => 'Mezzi',
+    4 => 'Documenti',
+    5 => 'Firma documenti',
+);
+
+if (!function_exists('wiz_landing_logo_src')) {
+    function wiz_landing_logo_src()
+    {
+        $rel = '_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png';
+        $dir = realpath(dirname(__FILE__));
+        for ($i = 0; $i < 12 && $dir; $i++) {
+            $try = $dir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel);
+            if (is_readable($try)) {
+                $bin = @file_get_contents($try);
+                if ($bin !== false && $bin !== '' && strlen($bin) < 500000) {
+                    return 'data:image/png;base64,' . base64_encode($bin);
+                }
+            }
+            $p = dirname($dir);
+            if ($p === $dir) {
+                break;
+            }
+            $dir = $p;
+        }
+        // fallback relativo tipico deploy Scriptcase
+        return '../_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png';
+    }
+}
+
+if (!function_exists('wiz_landing_h')) {
+    function wiz_landing_h($s)
+    {
+        return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
+    }
+}
+
+$usrLogin = trim((string)[usr_login]);
+if ($usrLogin === '' || strcasecmp($usrLogin, 'Guest') === 0) {
+    sc_redir('app_Login');
+}
+
+$loginSql = str_replace("'", "''", $usrLogin);
+
+sc_lookup(rsWizLand, "
+    SELECT
+        sug.group_id,
+        COALESCE(s.wizard_complete, 0) AS wizard_complete,
+        COALESCE(s.wizard_step, 1) AS wizard_step,
+        COALESCE(s.ragione_sociale, '') AS ragione_sociale,
+        COALESCE(s.id, 0) AS subvettore_id
+    FROM sec_users su
+    INNER JOIN sec_users_groups sug ON sug.login = su.login
+    LEFT JOIN subvettori s ON s.id = su.subvettore_id
+    WHERE su.login = '$loginSql'
+    LIMIT 1
+", 'pigliacelli');
+
+$groupId = !empty({rsWizLand[0][0]}) ? (int){rsWizLand[0][0]} : 0;
+$wizComplete = !empty({rsWizLand[0][1]}) ? (int){rsWizLand[0][1]} : 0;
+$wizStep = !empty({rsWizLand[0][2]}) ? (int){rsWizLand[0][2]} : 1;
+$ragione = !empty({rsWizLand[0][3]}) ? trim((string){rsWizLand[0][3]}) : '';
+$subId = !empty({rsWizLand[0][4]}) ? (int){rsWizLand[0][4]} : 0;
+
+// Solo subvettori in onboarding
+if ($groupId !== 2) {
+    sc_redir('app_menu');
+}
+if ($wizComplete === 1 || $wizStep === 0) {
+    sc_redir('app_menu');
+}
+if ($subId <= 0) {
+    sc_error_message('Subvettore non associato all\'utenza. Contattare Pigliacelli.');
+    sc_redir('app_menu');
+}
+
+if ($wizStep < 1 || $wizStep > 5) {
+    $wizStep = 1;
+}
+
+$nextApp = isset($WIZ_APP[$wizStep]) ? $WIZ_APP[$wizStep] : $WIZ_APP[1];
+$nextLabel = isset($WIZ_LABEL[$wizStep]) ? $WIZ_LABEL[$wizStep] : $WIZ_LABEL[1];
+
+// Pulsante: ?go=1 → redir allo step incompleto (sc_exec non serve qui)
+$go = isset($_GET['go']) ? (int)$_GET['go'] : 0;
+if ($go === 1) {
+    sc_redir($nextApp);
+}
+
+$logoSrc = wiz_landing_logo_src();
+$selfUrl = 'blank_wizard_landing'; // nome app Scriptcase; il link usa sc_redir via ?go=1 sulla stessa blank
+
+header('Content-Type: text/html; charset=UTF-8');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+
+echo '<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">'
+    . '<meta name="viewport" content="width=device-width,initial-scale=1">'
+    . '<title>Benvenuto — Onboarding Pigliacelli</title>'
+    . '<style>'
+    . 'body{margin:0;padding:0;background:#eef1f4;font-family:Arial,Helvetica,sans-serif;color:#2d3748;}'
+    . '.wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;}'
+    . '.card{max-width:640px;width:100%;background:#fff;border:1px solid #dde1e6;border-radius:12px;'
+    . 'box-shadow:0 8px 24px rgba(26,58,92,.08);overflow:hidden;}'
+    . '.brand{padding:28px 28px 8px;text-align:center;}'
+    . '.brand img{max-width:220px;height:auto;display:inline-block;}'
+    . '.body{padding:8px 32px 32px;font-size:16px;line-height:1.65;}'
+    . 'h1{margin:12px 0 8px;font-size:24px;line-height:1.3;color:#1a3a5c;text-align:center;}'
+    . '.lead{margin:0 0 20px;text-align:center;color:#4a5568;}'
+    . '.steps{margin:20px 0;padding:0;list-style:none;}'
+    . '.steps li{display:flex;align-items:center;gap:12px;padding:10px 12px;margin:0 0 8px;'
+    . 'border:1px solid #e2e8f0;border-radius:8px;background:#fafbfc;font-size:15px;}'
+    . '.steps li.done{opacity:.55;}'
+    . '.steps li.current{border-color:#1a3a5c;background:#f0f5fa;font-weight:bold;}'
+    . '.num{flex:0 0 28px;height:28px;border-radius:50%;background:#1a3a5c;color:#fff;'
+    . 'display:flex;align-items:center;justify-content:center;font-size:13px;}'
+    . '.steps li.done .num{background:#68a06e;}'
+    . '.note{margin:16px 0 24px;padding:14px 16px;background:#f7f9fb;border:1px solid #e2e8f0;'
+    . 'border-radius:8px;font-size:14px;color:#4a5568;}'
+    . '.actions{text-align:center;}'
+    . '.btn{display:inline-block;padding:14px 28px;background:#1a3a5c;color:#fff;text-decoration:none;'
+    . 'border-radius:8px;font-size:16px;font-weight:bold;border:0;cursor:pointer;}'
+    . '.btn:hover{background:#15406e;}'
+    . '.hint{margin-top:12px;font-size:13px;color:#718096;}'
+    . '</style></head><body><div class="wrap"><div class="card">'
+    . '<div class="brand">';
+
+if ($logoSrc !== '') {
+    echo '<img src="' . wiz_landing_h($logoSrc) . '" alt="Pigliacelli">';
+}
+
+echo '</div><div class="body">'
+    . '<h1>Benvenuto nell\'area subvettori</h1>';
+
+if ($ragione !== '') {
+    echo '<p class="lead">' . wiz_landing_h($ragione) . '</p>';
+}
+
+echo '<p>Per completare l\'accreditamento le verrà chiesto di compilare i dati anagrafici, '
+    . 'inserire almeno un autista e un mezzo, caricare i documenti richiesti e firmare '
+    . 'digitalmente i documenti predisposti da Pigliacelli.</p>'
+    . '<p>Può interrompere e riprendere in qualsiasi momento: al prossimo accesso tornerà '
+    . 'su questa pagina e potrà continuare dallo step ancora da completare.</p>'
+    . '<ul class="steps">';
+
+for ($i = 1; $i <= 5; $i++) {
+    $cls = '';
+    if ($i < $wizStep) {
+        $cls = 'done';
+    } elseif ($i === $wizStep) {
+        $cls = 'current';
+    }
+    $suffix = '';
+    if ($i < $wizStep) {
+        $suffix = ' — completato';
+    } elseif ($i === $wizStep) {
+        $suffix = ' — da completare';
+    }
+    echo '<li class="' . $cls . '"><span class="num">' . $i . '</span>'
+        . '<span>' . wiz_landing_h($WIZ_LABEL[$i] . $suffix) . '</span></li>';
+}
+
+echo '</ul>'
+    . '<div class="note">Prossimo passo: <strong>' . wiz_landing_h($nextLabel) . '</strong></div>'
+    . '<div class="actions">'
+    // Link relativo Scriptcase: stessa blank con go=1
+    . '<a class="btn" href="?go=1">Continua</a>'
+    . '<p class="hint">Step ' . (int)$wizStep . ' di 5</p>'
+    . '</div>'
+    . '</div></div></div></body></html>';
+
+exit;

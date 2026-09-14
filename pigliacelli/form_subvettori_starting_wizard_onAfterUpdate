@@ -1,0 +1,37 @@
+/**
+ * form_subvettori_starting_wizard → onAfterUpdate
+ *
+ * Backup se il salvataggio form porta wizard_step a 2.
+ * Preferire il pulsante PHP Prossimo.
+ * Niente concatenazione dentro sc_redir / sc_log_add.
+ */
+
+$wizComplete = isset({wizard_complete}) ? (int){wizard_complete} : 0;
+$wizStep     = isset({wizard_step}) ? (int){wizard_step} : 1;
+
+$subId = isset({id}) ? (int){id} : 0;
+if ($subId <= 0 && isset([subvettoreId]) && (int)[subvettoreId] > 0) {
+    $subId = (int)[subvettoreId];
+}
+if ($subId > 0) {
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        @session_start();
+    }
+    $_SESSION['wizard_subvettore_id'] = $subId;
+    [subvettoreId] = $subId;
+}
+
+$logAu = 'starting_wizard onAfterUpdate step=' . $wizStep . ' complete=' . $wizComplete . ' sub=' . $subId;
+sc_log_add('WIZARD', $logAu);
+
+if ($wizComplete === 1) {
+    sc_commit_trans('pigliacelli');
+    sc_redir('app_menu');
+}
+
+if ($wizStep === 2 && $subId > 0) {
+    sc_commit_trans('pigliacelli');
+    $logAu2 = 'starting_wizard onAfterUpdate to autisti sub=' . $subId;
+    sc_log_add('WIZARD', $logAu2);
+    sc_redir('form_subvettori_autisti_wizard', subvettoreId=[subvettoreId]);
+}

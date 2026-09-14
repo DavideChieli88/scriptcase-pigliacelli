@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidReport(data) {
+      return isSignedIn()
+        && data.keys().hasAll(['barcode', 'productName', 'price', 'currency', 'storeName',
+                               'location', 'geohash', 'scannedAt', 'contributorUid', 'schemaVersion'])
+        && data.barcode is string
+        && data.barcode.size() >= 4
+        && data.barcode.size() <= 20
+        && data.productName is string
+        && data.productName.size() <= 120
+        && data.price is number
+        && data.price >= 0.01
+        && data.price <= 9999
+        && data.currency == 'EUR'
+        && data.storeName is string
+        && data.storeName.size() <= 80
+        && data.geohash is string
+        && (data.geohash.size() == 0 || data.geohash.size() == 7)
+        && data.location is latlng
+        && data.scannedAt is timestamp
+        && data.contributorUid == request.auth.uid
+        && data.schemaVersion is int;
+    }
+
+    match /price_reports/{id} {
+      allow read: if isSignedIn();
+      allow create: if isValidReport(request.resource.data);
+      allow update: if isSignedIn()
+        && request.auth.uid == resource.data.contributorUid
+        && request.resource.data.scannedAt == resource.data.scannedAt
+        && request.resource.data.contributorUid == resource.data.contributorUid
+        && isValidReport(request.resource.data);
+      allow delete: if false;
+    }
+  }
+}

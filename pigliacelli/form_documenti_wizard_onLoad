@@ -1,0 +1,78 @@
+/**
+ * form_documenti_wizard → onLoad
+ *
+ * Tasti wizard: ON in griglia, OFF in modale edit (stessa logica autisti/mezzi).
+ *
+ * Name pulsanti SC:
+ *   - next_step_btn_signs   (Prossimo / Next → step 5)
+ *   - back_btn_docs
+ *   - send_for_activation   (legacy: nascosto; ora sulla grid step 5)
+ */
+
+$op = '';
+if (isset($this->nmgp_opcao)) {
+    $op = strtolower(trim((string)$this->nmgp_opcao));
+} elseif (isset($_POST['nmgp_opcao'])) {
+    $op = strtolower(trim((string)$_POST['nmgp_opcao']));
+} elseif (isset($_GET['nmgp_opcao'])) {
+    $op = strtolower(trim((string)$_GET['nmgp_opcao']));
+}
+
+sc_log_add('WIZ_BTN', 'documenti onLoad op=[' . $op . ']');
+
+$isModal = ($op === 'igual' || $op === '' || $op === 'busca');
+
+if ($isModal) {
+    sc_btn_display('next_step_btn_signs', 'off');
+    sc_btn_display('back_btn_docs', 'off');
+    sc_btn_display('send_for_activation', 'off');
+} else {
+    sc_btn_display('next_step_btn_signs', 'on');
+    sc_btn_display('back_btn_docs', 'on');
+    sc_btn_display('send_for_activation', 'off');
+}
+
+// --- in_possesso / file (modale) ---
+$tipoId = {tipo_documento_id};
+if ($tipoId === '' || $tipoId === null || $tipoId === 'undefined') {
+    $tipoId = 0;
+}
+$tipoId = (int)$tipoId;
+
+$flagPossesso = 0;
+if ($tipoId > 0) {
+    sc_lookup(rsDocFlagPossLoad, "
+        SELECT COALESCE(flag_possesso, 0)
+        FROM tipi_documento
+        WHERE id = $tipoId
+        LIMIT 1
+    ", 'pigliacelli');
+    if (!empty({rsDocFlagPossLoad[0][0]})) {
+        $flagPossesso = (int){rsDocFlagPossLoad[0][0]};
+    }
+}
+
+$inPossesso = {in_possesso};
+if ($inPossesso === '' || $inPossesso === null || $inPossesso === 'undefined' || $inPossesso === 'null') {
+    $inPossesso = 0;
+}
+$inPossesso = ((int)$inPossesso === 1) ? 1 : 0;
+
+sc_log_add('DOC_POSS', 'onLoad tipo=' . $tipoId . ' flag=' . $flagPossesso . ' poss=' . $inPossesso);
+
+if ($flagPossesso !== 1) {
+    sc_field_display({in_possesso}, 'off');
+    sc_field_display({file}, 'on');
+    sc_field_display({data_scadenza}, 'on');
+    return;
+}
+
+sc_field_display({in_possesso}, 'on');
+
+if ($inPossesso !== 1) {
+    sc_field_display({file}, 'off');
+    sc_field_display({data_scadenza}, 'off');
+} else {
+    sc_field_display({file}, 'on');
+    sc_field_display({data_scadenza}, 'on');
+}

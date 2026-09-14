@@ -1,0 +1,26 @@
+/**
+ * form_subvettori_for_subvectors → onAfterUpdate
+ *
+ * Dopo step 1 → form autisti.
+ * sc_commit_trans prima di sc_redir: altrimenti sc_redir esce senza
+ * chiudere la transazione PDO del form → "There is already an active transaction".
+ */
+
+$wizComplete = isset({wizard_complete}) ? (int){wizard_complete} : 0;
+$wizStep     = isset({wizard_step}) ? (int){wizard_step} : 1;
+
+if ($wizComplete === 1) {
+    sc_commit_trans('pigliacelli');
+    sc_redir('app_menu');
+}
+
+if ($wizStep === 2) {
+    sc_commit_trans('pigliacelli');
+    $subId = isset({id}) ? (int){id} : 0;
+    if ($subId <= 0 && isset([subvettoreId]) && (int)[subvettoreId] > 0) {
+        $subId = (int)[subvettoreId];
+    }
+    $redirParams = $subId > 0 ? 'subvettoreId=' . $subId : '';
+    sc_redir('form_subvettori_autisti_wizard', $redirParams);
+    // oppure: sc_redir('blank_wizard_landing');
+}

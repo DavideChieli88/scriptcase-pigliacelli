@@ -1,0 +1,45 @@
+/**
+ * Wizard — onScriptInit: fallback DB + log subvettoreId.
+ * Sostituire NOME_APP con il nome dell'applicazione.
+ */
+
+if (!isset([subvettoreId]) || (int)[subvettoreId] <= 0) {
+    $usrLogin = trim((string)[usr_login]);
+    if ($usrLogin !== '') {
+        $usrSql = str_replace("'", "''", $usrLogin);
+        sc_lookup(rsWizResolveSub, "
+            SELECT COALESCE(
+                (SELECT su.subvettore_id
+                 FROM sec_users su
+                 INNER JOIN sec_users_groups sug ON sug.login = su.login
+                 WHERE su.login = '$usrSql'
+                   AND su.active = 'Y'
+                   AND sug.group_id = 2
+                   AND su.subvettore_id > 0
+                 LIMIT 1),
+                (SELECT s.id
+                 FROM subvettori s
+                 WHERE TRIM(s.login_subvettore) = '$usrSql'
+                 LIMIT 1)
+            ) AS sub_id
+        ", 'pigliacelli');
+        if (!empty({rsWizResolveSub[0][0]})) {
+            [subvettoreId] = (int){rsWizResolveSub[0][0]};
+        }
+    }
+}
+
+if ((int)[subvettoreId] > 0) {
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        @session_start();
+    }
+    $_SESSION['wizard_subvettore_id'] = (int)[subvettoreId];
+}
+
+$logSubId = (int)[subvettoreId];
+sc_log_add('WIZARD', 'NOME_APP subvettoreId=' . $logSubId);
+
+if ((int)[subvettoreId] <= 0) {
+    sc_error_message('Subvettore non associato al tuo account. Contattare Pigliacelli.');
+    sc_redir('blank_wizard_landing');
+}

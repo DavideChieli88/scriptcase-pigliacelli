@@ -53,7 +53,7 @@ export async function bootstrap(root: HTMLElement, overrides: Partial<AppConfig>
   };
 
   const registry = new ProviderRegistry();
-  registry.register(new MockProvider(config, true));
+  registry.register(new MockProvider(config, false));
   registry.register(new AnimeSaturnProvider(providerCtx, config.enableAnimeSaturn));
   registry.register(new AnimeUnityProvider(providerCtx, config.enableAnimeUnity));
   registry.register(

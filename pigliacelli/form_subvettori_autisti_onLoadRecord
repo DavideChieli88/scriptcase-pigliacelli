@@ -1,0 +1,117 @@
+/**
+ * form_subvettori_autisti_wizard → onLoadRecord
+ * Precarica docs virtuali (griglia). In modale SC (*_inline) spesso NON gira:
+ * il fallback è in onLoad quando {id} > 0.
+ *
+ * Nota SC: i widget Document spesso non mostrano il nome file già in DB.
+ */
+
+$autistaId = isset({id}) ? (int){id} : 0;
+sc_log_add('AUT_LOAD', "onLoadRecord START id=$autistaId");
+
+if ($autistaId <= 0) {
+    {idoneita_sanitaria} = '';
+    {patente} = '';
+    {cqc} = '';
+    {formazione_sicurezza} = '';
+    {dpi_iii_categoria} = '';
+    {permesso_soggiorno} = '';
+    {permesso_soggiorno_flag} = 0;
+    sc_log_add('AUT_LOAD', 'onLoadRecord NEW → flag=0, docs vuoti');
+} else {
+
+    sc_lookup(rsL18, "
+        SELECT file FROM documenti
+        WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = 18
+          AND file IS NOT NULL AND TRIM(file) <> ''
+        ORDER BY id ASC LIMIT 1
+    ", 'pigliacelli');
+    {idoneita_sanitaria} = !empty({rsL18[0][0]}) ? basename(trim((string){rsL18[0][0]})) : '';
+
+    sc_lookup(rsL19a, "
+        SELECT file FROM documenti
+        WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = 19
+          AND file IS NOT NULL AND TRIM(file) <> ''
+        ORDER BY id ASC LIMIT 1
+    ", 'pigliacelli');
+    {patente} = !empty({rsL19a[0][0]}) ? basename(trim((string){rsL19a[0][0]})) : '';
+
+    $idPrima = 0;
+    sc_lookup(rsL19id, "
+        SELECT id FROM documenti
+        WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = 19
+        ORDER BY id ASC LIMIT 1
+    ", 'pigliacelli');
+    if (!empty({rsL19id[0][0]})) {
+        $idPrima = (int){rsL19id[0][0]};
+    }
+
+    sc_lookup(rsL19b, "
+        SELECT file FROM documenti
+        WHERE subvettore_autista_id = $autistaId
+          AND tipo_documento_id = 19
+          AND id <> $idPrima
+          AND file IS NOT NULL AND TRIM(file) <> ''
+        ORDER BY id ASC LIMIT 1
+    ", 'pigliacelli');
+    {cqc} = !empty({rsL19b[0][0]}) ? basename(trim((string){rsL19b[0][0]})) : '';
+
+    sc_lookup(rsL20, "
+        SELECT file FROM documenti
+        WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = 20
+          AND file IS NOT NULL AND TRIM(file) <> ''
+        ORDER BY id ASC LIMIT 1
+    ", 'pigliacelli');
+    {formazione_sicurezza} = !empty({rsL20[0][0]}) ? basename(trim((string){rsL20[0][0]})) : '';
+
+    sc_lookup(rsL21, "
+        SELECT file FROM documenti
+        WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = 21
+          AND file IS NOT NULL AND TRIM(file) <> ''
+        ORDER BY id ASC LIMIT 1
+    ", 'pigliacelli');
+    {dpi_iii_categoria} = !empty({rsL21[0][0]}) ? basename(trim((string){rsL21[0][0]})) : '';
+
+    sc_lookup(rsL30, "
+        SELECT file, in_possesso FROM documenti
+        WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = 30
+        ORDER BY id ASC LIMIT 1
+    ", 'pigliacelli');
+
+    $file30 = '';
+    if (!empty({rsL30[0][0]})) {
+        $file30 = basename(trim((string){rsL30[0][0]}));
+    }
+    {permesso_soggiorno} = $file30;
+
+    // Flag: SOLO da in_possesso. Default 0 (mai “Sì” automatico).
+    // Se in_possesso=1 OPPURE c'è già un file → Sì (così si vede il campo file).
+    $inPoss30 = 0;
+    if (isset({rsL30[0][1]}) && {rsL30[0][1]} !== '' && {rsL30[0][1]} !== null && (string){rsL30[0][1]} !== 'null') {
+        $inPoss30 = ((int){rsL30[0][1]} === 1) ? 1 : 0;
+    }
+    if ($inPoss30 === 1 || $file30 !== '') {
+        {permesso_soggiorno_flag} = 1;
+    } else {
+        {permesso_soggiorno_flag} = 0;
+    }
+
+    sc_log_add(
+        'AUT_LOAD',
+        'onLoadRecord OK'
+        . ' pat=[' . (string){patente} . ']'
+        . ' cqc=[' . (string){cqc} . ']'
+        . ' idon=[' . (string){idoneita_sanitaria} . ']'
+        . ' form=[' . (string){formazione_sicurezza} . ']'
+        . ' dpi=[' . (string){dpi_iii_categoria} . ']'
+        . ' perm=[' . $file30 . ']'
+        . ' flag=' . (int){permesso_soggiorno_flag}
+    );
+}
+
+/*
+ * Opzionale in layout SC (campi virtuali Label/Text readonly):
+ *   patente_info, cqc_info, ... → in onLoadRecord:
+ *   {patente_info} = {patente} !== '' ? ('Caricato: ' . {patente}) : 'Nessun file';
+ * Così l’utente vede i file già presenti anche se il widget Document resta vuoto.
+ */

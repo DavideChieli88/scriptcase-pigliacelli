@@ -1,0 +1,90 @@
+/**
+ * grid_documenti_to_sign_wizard → Toolbar / Action Bar send_for_activation
+ * Label: "Invia per attivazione"
+ *
+ * Requisiti: tutti i documenti verdi firmati (firmato_il).
+ * Effetto: wizard_complete=1 + mail/notifica operatori.
+ *
+ * Globale SC: [subvettoreId]
+ */
+
+$subId = 0;
+if (isset([subvettoreId]) && (int)[subvettoreId] > 0) {
+    $subId = (int)[subvettoreId];
+}
+if ($subId <= 0) {
+    $usrLogin = trim((string)[usr_login]);
+    if ($usrLogin !== '' && strcasecmp($usrLogin, 'Guest') !== 0) {
+        $loginSql = str_replace("'", "''", $usrLogin);
+        sc_lookup(rsAttSub, "
+            SELECT COALESCE(su.subvettore_id, 0)
+            FROM sec_users su
+            WHERE su.login = '$loginSql'
+            LIMIT 1
+        ", 'pigliacelli');
+        $subId = !empty({rsAttSub[0][0]}) ? (int){rsAttSub[0][0]} : 0;
+    }
+}
+
+if ($subId <= 0) {
+    sc_error_message('Subvettore non identificato.');
+    sc_error_exit();
+}
+
+[subvettoreId] = $subId;
+
+sc_lookup(rsAttDone, "
+    SELECT COALESCE(wizard_complete, 0), COALESCE(ragione_sociale, ''), COALESCE(login_subvettore, '')
+    FROM subvettori
+    WHERE id = $subId
+    LIMIT 1
+", 'pigliacelli');
+$already = !empty({rsAttDone[0][0]}) ? (int){rsAttDone[0][0]} : 0;
+$ragione = !empty({rsAttDone[0][1]}) ? trim((string){rsAttDone[0][1]}) : '';
+$loginSub = !empty({rsAttDone[0][2]}) ? trim((string){rsAttDone[0][2]}) : '';
+
+if ($already === 1) {
+    sc_error_message('Wizard gia\' completato. Gli operatori sono stati avvisati.');
+    sc_redir('app_menu');
+}
+
+sc_lookup(rsAttCnt, "
+    SELECT
+        COUNT(*) AS tot,
+        SUM(CASE WHEN d.firmato_il IS NOT NULL AND d.firmato_il <> '0000-00-00 00:00:00' THEN 1 ELSE 0 END) AS firmati
+    FROM documenti d
+    INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+    WHERE d.subvettore_id = $subId
+      AND COALESCE(td.is_readonly, 0) = 1
+      AND (d.subvettore_autista_id IS NULL OR d.subvettore_autista_id = 0)
+      AND (d.subvettore_mezzo_id IS NULL OR d.subvettore_mezzo_id = 0)
+", 'pigliacelli');
+$tot = !empty({rsAttCnt[0][0]}) ? (int){rsAttCnt[0][0]} : 0;
+$firmati = !empty({rsAttCnt[0][1]}) ? (int){rsAttCnt[0][1]} : 0;
+
+if ($tot <= 0) {
+    sc_error_message('Nessun documento da firmare configurato.');
+    sc_error_exit();
+}
+if ($firmati < $tot) {
+    sc_error_message(
+        'Firmare tutti i documenti prima di inviare per attivazione. '
+        . 'Firmati: ' . $firmati . ' / ' . $tot . '.'
+    );
+    sc_error_exit();
+}
+
+if (function_exists('wiz_verdi_complete_wizard_and_notify')) {
+    wiz_verdi_complete_wizard_and_notify($subId);
+} else {
+    sc_exec_sql("
+        UPDATE subvettori
+        SET wizard_complete = 1, wizard_step = 0
+        WHERE id = $subId AND wizard_complete = 0
+    ", 'pigliacelli');
+    if (function_exists('wiz_verdi_notify_operatori')) {
+        wiz_verdi_notify_operatori($subId, $ragione, $loginSub);
+    }
+}
+
+sc_redir('app_menu');

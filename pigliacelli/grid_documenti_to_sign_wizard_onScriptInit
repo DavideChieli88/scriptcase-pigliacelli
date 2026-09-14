@@ -1,0 +1,193 @@
+/**
+ * grid_documenti_to_sign_wizard → onScriptInit
+ *
+ * Wizard step 5: elenco documenti verdi (tipi_documento.is_readonly=1)
+ * del subvettore loggato. Crea gli slot mancanti, blocca accesso se non in step 5.
+ *
+ * SETUP GRID (ScriptCase IDE):
+ * - Table: documenti (join tipi_documento td ON td.id = documenti.tipo_documento_id)
+ * - WHERE fisso (o macro):
+ *     COALESCE(td.is_readonly,0)=1
+ *     AND (documenti.subvettore_autista_id IS NULL OR documenti.subvettore_autista_id=0)
+ *     AND (documenti.subvettore_mezzo_id IS NULL OR documenti.subvettore_mezzo_id=0)
+ *     AND documenti.subvettore_id = [subvettoreId]
+ * - Colonne utili: td.nome, documenti.file, documenti.firmato_il,
+ *   virtuale stato_firma_label (HTML), flag is_dichiarazioni (nascosto)
+ * - Action Bar (Ajax/Link):
+ *     open_pdf_btn, sign_doc_btn, generate_pdf_btn
+ * - Security: stesso gruppo del menu subvettore (group 2)
+ *
+ * Helpers: incollare anche wizard_documenti_verdi_helpers in Library
+ * oppure lasciare le function_exists sotto.
+ */
+
+// --- helpers minimi (se non in Library) ---
+if (!function_exists('wiz_verdi_sql_quote')) {
+    function wiz_verdi_sql_quote($s)
+    {
+        return str_replace("'", "''", (string)$s);
+    }
+}
+if (!function_exists('wiz_verdi_setting')) {
+    function wiz_verdi_setting($name, $default = '')
+    {
+        $safe = wiz_verdi_sql_quote(trim((string)$name));
+        sc_lookup(rsWizVerdiSet, "SELECT set_value FROM sec_settings WHERE set_name = '" . $safe . "' LIMIT 1", 'pigliacelli');
+        if (isset({rsWizVerdiSet[0][0]})) {
+            return trim((string){rsWizVerdiSet[0][0]});
+        }
+        return (string)$default;
+    }
+}
+if (!function_exists('wiz_verdi_ensure_documenti')) {
+    function wiz_verdi_ensure_documenti($subvettore_id, $login = '')
+    {
+        $subvettore_id = (int)$subvettore_id;
+        if ($subvettore_id <= 0) {
+            return 0;
+        }
+        $login = trim((string)$login);
+        if ($login === '') {
+            sc_lookup(rsWizVerdiLogin, "
+                SELECT COALESCE(login_subvettore, '') FROM subvettori WHERE id = $subvettore_id LIMIT 1
+            ", 'pigliacelli');
+            $login = !empty({rsWizVerdiLogin[0][0]}) ? trim((string){rsWizVerdiLogin[0][0]}) : '';
+        }
+        $loginSql = wiz_verdi_sql_quote($login);
+        $placeholder = wiz_verdi_setting('documento_verde_placeholder', 'placeholder_documento_verde.pdf');
+        if ($placeholder === '') {
+            $placeholder = 'placeholder_documento_verde.pdf';
+        }
+        $phSql = wiz_verdi_sql_quote($placeholder);
+        sc_exec_sql("
+            INSERT INTO documenti (tipo_documento_id, subvettore_id, login, stato_documento_id, file)
+            SELECT td.id, $subvettore_id, '$loginSql', 1,
+                CASE WHEN LOWER(COALESCE(td.nome, '')) LIKE '%dichiaraz%' THEN NULL ELSE '$phSql' END
+            FROM tipi_documento td
+            WHERE COALESCE(td.is_readonly, 0) = 1
+              AND NOT EXISTS (
+                  SELECT 1 FROM documenti d
+                  WHERE d.subvettore_id = $subvettore_id
+                    AND d.tipo_documento_id = td.id
+                    AND (d.subvettore_autista_id IS NULL OR d.subvettore_autista_id = 0)
+                    AND (d.subvettore_mezzo_id IS NULL OR d.subvettore_mezzo_id = 0)
+              )
+        ", 'pigliacelli');
+        sc_exec_sql("
+            UPDATE documenti d
+            INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+            SET d.file = '$phSql'
+            WHERE d.subvettore_id = $subvettore_id
+              AND COALESCE(td.is_readonly, 0) = 1
+              AND (d.subvettore_autista_id IS NULL OR d.subvettore_autista_id = 0)
+              AND (d.subvettore_mezzo_id IS NULL OR d.subvettore_mezzo_id = 0)
+              AND (d.file IS NULL OR TRIM(d.file) = '')
+              AND d.firmato_il IS NULL
+              AND LOWER(COALESCE(td.nome, '')) NOT LIKE '%dichiaraz%'
+        ", 'pigliacelli');
+        return 1;
+    }
+}
+if (!function_exists('wiz_verdi_tutti_firmati')) {
+    function wiz_verdi_tutti_firmati($subvettore_id)
+    {
+        $subvettore_id = (int)$subvettore_id;
+        if ($subvettore_id <= 0) {
+            return false;
+        }
+        sc_lookup(rsWizVerdiCnt, "
+            SELECT COUNT(*) AS tot,
+                   SUM(CASE WHEN d.firmato_il IS NOT NULL THEN 1 ELSE 0 END) AS firmati
+            FROM documenti d
+            INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+            WHERE d.subvettore_id = $subvettore_id
+              AND COALESCE(td.is_readonly, 0) = 1
+              AND (d.subvettore_autista_id IS NULL OR d.subvettore_autista_id = 0)
+              AND (d.subvettore_mezzo_id IS NULL OR d.subvettore_mezzo_id = 0)
+        ", 'pigliacelli');
+        $tot = !empty({rsWizVerdiCnt[0][0]}) ? (int){rsWizVerdiCnt[0][0]} : 0;
+        $firmati = !empty({rsWizVerdiCnt[0][1]}) ? (int){rsWizVerdiCnt[0][1]} : 0;
+        return $tot > 0 && $firmati >= $tot;
+    }
+}
+if (!function_exists('wiz_verdi_complete_wizard_and_notify')) {
+    function wiz_verdi_complete_wizard_and_notify($subvettore_id)
+    {
+        $subvettore_id = (int)$subvettore_id;
+        if ($subvettore_id <= 0 || !wiz_verdi_tutti_firmati($subvettore_id)) {
+            return false;
+        }
+        sc_lookup(rsWizVerdiDone2, "
+            SELECT COALESCE(wizard_complete, 0)
+            FROM subvettori WHERE id = $subvettore_id LIMIT 1
+        ", 'pigliacelli');
+        if (!empty({rsWizVerdiDone2[0][0]}) && (int){rsWizVerdiDone2[0][0]} === 1) {
+            return true;
+        }
+        sc_exec_sql("
+            UPDATE subvettori SET wizard_complete = 1, wizard_step = 0
+            WHERE id = $subvettore_id AND wizard_complete = 0
+        ", 'pigliacelli');
+        return true;
+    }
+}
+
+$usrLogin = trim((string)[usr_login]);
+if ($usrLogin === '' || strcasecmp($usrLogin, 'Guest') === 0) {
+    sc_redir('app_Login');
+}
+$loginSql = str_replace("'", "''", $usrLogin);
+
+sc_lookup(rsGridFirmAuth, "
+    SELECT
+        sug.group_id,
+        COALESCE(s.wizard_complete, 0),
+        COALESCE(s.wizard_step, 1),
+        COALESCE(s.id, 0),
+        COALESCE(s.login_subvettore, '')
+    FROM sec_users su
+    INNER JOIN sec_users_groups sug ON sug.login = su.login
+    LEFT JOIN subvettori s ON s.id = su.subvettore_id
+    WHERE su.login = '$loginSql'
+    LIMIT 1
+", 'pigliacelli');
+
+$groupId = !empty({rsGridFirmAuth[0][0]}) ? (int){rsGridFirmAuth[0][0]} : 0;
+$wizComplete = !empty({rsGridFirmAuth[0][1]}) ? (int){rsGridFirmAuth[0][1]} : 0;
+$wizStep = !empty({rsGridFirmAuth[0][2]}) ? (int){rsGridFirmAuth[0][2]} : 1;
+$subId = !empty({rsGridFirmAuth[0][3]}) ? (int){rsGridFirmAuth[0][3]} : 0;
+$loginSub = !empty({rsGridFirmAuth[0][4]}) ? trim((string){rsGridFirmAuth[0][4]}) : '';
+
+if ($groupId !== 2) {
+    sc_redir('app_menu');
+}
+if ($wizComplete === 1) {
+    sc_redir('app_menu');
+}
+if ($subId <= 0) {
+    sc_error_message('Subvettore non associato.');
+    sc_redir('app_menu');
+}
+if ($wizStep < 5) {
+    sc_redir('blank_wizard_landing');
+}
+
+[subvettoreId] = $subId;
+
+wiz_verdi_ensure_documenti($subId, $loginSub !== '' ? $loginSub : $usrLogin);
+
+// Non chiudere il wizard qui: lo fa il pulsante "Invia per attivazione".
+
+if (!empty($_SESSION['wizard_flash_msg'])) {
+    $flash = trim((string)$_SESSION['wizard_flash_msg']);
+    unset($_SESSION['wizard_flash_msg']);
+    if ($flash !== '' && function_exists('sc_ajax_message')) {
+        sc_ajax_message($flash, 'Firma documenti', 'Ok');
+    }
+}
+if (isset($_GET['generated']) && (int)$_GET['generated'] === 1 && function_exists('sc_ajax_message')) {
+    sc_ajax_message('PDF Dichiarazioni generato. Aprilo e firmalo.', 'Dichiarazioni', 'Ok');
+}
+if (isset($_GET['from']) && (string)$_GET['from'] === 'firma' && function_exists('sc_ajax_message')) {
+    sc_ajax_message('Firma completata o in corso. Aggiorna la griglia se lo stato non è ancora aggiornato.', 'Firma', 'Ok');
+}

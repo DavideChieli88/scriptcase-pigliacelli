@@ -45,6 +45,9 @@ function hostOf(url: string): string {
   }
 }
 
+/** Direct probe timeout — fail over to proxy instead of hanging 22s per URL. */
+export const DIRECT_PROBE_MS = 6000;
+
 function isLikelyCorsOrOpaqueBlock(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   const m = err.message || '';
@@ -52,6 +55,19 @@ function isLikelyCorsOrOpaqueBlock(err: unknown): boolean {
     /Failed to fetch|NetworkError|Load failed|CORS|cross-origin|TypeError/i.test(m) ||
     err.name === 'TypeError'
   );
+}
+
+/** Direct failed in a way the LAN proxy might still succeed. */
+export function shouldFallbackToProxy(err: unknown): boolean {
+  if (isLikelyCorsOrOpaqueBlock(err)) return true;
+  const m = err instanceof Error ? err.message : String(err);
+  return /Timeout rete|Timeout:|aborted|AbortError/i.test(m);
+}
+
+function hasProxyReferer(options: HttpRequestOptions): boolean {
+  const h = options.headers;
+  if (!h) return false;
+  return !!(h['X-Proxy-Referer'] || h['x-proxy-referer']);
 }
 
 function formatFetchError(err: unknown, url: string, viaProxy: boolean): Error {
@@ -114,7 +130,7 @@ export class HttpClient {
   /**
    * Fetch URL text.
    * Default `auto`: try direct (webOS may allow it with allowCrossDomain),
-   * fall back to LAN proxy only if the browser blocks the response.
+   * fall back to LAN proxy on CORS/timeout. Requests that need Referer use the proxy first.
    */
   async getText(
     url: string,
@@ -133,7 +149,18 @@ export class HttpClient {
       return res.text();
     }
 
-    // auto
+    // auto — embed/playlist calls need Referer that only the proxy can set.
+    if (hasProxyReferer(options)) {
+      try {
+        const res = await this.request(this.buildProxyUrl(url, proxyBase), options, true);
+        return res.text();
+      } catch (proxyErr) {
+        logger.warn('HttpClient proxy referer request failed — trying direct', { host: hostOf(url), proxyErr });
+        const res = await this.request(url, withoutProxyOnlyHeaders(options), false);
+        return res.text();
+      }
+    }
+
     const host = hostOf(url);
     const learned = this.hostMode.get(host);
 
@@ -143,11 +170,15 @@ export class HttpClient {
     }
 
     try {
-      const res = await this.request(url, withoutProxyOnlyHeaders(options), false);
+      const res = await this.request(
+        url,
+        { ...withoutProxyOnlyHeaders(options), timeoutMs: Math.min(options.timeoutMs ?? DIRECT_PROBE_MS, DIRECT_PROBE_MS) },
+        false,
+      );
       this.hostMode.set(host, 'direct');
       return res.text();
     } catch (directErr) {
-      if (!isLikelyCorsOrOpaqueBlock(directErr)) {
+      if (!shouldFallbackToProxy(directErr)) {
         throw directErr;
       }
       logger.info('HttpClient direct blocked — falling back to proxy', { host, directErr });
@@ -182,7 +213,7 @@ export class HttpClient {
       await this.limiter.wait();
       const controller = new AbortController();
       const timeoutMs = options.timeoutMs ?? this.defaults.timeoutMs;
-      const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+      const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
 
       try {
         const headers: Record<string, string> = {
@@ -221,7 +252,7 @@ export class HttpClient {
         if (attempt === retries) break;
         await new Promise((r) => setTimeout(r, 250 * (attempt + 1)));
       } finally {
-        window.clearTimeout(timeout);
+        globalThis.clearTimeout(timeout);
       }
     }
 

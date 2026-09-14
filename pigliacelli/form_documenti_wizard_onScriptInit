@@ -1,0 +1,86 @@
+/**
+ * form_documenti_wizard → onScriptInit
+ *
+ * Filtro documenti: in IDE → SQL → Where:
+ *   subvettore_id = [subvettoreId]
+ *   AND (subvettore_autista_id IS NULL OR subvettore_autista_id = 0)
+ *   AND (subvettore_mezzo_id IS NULL OR subvettore_mezzo_id = 0)
+ */
+
+sc_log_add('WIZARD', 'form_documenti_wizard onScriptInit ENTER');
+
+if (!isset([subvettoreId]) || (int)[subvettoreId] <= 0) {
+    $usrLogin = trim((string)[usr_login]);
+    if ($usrLogin !== '') {
+        $usrSql = str_replace("'", "''", $usrLogin);
+        sc_lookup(rsWizResolveSub, "
+            SELECT COALESCE(
+                (SELECT su.subvettore_id
+                 FROM sec_users su
+                 INNER JOIN sec_users_groups sug ON sug.login = su.login
+                 WHERE su.login = '$usrSql'
+                   AND su.active = 'Y'
+                   AND sug.group_id = 2
+                   AND su.subvettore_id > 0
+                 LIMIT 1),
+                (SELECT s.id
+                 FROM subvettori s
+                 WHERE TRIM(s.login_subvettore) = '$usrSql'
+                 LIMIT 1)
+            ) AS sub_id
+        ", 'pigliacelli');
+        if (!empty({rsWizResolveSub[0][0]})) {
+            [subvettoreId] = (int){rsWizResolveSub[0][0]};
+        }
+    }
+}
+
+if ((int)[subvettoreId] > 0) {
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        @session_start();
+    }
+    $_SESSION['wizard_subvettore_id'] = (int)[subvettoreId];
+}
+
+$logSubId = (int)[subvettoreId];
+sc_log_add('WIZARD', 'form_documenti_wizard subvettoreId=' . $logSubId);
+
+if ((int)[subvettoreId] <= 0) {
+    sc_error_message('Subvettore non associato al tuo account. Contattare Pigliacelli.');
+    sc_redir('blank_wizard_landing');
+}
+
+// Filtro elenco: NON usare sc_where() (non esiste / non espande → Fatal error).
+// In ScriptCase → SQL → Where della form mettere ESATTAMENTE:
+//   subvettore_id = [subvettoreId]
+//   AND (subvettore_autista_id IS NULL OR subvettore_autista_id = 0)
+//   AND (subvettore_mezzo_id IS NULL OR subvettore_mezzo_id = 0)
+// [subvettoreId] deve essere valorizzato in onApplicationInit (già presente).
+
+sc_lookup(rsDocWizGrp, "
+    SELECT 1
+    FROM sec_users_groups sug
+    INNER JOIN sec_users su ON su.login = sug.login
+    WHERE su.login = '[usr_login]'
+      AND sug.group_id = 2
+    LIMIT 1
+", 'pigliacelli');
+
+if (!empty({rsDocWizGrp[0][0]})) {
+    sc_btn_display('new', 'off');
+    sc_field_display({login}, 'off');
+    sc_field_display({is_not_ok}, 'off');
+    sc_field_display({subvettore_id}, 'off');
+    {login} = [usr_login];
+
+    if ((int)[subvettoreId] > 0) {
+        {subvettore_id} = (int)[subvettoreId];
+    }
+}
+
+// Flash da pulsante Completa wizard (niente sc_alert/JS)
+if (!empty($_SESSION['wizard_flash_msg'])) {
+    $flashMsg = (string)$_SESSION['wizard_flash_msg'];
+    unset($_SESSION['wizard_flash_msg']);
+    sc_error_message($flashMsg);
+}

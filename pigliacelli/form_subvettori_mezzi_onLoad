@@ -1,0 +1,68 @@
+/**
+ * form_subvettori_mezzi → onLoad
+ *
+ * Su INSERT lo master-detail non valorizza ancora {subvettore_id}:
+ * la select autista (lookup su {subvettore_id}) resta vuota finché non salvi.
+ * Qui risolviamo subito il subvettore e lo scriviamo sul campo.
+ */
+
+$subId = 0;
+if (isset({subvettore_id}) && (int){subvettore_id} > 0) {
+    $subId = (int){subvettore_id};
+}
+if ($subId <= 0 && isset([subvettoreId]) && (int)[subvettoreId] > 0) {
+    $subId = (int)[subvettoreId];
+}
+if ($subId <= 0) {
+    $usrLogin = trim((string)[usr_login]);
+    if ($usrLogin !== '') {
+        $usrSql = str_replace("'", "''", $usrLogin);
+        sc_lookup(rsMezSubOnLoad, "
+            SELECT COALESCE(
+                (SELECT su.subvettore_id
+                 FROM sec_users su
+                 INNER JOIN sec_users_groups sug ON sug.login = su.login
+                 WHERE su.login = '$usrSql'
+                   AND su.active = 'Y'
+                   AND sug.group_id = 2
+                   AND su.subvettore_id > 0
+                 LIMIT 1),
+                (SELECT s.id
+                 FROM subvettori s
+                 WHERE TRIM(s.login_subvettore) = '$usrSql'
+                 LIMIT 1)
+            ) AS sub_id
+        ", 'pigliacelli');
+        if (!empty({rsMezSubOnLoad[0][0]})) {
+            $subId = (int){rsMezSubOnLoad[0][0]};
+        }
+    }
+}
+
+if ($subId > 0) {
+    {subvettore_id} = $subId;
+    [subvettoreId] = $subId;
+}
+
+// Tasti wizard: ON in griglia, OFF in modale edit (stessa logica autisti).
+// Name da verificare in ScriptCase Buttons se diversi.
+$op = '';
+if (isset($this->nmgp_opcao)) {
+    $op = strtolower(trim((string)$this->nmgp_opcao));
+} elseif (isset($_POST['nmgp_opcao'])) {
+    $op = strtolower(trim((string)$_POST['nmgp_opcao']));
+} elseif (isset($_GET['nmgp_opcao'])) {
+    $op = strtolower(trim((string)$_GET['nmgp_opcao']));
+}
+
+sc_log_add('WIZ_BTN', 'mezzi onLoad op=[' . $op . ']');
+
+$isModal = ($op === 'igual' || $op === '' || $op === 'busca');
+
+if ($isModal) {
+    sc_btn_display('next_step_btn_mezzi', 'off');
+    sc_btn_display('back_step_btn_autisti', 'off');
+} else {
+    sc_btn_display('next_step_btn_mezzi', 'on');
+    sc_btn_display('back_step_btn_autisti', 'on');
+}

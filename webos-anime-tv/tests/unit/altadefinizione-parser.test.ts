@@ -4,6 +4,7 @@ import {
   parseFilmCards,
   parseFilmDetails,
   parseFilmSearchResults,
+  parseMaxFilmPage,
   parseSearchTotal,
   sourcesFromVidxgoEmbed,
   titleFromSlug,
@@ -12,6 +13,15 @@ import {
 describe('Altadefinizione parser', () => {
   it('titleFromSlug', () => {
     expect(titleFromSlug('la-bocca-del-diavolo')).toBe('La Bocca Del Diavolo');
+  });
+
+  it('reads the last catalog page from pagination links', () => {
+    const html = `
+      <a href="/film/page/2/?tipo=1">2</a>
+      <a href="/film/page/1042/?tipo=1">1042</a>
+      <a href="/film/page/3/?tipo=1">3</a>
+    `;
+    expect(parseMaxFilmPage(html)).toBe(1042);
   });
 
   it('parses film cards', () => {

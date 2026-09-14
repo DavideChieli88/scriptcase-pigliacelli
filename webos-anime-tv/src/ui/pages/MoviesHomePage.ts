@@ -189,7 +189,7 @@ export async function renderMoviesHomePage(ctx: AppContext, root: HTMLElement): 
       }
       const pageHint =
         max != null ? ` · pagina ${next} di ${max}` : ` · prossima pagina ${next}`;
-      status.textContent = `${loaded} titoli caricati · ~200 per volta${pageHint}`;
+      status.textContent = `${loaded} titoli caricati · ~100 per volta${pageHint}`;
       btn.hidden = false;
       btn.disabled = false;
     };

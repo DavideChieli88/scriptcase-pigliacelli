@@ -1,0 +1,30 @@
+/**
+ * Wizard — onApplicationInit (step 1–4)
+ *
+ * Setup Scriptcase per ogni form:
+ *   subvettoreId → Type INPUT, default 0, NON richiedere a startup
+ *   ELIMINARE WIZ_SUBID se presente (resto debug)
+ *
+ * Solo GET / REQUEST / sessione. NO sc_lookup (DB non connesso).
+ */
+
+if (!isset([subvettoreId]) || (int)[subvettoreId] <= 0) {
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        @session_start();
+    }
+
+    $subId = 0;
+
+    if (isset($_GET['subvettoreId']) && (int)$_GET['subvettoreId'] > 0) {
+        $subId = (int)$_GET['subvettoreId'];
+    } elseif (isset($_REQUEST['subvettoreId']) && (int)$_REQUEST['subvettoreId'] > 0) {
+        $subId = (int)$_REQUEST['subvettoreId'];
+    } elseif (isset($_SESSION['wizard_subvettore_id']) && (int)$_SESSION['wizard_subvettore_id'] > 0) {
+        $subId = (int)$_SESSION['wizard_subvettore_id'];
+    }
+
+    if ($subId > 0) {
+        [subvettoreId] = $subId;
+        $_SESSION['wizard_subvettore_id'] = $subId;
+    }
+}

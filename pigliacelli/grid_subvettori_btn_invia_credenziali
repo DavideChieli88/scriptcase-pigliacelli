@@ -1,0 +1,283 @@
+/**
+ * grid_subvettori → Action Bar button (Ajax)
+ * Name SC: send_credentials_btn
+ * Label: Invia credenziali
+ *
+ * Tipo: Action Bar → Ajax (non Link, non PHP toolbar).
+ * Invio immediato credenziali per la riga cliccata (non avvia job/batch).
+ *
+ * Setup SC:
+ *  - Grid → Action Bar → New → Type: Ajax
+ *  - Name: send_credentials_btn
+ *  - Incolla questo codice nell'evento del pulsante
+ *  - Campi in SELECT (anche Hidden): id, login_subvettore, ragione_sociale,
+ *    mail_credenziali_inviata_at
+ *  - Show/hide: onRecord (grid_subvettori_onRecord)
+ */
+
+if (!function_exists('gsc_sql_quote')) {
+    function gsc_sql_quote($v)
+    {
+        if ($v === null) {
+            return 'NULL';
+        }
+        return "'" . str_replace("'", "''", (string)$v) . "'";
+    }
+}
+
+if (!function_exists('gsc_email_valida')) {
+    function gsc_email_valida($email)
+    {
+        $email = trim((string)$email);
+        if ($email === '') {
+            return false;
+        }
+        if (strpos($email, ';') !== false || strpos($email, ',') !== false || strpos($email, ' ') !== false) {
+            return false;
+        }
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+}
+
+if (!function_exists('gsc_generate_temp_password')) {
+    function gsc_generate_temp_password()
+    {
+        $characters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=';
+        $len = strlen($characters);
+        $out = '';
+        for ($i = 0; $i < 12; $i++) {
+            $out .= $characters[random_int(0, $len - 1)];
+        }
+        return $out;
+    }
+}
+
+if (!function_exists('gsc_mail_setting')) {
+    function gsc_mail_setting($name, $default = '')
+    {
+        sc_lookup(rsGscSet, "
+            SELECT set_value FROM sec_settings
+            WHERE set_name = " . gsc_sql_quote(trim((string)$name)) . "
+            LIMIT 1
+        ", 'pigliacelli');
+        if (!empty({rsGscSet[0][0]})) {
+            return trim((string){rsGscSet[0][0]});
+        }
+        return (string)$default;
+    }
+}
+
+if (!function_exists('gsc_get_smtp_config')) {
+    function gsc_get_smtp_config()
+    {
+        sc_lookup(rsGscSmtp, 'SELECT set_name, set_value FROM sec_settings', 'pigliacelli');
+        if (!empty({rsGscSmtp})) {
+            foreach ({rsGscSmtp} as $f) {
+                $_SESSION['sett_' . $f[0]] = $f[1];
+            }
+        }
+        $smtpApi = isset($_SESSION['sett_smtp_api']) ? (string)$_SESSION['sett_smtp_api'] : '';
+        if ($smtpApi === 'custom') {
+            return array(
+                'settings' => array(
+                    'gateway'       => 'smtp',
+                    'smtp_server'   => (string)($_SESSION['sett_smtp_server'] ?? ''),
+                    'smtp_protocol' => (string)($_SESSION['sett_smtp_security'] ?? ''),
+                    'smtp_port'     => (string)($_SESSION['sett_smtp_port'] ?? ''),
+                    'smtp_user'     => (string)($_SESSION['sett_smtp_user'] ?? ''),
+                    'smtp_password' => (string)($_SESSION['sett_smtp_pass'] ?? ''),
+                    'from_email'    => (string)($_SESSION['sett_smtp_from_email'] ?? ''),
+                    'from_name'     => (string)($_SESSION['sett_smtp_from_name'] ?? ''),
+                ),
+            );
+        }
+        return array('profile' => $smtpApi);
+    }
+}
+
+if (!function_exists('gsc_portal_url')) {
+    function gsc_portal_url()
+    {
+        $loginUrl = rtrim(gsc_mail_setting('login_url', ''), '/');
+        if ($loginUrl !== '') {
+            return $loginUrl;
+        }
+        $portalUrl = rtrim(gsc_mail_setting('portal_url', ''), '/');
+        if ($portalUrl !== '') {
+            return $portalUrl;
+        }
+        return rtrim(gsc_mail_setting('app_url', ''), '/');
+    }
+}
+
+if (!function_exists('gsc_invia_mail_credenziali')) {
+    function gsc_invia_mail_credenziali($to, $login, $plainPassword, $displayName)
+    {
+        $to = trim((string)$to);
+        $login = trim((string)$login);
+        $plainPassword = (string)$plainPassword;
+
+        if ($plainPassword === '' || !gsc_email_valida($to) || $login === '') {
+            return false;
+        }
+        if (!function_exists('sc_send_mail_api')) {
+            sc_log_add('GRID_CRED', 'SKIP sc_send_mail_api assente login=' . $login);
+            return false;
+        }
+
+        $portalUrl = gsc_portal_url();
+        $nome = trim((string)$displayName);
+        if ($nome === '') {
+            $nome = 'Gentile subvettore';
+        }
+
+        $titolo = 'Credenziali area riservata — Pigliacelli';
+        $testo = $nome . ",\n\n"
+            . "E' stato creato il tuo accesso all'area riservata subvettori.\n"
+            . "Puoi accedere con le credenziali seguenti (password temporanea).\n\n"
+            . "Login: " . $login . "\n"
+            . "Password: " . $plainPassword . "\n";
+        if ($portalUrl !== '') {
+            $testo .= "\nArea riservata: " . $portalUrl . "\n";
+        }
+        $testo .= "\nMessaggio automatico — non rispondere.";
+
+        $safeLogin = htmlspecialchars($login, ENT_QUOTES, 'UTF-8');
+        $safePwd = htmlspecialchars($plainPassword, ENT_QUOTES, 'UTF-8');
+        $safeNome = htmlspecialchars($nome, ENT_QUOTES, 'UTF-8');
+        $html = '<p>' . $safeNome . ',</p>'
+            . '<p>Accesso all\'area riservata subvettori (password temporanea).</p>'
+            . '<p><strong>Login:</strong> ' . $safeLogin . '<br>'
+            . '<strong>Password:</strong> ' . $safePwd . '</p>';
+        if ($portalUrl !== '') {
+            $safePortal = htmlspecialchars($portalUrl, ENT_QUOTES, 'UTF-8');
+            $html .= '<p><a href="' . $safePortal . '">Accedi all\'area riservata</a></p>';
+        }
+
+        try {
+            $mailOk = sc_send_mail_api(array_merge(gsc_get_smtp_config(), array(
+                'message' => array(
+                    'html'    => $html,
+                    'text'    => $testo,
+                    'to'      => $to,
+                    'subject' => $titolo,
+                ),
+            )));
+            if ($mailOk === false || $mailOk === null) {
+                return false;
+            }
+        } catch (Throwable $e) {
+            sc_log_add('GRID_CRED', 'mail EXCEPTION login=' . $login . ' msg=' . $e->getMessage());
+            return false;
+        }
+        return true;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+
+$subId = isset({id}) ? (int){id} : 0;
+sc_log_add('GRID_CRED', 'send_credentials_btn START sub=' . $subId);
+
+if ($subId <= 0) {
+    sc_ajax_message('Subvettore non identificato.');
+    return;
+}
+
+sc_lookup(rsGscSub, "
+    SELECT
+        TRIM(COALESCE(login_subvettore, '')),
+        TRIM(COALESCE(ragione_sociale, '')),
+        mail_credenziali_inviata_at
+    FROM subvettori
+    WHERE id = $subId
+    LIMIT 1
+", 'pigliacelli');
+
+if (empty({rsGscSub[0][0]}) && empty({rsGscSub[0][1]})) {
+    sc_ajax_message('Subvettore non trovato.');
+    return;
+}
+
+$login = trim((string){rsGscSub[0][0]});
+$nome  = trim((string){rsGscSub[0][1]});
+$inviataAt = {rsGscSub[0][2]};
+
+if ($login === '' || !gsc_email_valida($login)) {
+    sc_ajax_message('Email/login subvettore mancante o non valida.');
+    return;
+}
+
+if ($inviataAt !== '' && $inviataAt !== null && (string)$inviataAt !== 'null') {
+    sc_ajax_message('Credenziali già inviate il ' . (string)$inviataAt . '.');
+    return;
+}
+
+sc_lookup(rsGscUser, "
+    SELECT su.login
+    FROM sec_users su
+    INNER JOIN sec_users_groups sug ON sug.login = su.login AND sug.group_id = 2
+    WHERE su.subvettore_id = $subId
+      AND su.login = " . gsc_sql_quote($login) . "
+      AND su.active = 'Y'
+    LIMIT 1
+", 'pigliacelli');
+
+if (empty({rsGscUser[0][0]})) {
+    sc_ajax_message('Utenza portale non trovata o non attiva. Eseguire prima il sync subvettori.');
+    return;
+}
+
+$plain = gsc_generate_temp_password();
+$hash  = md5($plain);
+
+try {
+    sc_exec_sql("
+        UPDATE sec_users
+        SET pswd = " . gsc_sql_quote($hash) . ",
+            active = 'Y'
+        WHERE login = " . gsc_sql_quote($login) . "
+          AND subvettore_id = $subId
+        LIMIT 1
+    ", 'pigliacelli');
+} catch (Throwable $e) {
+    sc_log_add('GRID_CRED', 'ERRORE update pswd sub=' . $subId . ' — ' . $e->getMessage());
+    sc_ajax_message('Errore aggiornamento password.');
+    return;
+}
+
+$ok = gsc_invia_mail_credenziali($login, $login, $plain, $nome);
+if (!$ok) {
+    sc_log_add('GRID_CRED', 'FAIL mail sub=' . $subId . ' to=' . $login);
+    sc_ajax_message('Invio mail fallito. Riprovare più tardi.');
+    return;
+}
+
+try {
+    sc_exec_sql("
+        UPDATE subvettori
+        SET mail_credenziali_inviata_at = NOW()
+        WHERE id = $subId
+    ", 'pigliacelli');
+} catch (Throwable $e) {
+    sc_log_add('GRID_CRED', 'WARN mail OK ma flag non aggiornato sub=' . $subId . ' — ' . $e->getMessage());
+    sc_ajax_message('Mail inviata, ma flag non aggiornato. Controllare i log.');
+    return;
+}
+
+sc_log_add('GRID_CRED', 'OK mail inviata sub=' . $subId . ' to=' . $login);
+sc_ajax_message('Credenziali inviate a ' . $login . '.');
+
+/*
+ * --- onRecord (stessa grid) — show/hide pulsante ---
+ *
+ * $show = 0;
+ * $mailAt = {mail_credenziali_inviata_at};
+ * $loginRow = trim((string){login_subvettore});
+ * if (($mailAt === '' || $mailAt === null || $mailAt === 'null') && $loginRow !== '') {
+ *     $show = 1;
+ * }
+ * sc_btn_display('send_credentials_btn', $show === 1 ? 'on' : 'off');
+ */

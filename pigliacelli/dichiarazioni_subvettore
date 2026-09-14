@@ -1,0 +1,1188 @@
+/**
+ * Scriptcase Report PDF: dichiarazioni_subvettore
+ *
+ * Strategia grafica (massima fedelta'):
+ *  1) Se TCPDF/FPDI e' disponibile → importa le pagine di
+ *     dichiarazioni_riferimento.pdf (identiche all'originale) e
+ *     sovrascrive solo i blocchi "da compilare" con i dati subvettore.
+ *  2) Altrimenti ridisegna layout fedele (C/D letter, E form, F tabelle SI/NO).
+ *
+ * Pagina bianca iniziale: ScriptCase apre spesso page 1 vuota.
+ * Qui la si elimina / non si fa AddPage sul primo foglio.
+ *
+ * Parametri: subvector, documentoId, auto_save_pdf=S
+ */
+
+$subvector = 0;
+if ((int)[subvector] > 0) {
+    $subvector = (int)[subvector];
+}
+if ($subvector <= 0 && (int)[subvettoreId] > 0) {
+    $subvector = (int)[subvettoreId];
+}
+foreach (array('subvector', 'subvettoreId', 'subvettore_id', 'subId') as $k) {
+    if ($subvector > 0) {
+        break;
+    }
+    if (isset($_GET[$k]) && (int)$_GET[$k] > 0) {
+        $subvector = (int)$_GET[$k];
+    } elseif (isset($_POST[$k]) && (int)$_POST[$k] > 0) {
+        $subvector = (int)$_POST[$k];
+    } elseif (isset($_REQUEST[$k]) && (int)$_REQUEST[$k] > 0) {
+        $subvector = (int)$_REQUEST[$k];
+    }
+}
+if ($subvector <= 0 && !empty($_SESSION['wizard_subvettore_id'])) {
+    $subvector = (int)$_SESSION['wizard_subvettore_id'];
+}
+if ($subvector <= 0 && isset($this->subvector) && (int)$this->subvector > 0) {
+    $subvector = (int)$this->subvector;
+}
+
+$documentoId = 0;
+if ((int)[documentoId] > 0) {
+    $documentoId = (int)[documentoId];
+}
+if ($documentoId <= 0 && isset($_REQUEST['documentoId']) && (int)$_REQUEST['documentoId'] > 0) {
+    $documentoId = (int)$_REQUEST['documentoId'];
+}
+
+if ($subvector <= 0) {
+    die('Parametro subvector mancante. Usare generate_dichiarazioni_subvector o ?subvector=<id>.');
+}
+
+$pdf = $this->Pdf;
+$pdf->SetAutoPageBreak(false, 12);
+$pdf->SetMargins(18, 14, 18);
+if (method_exists($pdf, 'setPrintHeader')) {
+    $pdf->setPrintHeader(false);
+}
+if (method_exists($pdf, 'setPrintFooter')) {
+    $pdf->setPrintFooter(false);
+}
+
+$rs = $this->Db->Execute("
+    SELECT
+        COALESCE(ragione_sociale, ''),
+        COALESCE(cod_fiscale, ''),
+        COALESCE(piva, ''),
+        COALESCE(phone, ''),
+        COALESCE(cellphone, ''),
+        COALESCE(indirizzo, ''),
+        COALESCE(civico, ''),
+        COALESCE(sede_citta, ''),
+        COALESCE(sede_prov, ''),
+        COALESCE(pec, ''),
+        COALESCE(login_subvettore, ''),
+        COALESCE(nome_rappresentante, ''),
+        COALESCE(cognome_rappresentante, ''),
+        COALESCE(email_rappresentante, ''),
+        COALESCE(telefono_rappresentante, ''),
+        COALESCE(luogo_nascita_rappresentante, ''),
+        COALESCE(prov_luogo_nascita_rappresentante, ''),
+        COALESCE(DATE_FORMAT(data_nascita_rappresentante, '%d/%m/%Y'), ''),
+        COALESCE(num_iscrizione_reg_imprese, ''),
+        COALESCE(locazione_iscrizione_reg_imprese, ''),
+        COALESCE(rea, '')
+    FROM subvettori
+    WHERE id = " . (int)$subvector . "
+    LIMIT 1
+");
+if ($rs === false || $rs->EOF) {
+    die('Subvettore non trovato: ' . (int)$subvector);
+}
+
+$ragione = trim((string)$rs->fields[0]);
+$cf = trim((string)$rs->fields[1]);
+$piva = trim((string)$rs->fields[2]);
+$phone = trim((string)$rs->fields[3]);
+$cell = trim((string)$rs->fields[4]);
+$indirizzo = trim((string)$rs->fields[5]);
+$civico = trim((string)$rs->fields[6]);
+$citta = trim((string)$rs->fields[7]);
+$prov = trim((string)$rs->fields[8]);
+$pec = trim((string)$rs->fields[9]);
+$emailLogin = trim((string)$rs->fields[10]);
+$nomeR = trim((string)$rs->fields[11]);
+$cognomeR = trim((string)$rs->fields[12]);
+$emailR = trim((string)$rs->fields[13]);
+$telR = trim((string)$rs->fields[14]);
+$luogoNasc = trim((string)$rs->fields[15]);
+$provNasc = trim((string)$rs->fields[16]);
+$dataNasc = trim((string)$rs->fields[17]);
+$numRi = trim((string)$rs->fields[18]);
+$locRi = trim((string)$rs->fields[19]);
+$rea = trim((string)$rs->fields[20]);
+$rs->Close();
+
+$dots = function ($n = 20) {
+    return str_repeat('.', max(3, (int)$n));
+};
+$fillOrDots = function ($val, $n = 18) use ($dots) {
+    $val = trim((string)$val);
+    return $val !== '' ? $val : $dots($n);
+};
+
+$legaleNome = trim($nomeR . ' ' . $cognomeR);
+$email = $emailR !== '' ? $emailR : $emailLogin;
+$tel = $telR !== '' ? $telR : ($cell !== '' ? $cell : $phone);
+$viaCompleta = trim($indirizzo . ($civico !== '' ? (' n. ' . $civico) : ''));
+$provShort = $prov !== '' ? $prov : '..';
+$luogoData = ($citta !== '' ? $citta . ', ' : '') . date('d/m/Y');
+
+$sanitizePdfFilenamePart = function ($value) {
+    $value = (string)$value;
+    $value = str_replace(array('\\', '/', ':', '*', '?', '"', '<', '>', '|', "\0"), '_', $value);
+    $value = preg_replace('/\s+/u', '_', $value);
+    $value = preg_replace('/_+/u', '_', $value);
+    return trim($value, '._ ');
+};
+$pdfBaseName = 'dichiarazioni_' . (int)$subvector . '_' . $sanitizePdfFilenamePart($ragione) . '_' . date('Y-m-d');
+$pdfFileName = $pdfBaseName . '.pdf';
+$pdf->SetTitle($pdfBaseName);
+$pdf->SetCreator('Pigliacelli');
+$pdf->SetAuthor('Autotrasporti Pigliacelli S.p.A.');
+
+/** Trova PDF originale (template grafico) */
+$findTpl = function () {
+    $names = array(
+        'dichiarazioni_riferimento.pdf',
+        'dichiarazioni.pdf',
+        'docs/dichiarazioni_riferimento.pdf',
+    );
+    $roots = array();
+    if (defined('__DIR__')) {
+        $roots[] = __DIR__;
+        $roots[] = dirname(__DIR__);
+    }
+    $roots[] = dirname(__FILE__);
+    $roots[] = dirname(dirname(__FILE__));
+    if (!empty($_SERVER['SCRIPT_FILENAME'])) {
+        $roots[] = dirname((string)$_SERVER['SCRIPT_FILENAME']);
+        $roots[] = dirname(dirname((string)$_SERVER['SCRIPT_FILENAME']));
+    }
+    // percorsi tipici progetto / deploy
+    $roots[] = 'C:/Users/dvdch/Desktop/Projects/pigliacelli/docs';
+    $roots[] = dirname(dirname(dirname(__FILE__))) . '/docs';
+    return array($names, $roots);
+};
+list($tplNames, $tplRoots) = $findTpl();
+$rsTpl = $this->Db->Execute("SELECT set_value FROM sec_settings WHERE set_name IN ('templates_path','contratti_base_dir','documento_verde_template_dir') ORDER BY FIELD(set_name,'templates_path','contratti_base_dir','documento_verde_template_dir')");
+if ($rsTpl !== false) {
+    while (!$rsTpl->EOF) {
+        $p = rtrim(str_replace('\\', '/', trim((string)$rsTpl->fields[0])), '/');
+        if ($p !== '') {
+            $tplRoots[] = $p;
+            $tplRoots[] = dirname($p);
+        }
+        $rsTpl->MoveNext();
+    }
+    $rsTpl->Close();
+}
+
+$tplPath = '';
+foreach ($tplRoots as $root) {
+    $root = rtrim(str_replace('\\', '/', (string)$root), '/');
+    if ($root === '') {
+        continue;
+    }
+    foreach ($tplNames as $nm) {
+        $try = $root . '/' . ltrim($nm, '/');
+        if (is_readable($try)) {
+            $tplPath = $try;
+            break 2;
+        }
+    }
+}
+
+$canFpdi = ($tplPath !== ''
+    && method_exists($pdf, 'setSourceFile')
+    && method_exists($pdf, 'importPage')
+    && method_exists($pdf, 'useTemplate'));
+
+/** Elimina pagine pre-create da ScriptCase (causa pagina bianca). */
+$clearScBlankPages = function () use ($pdf) {
+    if (!method_exists($pdf, 'getNumPages') || !method_exists($pdf, 'deletePage')) {
+        return;
+    }
+    $guard = 0;
+    while ((int)$pdf->getNumPages() > 0 && $guard < 20) {
+        $pdf->deletePage(1);
+        $guard++;
+    }
+};
+
+$ptToMm = function ($pt) {
+    return ((float)$pt) * 25.4 / 72.0;
+};
+
+$whiteBox = function ($x, $y, $w, $h) use ($pdf) {
+    $pdf->SetFillColor(255, 255, 255);
+    $pdf->Rect($x, $y, $w, $h, 'F');
+};
+
+$writeTimes = function ($x, $y, $w, $txt, $size = 11, $style = '', $align = 'J', $lh = null) use ($pdf) {
+    if ($lh === null) {
+        $lh = $size * 0.42;
+    }
+    $pdf->SetTextColor(0, 0, 0);
+    $pdf->SetFont('times', $style, $size);
+    $pdf->SetXY($x, $y);
+    $pdf->MultiCell($w, $lh, $txt, 0, $align, false);
+};
+
+// ---------- INTRO TEXTS (riuso template + fallback) ----------
+$introC = 'Il sottoscritto ' . $fillOrDots($legaleNome, 22) . ', nato a ' . $fillOrDots($luogoNasc, 14)
+    . ' il ' . $fillOrDots($dataNasc, 12) . ', residente in ' . $dots(16) . ' via ' . $dots(18) . ' n. ' . $dots(6)
+    . ' nella sua qualita\' di legale rappresentante della societa\' ' . $fillOrDots($ragione, 28)
+    . ' con sede legale in ' . $fillOrDots($citta, 14) . ' provincia di (' . $provShort . ') via '
+    . $fillOrDots($viaCompleta, 22) . ' P. IVA ' . $fillOrDots($piva, 16) . ' C.F. ' . $fillOrDots($cf, 18)
+    . "\nIscrizione all'albo trasportatori di " . $dots(22) . ' n. ' . $dots(20)
+    . "\nIn qualita\' di vettore dell'Autotrasporti Pigliacelli S.p.A. sita in Via S. Anna n. 80, 03029 Veroli (FR) "
+    . 'P.IVA 00169560604 C.F. 00169560604';
+
+$introD = 'Il/La sottoscritto/a ' . $fillOrDots($legaleNome, 24) . ' nato/a a ' . $fillOrDots($luogoNasc, 14)
+    . ' (' . $fillOrDots($provNasc, 4) . ') il ' . $fillOrDots($dataNasc, 12)
+    . ', residente a ' . $dots(16) . ' (__) in Via ' . $dots(20) . ' n. ' . $dots(4)
+    . ', in qualita\' di Legale rappresentante dell\'impresa ' . $fillOrDots($ragione, 26)
+    . ', con sede legale a ' . $fillOrDots($citta, 14) . ' (' . $provShort . ') in Via '
+    . $fillOrDots($viaCompleta, 22) . ', P. Iva ' . $fillOrDots($piva, 14) . ', C.F. ' . $fillOrDots($cf, 16)
+    . ', iscritta al registro delle Imprese di ' . $fillOrDots($locRi !== '' ? $locRi : 'Frosinone', 14)
+    . ' con il n. ' . $fillOrDots($numRi, 14)
+    . ', iscritta all\'Albo Autotrasportatori Comitato Provinciale di ' . $dots(16)
+    . ' con il n. ' . $dots(16) . ', con la presente,';
+
+$introG = 'Il/la sottoscritto/a (nome e cognome) ' . $fillOrDots($legaleNome, 40)
+    . "\nNato/a " . $fillOrDots($luogoNasc, 16) . ' (' . $fillOrDots($provNasc, 4) . ') il '
+    . $fillOrDots($dataNasc, 12) . ' residente a ' . $dots(18) . ' (____)'
+    . "\nIn via/piazza " . $dots(36) . ' n. ' . $dots(4) . ' nella sua qualita\' di'
+    . "\nLegale rappresentante della societa\' " . $fillOrDots($ragione, 40)
+    . "\nCon sede a " . $fillOrDots($citta, 18) . ' (' . $provShort . ') in Via ' . $fillOrDots($viaCompleta, 24)
+    . "\nC.F. " . $fillOrDots($cf, 24) . ' P. Iva ' . $fillOrDots($piva, 22);
+
+$introH = 'Il sottoscritto ' . $fillOrDots($legaleNome, 28) . ', nato a ' . $fillOrDots($luogoNasc, 18)
+    . ' il ' . $fillOrDots($dataNasc, 12) . ' residente in ' . $dots(16) . ' (____) via ' . $dots(24)
+    . "\nNella sua qualita\' di Legale Rappresentante della societa\' " . $fillOrDots($ragione, 28)
+    . "\ncon sede legale in " . $fillOrDots($citta, 16) . ' (' . $provShort . ') via ' . $fillOrDots($viaCompleta, 30)
+    . "\nP.IVA " . $fillOrDots($piva, 18) . ' C.F. ' . $fillOrDots($cf, 20)
+    . "\nIscrizione all'albo trasportatori di " . $dots(20) . ' n. ' . $dots(16)
+    . "\nIn qualita\' di vettore dell'Autotrasporti Pigliacelli Spa sita in Via S. Anna, 80 03029 Veroli (FR) "
+    . 'P.IVA 00169560604, C.F. 00169560604';
+
+$introI = 'Il/la sottoscritto/a (nome e cognome) ' . $fillOrDots($legaleNome, 40)
+    . "\nnato/a " . $fillOrDots($luogoNasc, 22) . ' Prov. ' . $fillOrDots($provNasc, 4) . ' il '
+    . $fillOrDots($dataNasc, 12) . ' residente a ' . $dots(22) . ' Prov. ____'
+    . "\nin via/piazza " . $dots(28) . ' n. ' . $dots(4) . ', nella sua qualita\' di Legale rappresentante'
+    . "\ndella societa\' " . $fillOrDots($ragione, 48)
+    . "\ncon sede a " . $fillOrDots($citta, 18) . ' prov. (' . $provShort . ') in Via ' . $fillOrDots($viaCompleta, 24)
+    . "\nC.F. " . $fillOrDots($cf, 24) . ' P. Iva ' . $fillOrDots($piva, 22);
+
+// ===================== MODE A: TEMPLATE FPDI =====================
+if ($canFpdi) {
+    $clearScBlankPages();
+    try {
+        $pageCount = (int)$pdf->setSourceFile($tplPath);
+    } catch (Exception $e) {
+        $canFpdi = false;
+        $pageCount = 0;
+    } catch (Throwable $e) {
+        $canFpdi = false;
+        $pageCount = 0;
+    }
+}
+
+if ($canFpdi && $pageCount > 0) {
+    for ($i = 1; $i <= $pageCount; $i++) {
+        $tplIdx = $pdf->importPage($i);
+        $size = method_exists($pdf, 'getTemplateSize') ? $pdf->getTemplateSize($tplIdx) : null;
+        $orient = 'P';
+        $fmt = 'A4';
+        if (is_array($size)) {
+            $w = isset($size['width']) ? (float)$size['width'] : (isset($size['w']) ? (float)$size['w'] : 210.0);
+            $h = isset($size['height']) ? (float)$size['height'] : (isset($size['h']) ? (float)$size['h'] : 297.0);
+            $orient = ($w > $h) ? 'L' : 'P';
+            $fmt = array($w, $h);
+        }
+        $pdf->AddPage($orient, $fmt);
+        $pdf->useTemplate($tplIdx);
+
+        // Overlay: riscrive solo i blocchi anagrafici (mm approssimati dall'originale)
+        if ($i === 1) {
+            // Allegato C — blocco "Il sottoscritto..."
+            $whiteBox(12, 76, 186, 52);
+            $writeTimes(12.5, 76.5, 185, $introC, 11, '', 'J', 4.8);
+            // Luogo/data in basso
+            $whiteBox(12, 268, 90, 8);
+            $writeTimes(12.5, 268.5, 88, 'Luogo e data ' . $luogoData, 10, '', 'L', 4.5);
+        } elseif ($i === 2) {
+            // Allegato D — intestazione compilabile
+            $whiteBox(18, 42, 174, 42);
+            $writeTimes(18.5, 42.5, 173, $introD, 10, '', 'J', 4.3);
+            $whiteBox(18, 248, 70, 8);
+            $writeTimes(18.5, 248.5, 68, $luogoData, 10, '', 'L', 4.5);
+        } elseif ($i === 3) {
+            // Allegato E — form con header logo gia' nel template: riempi righe
+            $rowY = array(
+                'RAGIONE SOCIALE' => 118,
+                'SEDE LEGALE' => 128,
+                'PARTITA IVA' => 148,
+                'COD. FISCALE' => 158,
+                'R.E.A.' => 178,
+                'RECAPITI TELEFONICI' => 198,
+                'EMAIL' => 218,
+                'PEC' => 228,
+                'LEGALE RAPPRESENTANTE' => 268,
+            );
+            // valori a destra delle label (stima)
+            $vals = array(
+                118 => $ragione,
+                128 => trim($viaCompleta . ($citta !== '' ? ', ' . $citta : '') . ($prov !== '' ? ' (' . $prov . ')' : '')),
+                148 => $piva,
+                158 => $cf,
+                178 => $rea,
+                198 => $tel,
+                218 => $email,
+                228 => $pec,
+                268 => $legaleNome,
+            );
+            foreach ($vals as $y => $val) {
+                if (trim((string)$val) === '') {
+                    continue;
+                }
+                $whiteBox(78, $y - 1.5, 118, 7);
+                $writeTimes(78.5, $y - 1, 117, (string)$val, 10, '', 'L', 4.5);
+            }
+            // Registro imprese / nato
+            if ($locRi !== '' || $numRi !== '') {
+                $whiteBox(95, 166, 50, 7);
+                $writeTimes(95.5, 166.5, 49, $locRi, 9, '', 'L', 4);
+                $whiteBox(160, 166, 36, 7);
+                $writeTimes(160.5, 166.5, 35, $numRi, 9, '', 'L', 4);
+            }
+            if ($luogoNasc !== '' || $dataNasc !== '') {
+                $whiteBox(45, 278, 70, 7);
+                $writeTimes(45.5, 278.5, 69, $luogoNasc . ($provNasc !== '' ? ' (' . $provNasc . ')' : ''), 9, '', 'L', 4);
+                $whiteBox(130, 278, 55, 7);
+                $writeTimes(130.5, 278.5, 54, $dataNasc, 9, '', 'L', 4);
+            }
+        } elseif ($i === 8) {
+            // Allegato G
+            $whiteBox(18, 48, 174, 48);
+            $writeTimes(18.5, 48.5, 173, $introG, 11, '', 'J', 4.8);
+            $whiteBox(18, 230, 70, 8);
+            $writeTimes(18.5, 230.5, 68, $luogoData, 10, '', 'L', 4.5);
+        } elseif ($i === 9) {
+            // Allegato H
+            $whiteBox(18, 78, 174, 55);
+            $writeTimes(18.5, 78.5, 173, $introH, 11, '', 'J', 4.8);
+            $whiteBox(18, 200, 70, 8);
+            $writeTimes(18.5, 200.5, 68, 'Luogo e data ' . $luogoData, 10, '', 'L', 4.5);
+        } elseif ($i === 10) {
+            // Allegato I
+            $whiteBox(18, 42, 174, 48);
+            $writeTimes(18.5, 42.5, 173, $introI, 11, '', 'J', 4.8);
+            $whiteBox(18, 230, 70, 8);
+            $writeTimes(18.5, 230.5, 68, $luogoData, 10, '', 'L', 4.5);
+        }
+        // pagine 4-7 = questionario F: template puro (nessun overlay obbligatorio)
+    }
+} else {
+    // ===================== MODE B: REDRAW grafico fedele (senza FPDI) =====================
+    $clearScBlankPages();
+
+    $brand = array(102, 45, 145); // viola Pigliacelli
+    $gray = array(230, 230, 230);
+    $graySoft = array(245, 245, 245);
+    $pageW = 210.0;
+    $ml = 16.0;
+    $mr = 16.0;
+    $contentW = $pageW - $ml - $mr; // 178
+
+    $firstPage = true;
+    $newPage = function ($margins = null) use ($pdf, &$firstPage, $ml, $mr) {
+        if ($margins === null) {
+            $margins = array($ml, 12, $mr);
+        }
+        if ($firstPage) {
+            $firstPage = false;
+            if (method_exists($pdf, 'getNumPages') && (int)$pdf->getNumPages() === 0) {
+                $pdf->AddPage('P', 'A4');
+            } elseif (!method_exists($pdf, 'getNumPages')) {
+                try {
+                    $pdf->SetY(12);
+                } catch (Exception $e) {
+                    $pdf->AddPage('P', 'A4');
+                } catch (Throwable $e) {
+                    $pdf->AddPage('P', 'A4');
+                }
+            } else {
+                $pdf->SetY(12);
+            }
+        } else {
+            $pdf->AddPage('P', 'A4');
+        }
+        $pdf->SetMargins($margins[0], $margins[1], $margins[2]);
+        $pdf->SetAutoPageBreak(false, 10);
+        $pdf->SetDrawColor(0, 0, 0);
+        $pdf->SetTextColor(0, 0, 0);
+        $pdf->SetLineWidth(0.25);
+    };
+
+    $pageFooter = function ($italic = 'Autotrasporti Pigliacelli S.p.A.') use ($pdf, $ml, $contentW) {
+        $pdf->SetDrawColor(0, 0, 0);
+        $pdf->SetLineWidth(0.35);
+        $pdf->Line($ml, 285, $ml + $contentW, 285);
+        $pdf->SetFont('helvetica', 'I', 8);
+        $pdf->SetXY($ml, 286.5);
+        $pdf->Cell($contentW, 4, $italic, 0, 0, 'L');
+    };
+
+    $usableW = function () use ($pdf) {
+        $left = 16.0;
+        $right = 16.0;
+        if (method_exists($pdf, 'getMargins')) {
+            $m = $pdf->getMargins();
+            if (is_array($m)) {
+                if (isset($m['left'])) {
+                    $left = (float)$m['left'];
+                } elseif (isset($m['l'])) {
+                    $left = (float)$m['l'];
+                }
+                if (isset($m['right'])) {
+                    $right = (float)$m['right'];
+                } elseif (isset($m['r'])) {
+                    $right = (float)$m['r'];
+                }
+            }
+        }
+        $pw = method_exists($pdf, 'getPageWidth') ? (float)$pdf->getPageWidth() : 210.0;
+        return max(100.0, $pw - $left - $right);
+    };
+
+    $destinatario = function () use ($pdf, $usableW) {
+        $w = $usableW();
+        $pdf->SetFont('helvetica', '', 10);
+        $pdf->Cell($w, 5, 'Spett.le', 0, 1, 'R');
+        $pdf->SetFont('helvetica', 'B', 10);
+        $pdf->Cell($w, 5, 'Autotrasporti Pigliacelli S.p.A.', 0, 1, 'R');
+        $pdf->SetFont('helvetica', '', 10);
+        $pdf->Cell($w, 5, 'Via S. Anna n° 80', 0, 1, 'R');
+        $pdf->Cell($w, 5, '03029 Veroli (FR)', 0, 1, 'R');
+    };
+
+    $firmaBlocco = function ($leftLabel, $rightLabel, $leftValue = '') use ($pdf, $usableW) {
+        $w = $usableW();
+        $pdf->Ln(4);
+        $pdf->SetFont('times', '', 10);
+        $pdf->Cell($w * 0.52, 5, $leftLabel . ($leftValue !== '' ? ' ' . $leftValue : ''), 0, 0, 'L');
+        $pdf->Cell($w * 0.48, 5, $rightLabel, 0, 1, 'R');
+        $pdf->Cell($w * 0.52, 8, '', 0, 0, 'L');
+        $pdf->Cell($w * 0.48, 8, '______________________________', 0, 1, 'R');
+    };
+
+    $bulletArrow = function ($txt, $size = 9.5, $lh = 4.2) use ($pdf, $usableW) {
+        $w = $usableW();
+        $pdf->SetFont('times', '', $size);
+        $pdf->Cell(5, $lh, chr(187), 0, 0, 'L'); // »
+        $pdf->MultiCell($w - 5, $lh, $txt, 0, 'J');
+        $pdf->Ln(0.6);
+    };
+
+    $bulletDash = function ($txt, $size = 9.2, $lh = 4.0) use ($pdf, $usableW) {
+        $w = $usableW();
+        $pdf->SetFont('times', '', $size);
+        $pdf->Cell(4, $lh, '-', 0, 0, 'L');
+        $pdf->MultiCell($w - 4, $lh, $txt, 0, 'J');
+        $pdf->Ln(0.4);
+    };
+
+    $sanzioni = 'consapevole delle sanzioni penali in caso di dichiarazioni false e della conseguente decadenza dai benefici eventualmente conseguiti (ai sensi degli artt. 75 e 76 D.P.R. 445/2000) sotto la propria responsabilità';
+
+    // ---------- Allegato C ----------
+    $newPage(array(18, 14, 18));
+    $cw = 174.0;
+    $pdf->SetFont('times', '', 12);
+    $pdf->Cell($cw, 7, 'Allegato C', 0, 1, 'C');
+    $pdf->Ln(8);
+    $destinatario();
+    $pdf->Ln(8);
+    $pdf->SetFont('times', 'B', 11);
+    $pdf->MultiCell($cw, 5.2, 'Oggetto: Autocertificazione requisiti di Qualità, Ambiente e Sicurezza nei luoghi di lavoro', 0, 'L');
+    $pdf->Ln(5);
+    $pdf->SetFont('times', '', 10.5);
+    $pdf->MultiCell($cw, 4.8, $introC, 0, 'J');
+    $pdf->Ln(4);
+    $pdf->SetFont('times', 'B', 12);
+    $pdf->Cell($cw, 6, 'Dichiara', 0, 1, 'C');
+    $pdf->Ln(1);
+    $pdf->SetFont('times', 'B', 9.5);
+    $pdf->MultiCell($cw, 4.2, $sanzioni, 0, 'C');
+    $pdf->Ln(3);
+    $pdf->SetFont('times', '', 9.5);
+    $pdf->MultiCell(
+        $cw,
+        4.2,
+        'Che l\'esecuzione dei servizi di trasporto avviene in ottemperanza a quanto previsto dalla normativa vigente in materia e nel rispetto del Codice della Strada in vigore, nel rispetto dell\'Ambiente e della Sicurezza nei luoghi di lavoro e della Responsabilità Sociale d\'Impresa, in termini di:',
+        0,
+        'J'
+    );
+    $pdf->Ln(2);
+    foreach (array(
+        'Validità delle Patenti, Carte di Qualificazione del Conducente, Carta Tachigrafica, degli autisti impiegati;',
+        'Regolarità dei certificati ADR degli autisti e della nomina del Consulente per la sicurezza, nel caso di trasporto specifico di merce in regime ADR;',
+        'Rispetto dei Diritti Umani, impiegando dipendenti idonei a tale servizio, con età minima consentita per legge;',
+        'Regolarità versamenti INAIL o versamento polizza infortuni;',
+        'Validità dei permessi di soggiorno degli autisti provenienti dai paesi non membri UE;',
+        'Validità delle assicurazioni e delle carte di circolazione con relativa revisione, degli automezzi impiegati e delle loro attrezzature;',
+        'Rispetto dell\'Ambiente, sia secondo le normative vigenti in materia, che secondo l\'etica del buon senso civico;',
+        'Adeguamento dei mezzi alle direttive UE in termini di emissioni ambientali;',
+        'È fatto divieto assoluto affidare a terzi vettori, il trasporto commissionato;',
+        'Rispetto dei Principi Responsible Care, BBS, Security e Responsabilità Sociale di Impresa.',
+    ) as $b) {
+        $bulletArrow($b, 9.3, 4.1);
+    }
+    $pdf->Ln(2);
+    $pdf->SetFont('times', '', 9.5);
+    $pdf->MultiCell($cw, 4.2, 'Il sottoscritto attesta inoltre l\'assenza di carichi pendenti e la regolarità del casellario giudiziale, nei confronti dei propri dipendenti.', 0, 'J');
+    $pdf->Ln(2);
+    $pdf->MultiCell(
+        $cw,
+        4.1,
+        'Fermo restando quanto sopra, Autotrasporti Pigliacelli S.p.A., in qualità di Committente avrà libertà di verificare secondo criteri rimandati alla sua discrezione la veridicità delle dichiarazioni rese, il Vettore si impegna pertanto a fornire il completo supporto alle attività di controllo del Committente e ad espletare tutti gli adempimenti, a titolo esemplificativo e non esaustivo quelli previsti dalla normativa sulla Privacy, necessari affinché sia possibile richiedere documentazione anche direttamente ai conducenti.',
+        0,
+        'J'
+    );
+    $firmaBlocco('Luogo e data', 'Firma del legale rappresentante', $luogoData);
+
+    // ---------- Allegato D ----------
+    $newPage(array(20, 16, 20));
+    $cw = 170.0;
+    $pdf->SetFont('helvetica', '', 11);
+    $pdf->Cell($cw, 6, '"Allegato D"', 0, 1, 'R');
+    $pdf->Ln(4);
+    $pdf->SetFont('times', 'B', 14);
+    $pdf->Cell($cw, 7, 'DICHIARAZIONE SOSTITUTIVA', 0, 1, 'C');
+    $pdf->SetFont('times', '', 11);
+    $pdf->Cell($cw, 6, '(DPR 445/2000)', 0, 1, 'C');
+    $pdf->Ln(5);
+    $pdf->SetFont('times', '', 10);
+    $pdf->MultiCell($cw, 4.6, $introD, 0, 'J');
+    $pdf->Ln(3);
+    $pdf->SetFont('times', 'B', 9.5);
+    $pdf->MultiCell($cw, 4.2, $sanzioni, 0, 'C');
+    $pdf->Ln(3);
+    $pdf->SetFont('times', 'B', 12);
+    $pdf->Cell($cw, 6, 'DICHIARA', 0, 1, 'C');
+    $pdf->Ln(1);
+    foreach (array(
+        'che tutti gli autoveicoli utilizzati dalla società rappresentata, nell\'esecuzione dei servizi di trasporto affidatigli dalla Autotrasporti Pigliacelli S.p.A., sono in regola con le normative vigenti in materia di revisione;',
+        'che tutte le motrici utilizzate dalla società rappresentata, nell\'esecuzione dei servizi di trasporto affidatigli dalla Autotrasporti Pigliacelli S.p.A., sono esclusivamente di ultima generazione e con basso impatto ambientale;',
+        'che le attrezzature, le autorizzazioni e la documentazione tecnica in dotazione degli autoveicoli di proprietà e/o in leasing della società rappresentata, sono in regola con tutte le normative vigenti;',
+        'che i dipendenti utilizzati per il servizio di autotrasporto sono stati dotati di tutti i Dispositivi di Protezione Individuale (scarpe antinfortunistica, elmetto, mascherine P3A2K2, guanti, giubbetto ad alta visibilità, cuffie, occhiali, imbracatura) in corso di validità e regolarmente formati/informati sul loro utilizzo;',
+        'che i dipendenti utilizzati per il servizio di autotrasporto sono stati regolarmente formati ed informati sui rischi connessi all\'attività lavorativa, sui rischi presenti nei siti di carico/scarico, nonché sulle schede di sicurezza dei prodotti forniti dal Committente, tramite corsi effettuati in aula secondo quanto prescritto dal D.lgs. n. 81/08;',
+        'che i dipendenti utilizzati per il servizio di autotrasporto sono regolarmente iscritti nel libro unico aziendale, sono stati sottoposti a regolare visita medica con il rilascio dell\'idoneità alla mansione dal medico del lavoro (verificando anche l\'assenza di dipendenza da alcool e stupefacenti) e sono in possesso dell\'abilitazione alla guida secondo la normativa del C.d.S.;',
+        'che le autorizzazioni al trasporto rifiuti, sono in corso di validità e non siano superati i quantitativi previsti per la classe ottenuta e che ogni eventuale variazione, rinnovo e/o revoca, vengano comunicata e inviata alla scrivente;',
+        'che durante il trasporto di rifiuti tutti gli autoveicoli utilizzati dalla società rappresentata, nell\'esecuzione dei servizi di trasporto affidatigli dalla Autotrasporti Pigliacelli S.p.A., saranno dotati ove necessario, di idoneo kit ambientale antisversamento;',
+        'che durante il trasporto di rifiuti, verrà rispettata la normativa prevista dal D. Lgs. 152/2006 e s.m.i. e, le prescrizioni individuate nell\'art. 4 della propria autorizzazione.',
+    ) as $b) {
+        $bulletDash($b, 8.9, 3.9);
+    }
+    $pdf->Ln(6);
+    $pdf->SetFont('times', '', 10);
+    $pdf->Cell($cw * 0.55, 5, $luogoData, 0, 0, 'L');
+    $pdf->Cell($cw * 0.45, 5, 'Firma e timbro', 0, 1, 'R');
+    $pdf->Cell($cw * 0.55, 10, '', 0, 0, 'L');
+    $pdf->Cell($cw * 0.45, 10, '______________________________', 0, 1, 'R');
+    $pdf->Ln(4);
+    $pdf->SetFont('times', 'I', 9);
+    $pdf->Cell($cw, 5, 'Si allega copia del documento di identità in corso di validità del firmatario.', 0, 1, 'L');
+
+    // ---------- Allegato E ----------
+    $newPage(array(14, 10, 14));
+    $cw = 182.0;
+    // Header brand
+    $pdf->SetTextColor($brand[0], $brand[1], $brand[2]);
+    $pdf->SetFont('times', 'B', 16);
+    $pdf->Cell(120, 7, 'Autotrasporti Pigliacelli S.p.A.', 0, 0, 'L');
+    $pdf->SetTextColor(0, 0, 0);
+    $pdf->SetFont('helvetica', '', 7);
+    $pdf->Cell(62, 7, 'GMP+  |  SQAS  |  ISO 9001/14001/45001', 0, 1, 'R');
+    $pdf->SetFont('helvetica', '', 6.8);
+    $pdf->MultiCell(
+        130,
+        3.1,
+        "Sede Legale: Via S. Anna, 80 - 03029 Veroli (FR)    Sede Amministrativa: Via Maria, 308 – 03029 Veroli (FR)\n"
+        . "Tel. 0775 8121 / Fax 0775 812360 – 812370    www.pigliacelli.it    pigliacelli@pigliacelli.it\n"
+        . "PEC: pigliacelli@pec.pigliacelli.it    Cod. Fis. e Part. Iva n° 00169560604 - R.E.A. FR 59333\n"
+        . "Iscrizione Albo Nazionale Gestori Ambientali n° IT08010",
+        0,
+        'L'
+    );
+    $pdf->SetDrawColor(0, 0, 0);
+    $pdf->SetLineWidth(0.4);
+    $yLine = $pdf->GetY() + 1;
+    $pdf->Line(14, $yLine, 14 + $cw, $yLine);
+    $pdf->Ln(6);
+    $pdf->SetFont('times', '', 12);
+    $pdf->Cell($cw, 6, 'Allegato E', 0, 1, 'C');
+    $pdf->Ln(1);
+    $pdf->SetFont('times', 'B', 12);
+    $pdf->SetFillColor(255, 255, 255);
+    $pdf->Cell($cw, 9, 'RICHIESTA DATI ANAGRAFICI', 1, 1, 'C');
+    $pdf->Ln(3);
+
+    $formRowE = function ($label, $value = '', $h = 7.8) use ($pdf, $cw) {
+        $x = $pdf->GetX();
+        $y = $pdf->GetY();
+        $pdf->Rect($x, $y, $cw, $h);
+        $pdf->SetXY($x + 1.8, $y + 1.8);
+        $pdf->SetFont('helvetica', 'B', 8.5);
+        $pdf->Write(4.2, $label . '  ');
+        $pdf->SetFont('helvetica', '', 8.5);
+        $pdf->Write(4.2, (string)$value);
+        $pdf->SetXY($x, $y + $h);
+    };
+
+    $sedeE = trim($viaCompleta . ($citta !== '' ? ', ' . $citta : '') . ($prov !== '' ? ' (' . $prov . ')' : ''));
+    $formRowE('RAGIONE SOCIALE:', $ragione);
+    $formRowE('SEDE LEGALE:', $sedeE);
+    $formRowE('CAPITALE SOCIALE: €', '                              i.v.     si       no');
+    $formRowE('PARTITA IVA:', $piva);
+    $formRowE('COD. FISCALE:', $cf);
+    $formRowE('ISCRIZIONE AL REGISTRO IMPRESE DI', trim($locRi . '               AL N.  ' . $numRi));
+    $formRowE('R.E.A.', $rea);
+    $formRowE('N. ISCRIZIONE ALBO TRASPORTATORI:', '');
+    $formRowE('RECAPITI TELEFONICI:', $tel);
+    $formRowE('FAX:', '');
+    $formRowE('EMAIL:', $email);
+    $formRowE('PEC:', $pec);
+    $formRowE('RESPONSABILE COMMERCIALE:', '');
+    $formRowE('RESPONSABILE AMMINISTRATIVO:', '');
+    $formRowE('BANCA:', '');
+    $formRowE('CODICE IBAN:', '');
+    $formRowE('CODICE DESTINATARIO:', '');
+    $formRowE('LEGALE RAPPRESENTANTE:', $legaleNome);
+    $formRowE('NATO A', trim($luogoNasc . ($provNasc !== '' ? ' (' . $provNasc . ')' : '') . '                         IL  ' . $dataNasc));
+    $formRowE('C.F.:', '');
+    $pdf->Ln(8);
+    $pdf->SetFont('helvetica', '', 9);
+    $pdf->MultiCell($cw, 4.3, "Si prega di compilare e restituire:\nfax  0775-812360\ne-mail marcoccia.davide@pigliacelli.it", 0, 'L');
+
+    // ---------- Allegato F helpers ----------
+    $fPageHeader = function ($pagina) use ($pdf, $brand, $contentW, $ml) {
+        $pdf->SetMargins($ml, 10, 16);
+        $pdf->SetXY($ml, 10);
+        $pdf->SetDrawColor(0, 0, 0);
+        $pdf->SetLineWidth(0.3);
+        $logoW = 52;
+        $boxW = $contentW - $logoW;
+        $x0 = $ml;
+        $y0 = 10;
+        // logo cell
+        $pdf->Rect($x0, $y0, $logoW, 16);
+        $pdf->SetTextColor($brand[0], $brand[1], $brand[2]);
+        $pdf->SetFont('times', 'B', 9);
+        $pdf->SetXY($x0, $y0 + 4);
+        $pdf->Cell($logoW, 4, 'Autotrasporti', 0, 2, 'C');
+        $pdf->Cell($logoW, 4, 'Pigliacelli SpA', 0, 0, 'C');
+        $pdf->SetTextColor(0, 0, 0);
+        // title + meta
+        $pdf->Rect($x0 + $logoW, $y0, $boxW, 10);
+        $pdf->SetFont('helvetica', 'B', 8);
+        $pdf->SetXY($x0 + $logoW, $y0 + 2);
+        $pdf->Cell($boxW, 6, 'QUESTIONARIO DI QUALIFICAZIONE DEI FORNITORI/SUBVETTORI', 0, 0, 'C');
+        $pdf->SetFont('helvetica', '', 6.5);
+        $mw = $boxW / 4;
+        $pdf->SetXY($x0 + $logoW, $y0 + 10);
+        $pdf->Cell($mw, 6, 'Rev. 03', 1, 0, 'C');
+        $pdf->Cell($mw, 6, 'Del 30.08.2020', 1, 0, 'C');
+        $pdf->Cell($mw, 6, 'Mod 7.4/A – All. F PGI 12', 1, 0, 'C');
+        $pdf->Cell($mw, 6, 'Pagina ' . (int)$pagina . ' di 4', 1, 1, 'C');
+        $pdf->SetY($y0 + 18);
+        $pdf->Ln(1);
+    };
+
+    $secBar = function ($title) use ($pdf, $contentW, $gray) {
+        $pdf->SetFillColor($gray[0], $gray[1], $gray[2]);
+        $pdf->SetFont('helvetica', 'B', 8.5);
+        $pdf->Cell($contentW, 5.8, ' ' . $title, 1, 1, 'L', true);
+    };
+
+    $cellLbl = function ($txt, $w, $h = 6.2, $ln = 0, $fill = false) use ($pdf) {
+        $pdf->SetFont('helvetica', '', 7.5);
+        $pdf->Cell($w, $h, ' ' . $txt, 1, $ln, 'L', $fill);
+    };
+
+    $siNoRow = function ($txt) use ($pdf, $contentW) {
+        $wS = 12;
+        $wN = 12;
+        $wQ = $contentW - $wS - $wN;
+        $pdf->SetFont('helvetica', '', 6.8);
+        $x = $pdf->GetX();
+        $y = $pdf->GetY();
+        // stima altezza
+        $lines = method_exists($pdf, 'getNumLines') ? max(1, (int)$pdf->getNumLines($txt, $wQ - 2)) : max(1, (int)ceil(strlen($txt) / 95));
+        $h = max(5.8, $lines * 3.35 + 1.2);
+        if ($y + $h > 278) {
+            return false;
+        }
+        $pdf->MultiCell($wQ, $h, ' ' . $txt, 1, 'L', false, 0, $x, $y, true, 0, false, true, $h, 'M');
+        $pdf->MultiCell($wS, $h, '', 1, 'C', false, 0, $x + $wQ, $y, true, 0, false, true, $h, 'M');
+        $pdf->MultiCell($wN, $h, '', 1, 'C', false, 1, $x + $wQ + $wS, $y, true, 0, false, true, $h, 'M');
+        return true;
+    };
+
+    $siNoHead = function () use ($pdf, $contentW, $graySoft) {
+        $pdf->SetFillColor($graySoft[0], $graySoft[1], $graySoft[2]);
+        $pdf->SetFont('helvetica', 'B', 7.5);
+        $pdf->Cell($contentW - 24, 5, ' Domanda', 1, 0, 'L', true);
+        $pdf->Cell(12, 5, 'SI', 1, 0, 'C', true);
+        $pdf->Cell(12, 5, 'NO', 1, 1, 'C', true);
+    };
+
+    // F p.1
+    $newPage(array(16, 10, 16));
+    $fPageHeader(1);
+    $secBar('1. GENERALITA\'');
+    $wL = 118;
+    $wR = $contentW - $wL;
+    $cellLbl('Ragione sociale: ' . $ragione, $wL, 6.5);
+    $cellLbl('Anno di inizio attività:', $wR, 6.5, 1);
+    $cellLbl('Indirizzo sede legale: ' . trim($viaCompleta . ($citta !== '' ? ', ' . $citta : '') . ($prov !== '' ? ' (' . $prov . ')' : '')), $wL, 6.5);
+    $cellLbl('Tel. ' . $tel, $wR, 6.5, 1);
+    $cellLbl('Indirizzo sede amministrativa:', $wL, 6.5);
+    $cellLbl('Fax', $wR, 6.5, 1);
+    $cellLbl('E-mail: ' . $email, $wL, 6.5);
+    $cellLbl('PEC: ' . $pec, $wR, 6.5, 1);
+    $cellLbl('Partita IVA: ' . $piva, $wL, 6.5);
+    $cellLbl('Codice fiscale: ' . $cf, $wR, 6.5, 1);
+    $cellLbl('Iscrizione C.C.I.A.A. e Registro Imprese n. ' . trim($locRi . ' ' . $numRi), $contentW, 6.5, 1);
+    $cellLbl('Conto Terzi n.', $wL, 6.5);
+    $cellLbl('REN n.', $wR, 6.5, 1);
+    $cellLbl('Iscrizione Albo Nazionale Gestori Ambientali n° _______________________________ per le categorie:', $contentW, 6.5, 1);
+    $cellLbl('[  ]  1 del ____________________     [  ]  4 del ____________________     [  ]  5 del ____________________', $contentW, 6.5, 1);
+    $cellLbl('Attività svolta (specificate se siete abilitati al trasporto di rifiuti, alimentari e/o in regime Adr):', $contentW, 5.5, 1);
+    $cellLbl('', $contentW, 5.2, 1);
+    $cellLbl('', $contentW, 5.2, 1);
+    $cellLbl('', $contentW, 5.2, 1);
+
+    $secBar('2. CARICHE SOCIALI/RESPONSABILITA\'');
+    $half = $contentW / 2;
+    $cellLbl('Legale Rappresentante: ' . $legaleNome, $half, 6);
+    $cellLbl('Responsabile Contabilità:', $half, 6, 1);
+    $cellLbl('Tel.                          Cell. ' . $tel, $half, 6);
+    $cellLbl('Tel.                          Cell.', $half, 6, 1);
+    $cellLbl('Responsabile Commerciale:', $half, 6);
+    $cellLbl('Responsabile di Logistica:', $half, 6, 1);
+    $cellLbl('Tel.                          Cell.', $half, 6);
+    $cellLbl('Tel.                          Cell.', $half, 6, 1);
+
+    $secBar('3. DIMENSIONI AZIENDALI E FATTURATO');
+    $cellLbl('Presenza sul mercato:   Nazionale [  ]     Internazionale [  ]     Nazioni: ____________________', $contentW, 6.2, 1);
+    $cellLbl('Numero totale personale: ________   di cui: N° Dirigenti ________  N° Impiegati ________  N° Operai/Autisti ________', $contentW, 6.2, 1);
+    $cellLbl('Capitale sociale:', $contentW, 6.2, 1);
+
+    $pdf->SetFont('helvetica', 'B', 7);
+    $pdf->SetFillColor(245, 245, 245);
+    $pdf->Cell($contentW / 2, 5, ' Fatturato degli ultimi tre anni', 1, 0, 'C', true);
+    $pdf->Cell($contentW / 2, 5, ' Clienti più importanti', 1, 1, 'C', true);
+    $pdf->SetFont('helvetica', 'B', 6.5);
+    $pdf->Cell(28, 5, 'Anno', 1, 0, 'C');
+    $pdf->Cell($contentW / 2 - 28, 5, 'Fatturato', 1, 0, 'C');
+    $pdf->Cell(42, 5, 'Cliente', 1, 0, 'C');
+    $pdf->Cell(30, 5, 'Prodotto/Servizio', 1, 0, 'C');
+    $pdf->Cell($contentW / 2 - 72, 5, '% Fatturato', 1, 1, 'C');
+    for ($i = 0; $i < 3; $i++) {
+        $pdf->Cell(28, 6.2, '', 1, 0);
+        $pdf->Cell($contentW / 2 - 28, 6.2, '', 1, 0);
+        $pdf->Cell(42, 6.2, '', 1, 0);
+        $pdf->Cell(30, 6.2, '', 1, 0);
+        $pdf->Cell($contentW / 2 - 72, 6.2, '', 1, 1);
+    }
+
+    $secBar('4. PARCO AUTOMEZZI');
+    $cellLbl('Si prega di allegare una situazione aggiornata del vostro parco automezzi tramite allegato D', $contentW, 7, 1);
+    $secBar('4.1 AUTISTI');
+    $cellLbl('Si prega di allegare lista degli autisti che utilizzerete per lo svolgimento dei trasporti', $contentW, 7, 1);
+    $pageFooter();
+
+    // F p.2
+    $newPage(array(16, 10, 16));
+    $fPageHeader(2);
+    $secBar('5. REQUISITI RELATIVI AL SISTEMA QUALITA\'');
+    $siNoHead();
+    foreach (array(
+        '5.1 - Siete certificati ISO 9001? (Se sì, allegare una copia del certificato senza rispondere alle domande a seguito tranne il punto 5.4 che va compilato; se no, rispondere alle domande successive)',
+        '5.2 - Esiste un piano di certificazione ISO 9001',
+        '5.3 - La vostra azienda ha provveduto a definire, per iscritto, una Politica per la Qualità',
+        '5.4 - È stato nominato un Responsabile Qualità? (Se sì, indicare a seguito le sue generalità ed il suo numero di telefono)',
+    ) as $q) {
+        $siNoRow($q);
+    }
+    $cellLbl('Nome e Cognome: _______________________________    N° di telefono: _______________________', $contentW, 6, 1);
+    foreach (array(
+        '5.5 - In azienda sono definite formalmente le responsabilità',
+        '5.6 - Vengono effettuati audit interni periodici',
+        '5.7 - Viene svolta annualmente la riunione di coordinamento periodica',
+        '5.8 - Esistono delle procedure e istruzioni operative scritte generali',
+        '5.9 - Esistono delle procedure e istruzioni operative scritte inerenti l\'utilizzo dei rimorchi cassonati',
+        '5.10 - Esistono delle procedure e istruzioni operative scritte inerenti l\'utilizzo dei rimorchi vasche',
+        '5.11 - Esistono delle procedure e istruzioni operative scritte inerenti l\'utilizzo dei rimorchi centinati',
+        '5.12 - Esistono delle procedure e istruzioni operative scritte inerenti l\'utilizzo dei rimorchi silos',
+        '5.13 - Esistono delle procedure e istruzioni operative scritte inerenti il controllo delle manichette aria/scarico silos',
+        '5.14 - Esiste un programma di controllo e di manutenzione dei macchinari e degli automezzi',
+        '5.15 - Il vostro sistema garantisce che i viaggi affidati in sub-vezione, non vengano affidati a terzi',
+    ) as $q) {
+        $siNoRow($q);
+    }
+    $secBar('6. CONTROLLO ACQUISTI (sezione da compilare solo se non si è in possesso di certificazione)');
+    $siNoHead();
+    foreach (array(
+        '6.1 - Esiste un Responsabile Acquisti',
+        '6.2 - Esistono procedure per gli acquisti',
+        '6.3 - Esistono procedure per garantire la conformità dei prodotti acquistati ai documenti d\'acquisto',
+        '6.4a - Metodi di valutazione e selezione dei fornitori',
+        '6.4b - Metodi di sorveglianza durante le forniture',
+        '6.4c - Metodi di ispezione al ricevimento',
+        '6.5 - Esiste un elenco di fornitori qualificati',
+        '6.6 - I certificati dei fornitori vengono controllati ed archiviati',
+    ) as $q) {
+        $siNoRow($q);
+    }
+    $secBar('7. REQUISITI RELATIVI AL SISTEMA AMBIENTE');
+    $siNoHead();
+    $siNoRow('7.1 - Siete certificati ISO 14001 (Se sì, allegare una copia del certificato senza rispondere alle domande a seguito tranne il punto 7.4 che va compilato; se no, rispondere alle domande successive)');
+    $pageFooter();
+
+    // F p.3
+    $newPage(array(16, 10, 16));
+    $fPageHeader(3);
+    $siNoHead();
+    foreach (array(
+        '7.2 - Esiste un piano di certificazione ISO 14001',
+        '7.3 - La vostra azienda ha provveduto a definire, per iscritto, una Politica per l\'Ambiente',
+        '7.4 - È stato nominato un Responsabile Ambientale (Se sì, indicare le sue generalità ed il suo numero di telefono)',
+    ) as $q) {
+        $siNoRow($q);
+    }
+    $cellLbl('Nome e Cognome: _______________________________    N° di telefono: _______________________', $contentW, 6, 1);
+    foreach (array(
+        '7.5 - È stata svolta un\'analisi ambientale',
+        '7.6 - Il personale (autisti e/o impiegati), sono stati formati sul trasporto di rifiuti',
+        '7.7 - I veicoli che trasportano i rifiuti, hanno in dotazione un kit antisversamento',
+        '7.8 - La vostra azienda, ha un contratto con società di pronto intervento ambientale',
+        '7.9 - Sono verificati i trasporti di rifiuti eseguiti, se possono essere svolti dall\'azienda',
+        '7.10 - I veicoli utilizzati per il trasporto di rifiuti, sono sempre autorizzati per le categorie ANGA',
+        '7.11 - Vengono controllati i quantitativi di rifiuti trasportati, in relazione alle classi ANGA di appartenenza',
+        '7.12 - I rifiuti prodotti e trasportati sono gestiti secondo quanto stabilito dal D.lgs. 152/2006 con evidenza MUD',
+    ) as $q) {
+        $siNoRow($q);
+    }
+    $secBar('8. REQUISITI RELATIVI AL SISTEMA SICUREZZA');
+    $siNoHead();
+    foreach (array(
+        '8.1 - Siete certificati OHSAS 18001 / ISO 45001 (Se sì, allegare certificato; se no rispondere alle successive; compilare comunque 8.4)',
+        '8.2 - Esiste un piano di certificazione OHSAS 18001 / ISO 45001',
+        '8.3 - La vostra azienda ha provveduto a definire, per iscritto, una Politica per la Sicurezza',
+        '8.4 - È stato nominato il Datore di Lavoro e un RSPP (Se sì, indicare le generalità ed il numero di telefono)',
+    ) as $q) {
+        $siNoRow($q);
+    }
+    $cellLbl('Nome e Cognome DL: ______________________ Tel. __________   Nome RSPP: ______________________ Tel. __________', $contentW, 6, 1);
+    foreach (array(
+        '8.5 - Gli infortuni, se presenti, sono monitorati per verificare tutte le condizioni per evitarli',
+        '8.6 - I verbali agli autisti, se presenti, sono monitorati per verificare tutte le condizioni per evitarli',
+        '8.7 - Nel DVR sono valutati tutti i possibili rischi, in modo da prevedere e consegnare gli idonei DPI',
+        '8.8 - Sono presenti le schede di distribuzione DPI per tutti i dipendenti',
+        '8.9 - Il personale ha conseguito l\'attestato Generale e specifico per la mansione svolta',
+        '8.10 - Il personale ha conseguito l\'attestato per i DPI di III categoria',
+        '8.11 - Il personale è formato/informato sulle Norme Comportamentali da tenere all\'interno dei siti carico/scarico',
+        '8.12 - Annualmente è svolto il protocollo sanitario, con relative visite mediche a tutti i dipendenti',
+    ) as $q) {
+        $siNoRow($q);
+    }
+    $secBar('9. ALTRI REQUISITI');
+    $siNoHead();
+    $siNoRow('9.1 - Siete certificati SQAS (Se sì, allegate copia del vostro certificato)');
+    $siNoRow('9.2 - Diagnosi energetica (Se sì, allegate copia e attestazione di invio all\'ENEA)');
+    $pageFooter();
+
+    // F p.4
+    $newPage(array(16, 10, 16));
+    $fPageHeader(4);
+    $secBar('10. REQUISITI RELATIVI AL SISTEMA HACCP e GMP+');
+    $siNoHead();
+    foreach (array(
+        '10.1 - Siete certificati GMP+ (Se sì, allegare certificato senza rispondere alle successive tranne 10.4; se no rispondere alle successive)',
+        '10.2 - Esiste un sistema di sicurezza alimentare – alimentare zootecnico',
+        '10.3 - La vostra azienda ha provveduto a definire, per iscritto, una Politica per la Sicurezza Alimentare',
+        '10.4 - È stato nominato un responsabile sulla sicurezza alimentare (Se sì, indicare generalità e telefono)',
+    ) as $q) {
+        $siNoRow($q);
+    }
+    $cellLbl('Nome e Cognome: _______________________________    N° di telefono: _______________________', $contentW, 6, 1);
+    foreach (array(
+        '10.5 - È presente la SCIA per l\'ottenimento dell\'autorizzazione sanitaria rilasciata dalla ASL competente',
+        '10.6 - Esiste un controllo elettronico per la tracciabilità degli alimenti trasportati',
+        '10.7 - Sono svolti audit per la verifica della tracciabilità e la rintracciabilità alimentare',
+        '10.8 - Sono valutati tutti i PCC e/o i POA',
+        '10.9 - Esiste il Manuale dell\'autocontrollo alimentare',
+        '10.10 - Gli autisti hanno conseguito l\'attestato HACCP per la mansione svolta',
+        '10.11 - I veicoli utilizzati per il trasporto alimentare, sono sempre autorizzati per lo svolgimento del servizio',
+    ) as $q) {
+        $siNoRow($q);
+    }
+    $pdf->Ln(2);
+    $pdf->SetFont('helvetica', 'B', 7.5);
+    $pdf->SetFillColor(245, 245, 245);
+    $pdf->Cell(40, 8, ' Data: ' . date('d/m/Y'), 1, 0, 'L', true);
+    $pdf->Cell(78, 8, ' Nominativo: ' . $legaleNome, 1, 0, 'L', true);
+    $pdf->Cell($contentW - 118, 8, ' Timbro e firma del Compilatore', 1, 1, 'L', true);
+    $pdf->Ln(2);
+    $pdf->SetFont('helvetica', '', 7);
+    $pdf->MultiCell(
+        $contentW,
+        3.3,
+        'I dati raccolti con il presente questionario saranno trattati secondo le norme previste dal D.Lgs. n. 196/2003. '
+        . 'Il presente questionario deve essere compilato ed inviato via fax o posta ordinaria all\'attenzione del Responsabile Gestione Integrato.',
+        0,
+        'L'
+    );
+    $pdf->Ln(2);
+    $secBar('SPAZIO RISERVATO AD AUTOTRASPORTI PIGLIACELLI S.P.A.');
+    $cellLbl('Punteggio totale: ______________', $contentW / 3, 8);
+    $cellLbl('Data: ______________', $contentW / 3, 8);
+    $cellLbl('Firma RSI: ______________', $contentW / 3, 8, 1);
+    $pdf->SetFont('helvetica', 'B', 6.5);
+    $pdf->Cell($contentW, 4.5, ' Griglia punteggi (uso interno)', 1, 1, 'L');
+    $pdf->SetFont('helvetica', '', 6);
+    $pdf->MultiCell(
+        $contentW,
+        3.1,
+        '5) Sistema Qualità (5.1=15p)  |  6) Controllo acquisti (tot. 8p)  |  7) Ambiente (7.1=12p)  |  8) Sicurezza (8.1=12p)  |  10) HACCP/GMP+ (10.1=11p)  |  SQAS=22p',
+        1,
+        'L'
+    );
+    $pageFooter();
+
+    // ---------- Allegato G ----------
+    $newPage(array(20, 16, 20));
+    $cw = 170.0;
+    $pdf->SetFont('times', '', 11);
+    $pdf->Cell($cw, 6, 'Allegato G', 0, 1, 'L');
+    $pdf->Ln(4);
+    $pdf->SetFont('times', 'B', 13);
+    $pdf->Cell($cw, 7, 'Dichiarazione sostitutiva di certificazione', 0, 1, 'C');
+    $pdf->SetFont('times', '', 11);
+    $pdf->Cell($cw, 6, '(D.P.R. n. 445 del 28.12.2000)', 0, 1, 'C');
+    $pdf->Ln(6);
+    $pdf->SetFont('times', '', 10.5);
+    $pdf->MultiCell($cw, 5, $introG, 0, 'J');
+    $pdf->Ln(3);
+    $pdf->SetFont('times', 'B', 9.5);
+    $pdf->MultiCell($cw, 4.2, $sanzioni, 0, 'C');
+    $pdf->Ln(3);
+    $pdf->SetFont('times', 'B', 12);
+    $pdf->Cell($cw, 6, 'DICHIARA', 0, 1, 'C');
+    $pdf->Ln(1);
+    foreach (array(
+        'che nei propri confronti non è pendente procedimento per l\'applicazione di una delle misure di prevenzione di cui all\'art. 6 del D.Lgs. n. 159 del 2011;',
+        'che nei propri confronti e nei confronti della società/organizzazione di cui è rappresentante legale, non sussiste alcuna delle cause di divieto, di decadenza o di sospensione previste dall\'art. 67 del D.Lgs. n. 159 del 2011 e di non essere a conoscenza dell\'esistenza di tali cause nei confronti dei componenti della società/organizzazione di cui sopra;',
+        'che non si trova nella condizione ostativa di cui all\'art. 80, comma 5, lettera l D.Lgs 50/2016;',
+        'che nei propri confronti non è stata pronunciata sentenza passata in giudicato per qualsiasi reato che incida sulla propria moralità professionale;',
+        'che nei propri confronti non sussistono eventuali tentativi di infiltrazione mafiosa tendenti a condizionare le scelte e gli indirizzi dell\'impresa di cui all\'art. 84, comma 3, del Codice Antimafia.',
+    ) as $b) {
+        $bulletDash($b, 9.5, 4.3);
+    }
+    $firmaBlocco('Luogo e data', 'Timbro e firma leggibile del dichiarante', $luogoData);
+    $pdf->Ln(4);
+    $pdf->SetFont('times', 'I', 9);
+    $pdf->Cell($cw, 5, 'Si allega documento di identità in corso di validità del dichiarante.', 0, 1, 'L');
+
+    // ---------- Allegato H ----------
+    $newPage(array(18, 16, 18));
+    $cw = 174.0;
+    $pdf->SetFont('times', '', 11);
+    $pdf->Cell($cw, 6, 'Allegato H', 0, 1, 'L');
+    $pdf->Ln(10);
+    $destinatario();
+    $pdf->Ln(10);
+    $pdf->SetFont('times', 'B', 12);
+    $pdf->MultiCell($cw, 5.5, 'Oggetto: Manuale del Vettore', 0, 'L');
+    $pdf->Ln(6);
+    $pdf->SetFont('times', '', 11);
+    $pdf->MultiCell($cw, 5, $introH, 0, 'J');
+    $pdf->Ln(6);
+    $pdf->SetFont('times', 'B', 12);
+    $pdf->Cell($cw, 6, 'Dichiara', 0, 1, 'C');
+    $pdf->Ln(3);
+    $pdf->SetFont('times', '', 11);
+    $pdf->MultiCell(
+        $cw,
+        5,
+        'Di aver ricevuto copia del Manuale del Vettore e dei suoi allegati, elaborati dall\'Autotrasporti Pigliacelli Spa, e di aver provveduto a formare/informare ed addestrare i propri conducenti sui contenuti dello stesso.',
+        0,
+        'J'
+    );
+    $firmaBlocco('Luogo e data', 'Firma del legale rappresentante', $luogoData);
+
+    // ---------- Allegato I ----------
+    $newPage(array(20, 16, 20));
+    $cw = 170.0;
+    $pdf->SetFont('times', '', 11);
+    $pdf->Cell($cw, 6, 'Allegato I', 0, 1, 'L');
+    $pdf->Ln(3);
+    $pdf->SetFont('times', 'B', 13);
+    $pdf->Cell($cw, 7, 'Dichiarazione sostitutiva di certificazione', 0, 1, 'C');
+    $pdf->SetFont('times', '', 11);
+    $pdf->Cell($cw, 6, '(D.P.R. n. 445 del 28.12.2000)', 0, 1, 'C');
+    $pdf->Ln(4);
+    $pdf->SetFont('times', '', 10.5);
+    $pdf->MultiCell($cw, 5, $introI, 0, 'J');
+    $pdf->Ln(3);
+    $pdf->SetFont('times', 'B', 9.5);
+    $pdf->MultiCell($cw, 4.2, $sanzioni, 0, 'C');
+    $pdf->Ln(3);
+    $pdf->SetFont('times', 'B', 12);
+    $pdf->Cell($cw, 6, 'DICHIARA', 0, 1, 'C');
+    $pdf->Ln(1);
+    $bulletDash('Di possedere le seguenti polizze assicurative:', 10, 4.4);
+    $pdf->SetFont('times', '', 10);
+    $pdf->MultiCell($cw, 4.5, '    o  Polizza vettoriale/merci con massimale € ________', 0, 'L');
+    $pdf->MultiCell($cw, 4.5, '    o  Polizza RC Auto con massimale € ________', 0, 'L');
+    $pdf->MultiCell($cw, 4.5, '    o  Polizza RCT/RCO con massimale € ________', 0, 'L');
+    $pdf->Ln(1);
+    $bulletDash('Che le copie delle polizze assicurative e le relative quietanze di pagamento fornite alla Autotrasporti Pigliacelli Spa sono veritiere, in corso di validità e conformi all\'originale;', 9.5, 4.2);
+    $bulletDash('di impegnarsi a fornire alla Autotrasporti Pigliacelli Spa le quietanze delle polizze assicurative suindicate ad ogni rinnovo.', 9.5, 4.2);
+    $pdf->Ln(2);
+    $pdf->SetFont('times', '', 9.5);
+    $pdf->MultiCell(
+        $cw,
+        4.2,
+        'Dichiara, inoltre, di essere a conoscenza che in caso di sinistro relativo ai servizi di trasporto affidatigli, in mancanza delle suindicate polizze assicurative, potrà essere assoggettato a eventuale rivalsa da parte della compagnia assicurativa della Autotrasporti Pigliacelli SpA, ed in ogni caso si impegna a manlevare e garantire la Autotrasporti Pigliacelli SpA in ogni sede, civile e penale, in modo che non abbia mai a ricevere alcun danno, onere, costo e/o conseguenza per i servizi di trasporto eseguiti dalla sottoscritta impresa/società come sub vettore.',
+        0,
+        'J'
+    );
+    $firmaBlocco('Luogo e data', 'timbro e firma leggibile del dichiarante', $luogoData);
+    $pdf->Ln(3);
+    $pdf->SetFont('times', 'I', 9);
+    $pdf->Cell($cw, 5, 'Si allega documento di identità in corso di validità del dichiarante.', 0, 1, 'L');
+}
+
+// --- Output / auto-save (invariato) ---
+$autoSavePdf = (
+    (isset($_SESSION['pdf_auto_save']) && strtoupper(trim((string)$_SESSION['pdf_auto_save'])) === 'S') ||
+    (isset([auto_save_pdf]) && strtoupper(trim((string)[auto_save_pdf])) === 'S') ||
+    (isset($_GET['auto_save_pdf']) && strtoupper(trim((string)$_GET['auto_save_pdf'])) === 'S') ||
+    (isset($_REQUEST['auto_save_pdf']) && strtoupper(trim((string)$_REQUEST['auto_save_pdf'])) === 'S')
+);
+
+if (!$autoSavePdf) {
+    $pdf->Output($pdfFileName, 'I');
+    return;
+}
+
+$sqlQuote = function ($v) {
+    return "'" . str_replace("'", "''", (string)$v) . "'";
+};
+
+$rsBaseDir = $this->Db->Execute("
+    SELECT set_value FROM sec_settings WHERE set_name = 'templates_path' LIMIT 1
+");
+$baseDirRaw = '';
+if ($rsBaseDir !== false && !$rsBaseDir->EOF) {
+    $baseDirRaw = trim((string)$rsBaseDir->fields[0]);
+    $rsBaseDir->Close();
+}
+if ($baseDirRaw === '') {
+    $rsBaseDir2 = $this->Db->Execute("
+        SELECT set_value FROM sec_settings WHERE set_name = 'contratti_base_dir' LIMIT 1
+    ");
+    if ($rsBaseDir2 !== false && !$rsBaseDir2->EOF) {
+        $baseDirRaw = trim((string)$rsBaseDir2->fields[0]);
+        $rsBaseDir2->Close();
+    }
+}
+if ($baseDirRaw === '') {
+    die('Impostare sec_settings.templates_path o contratti_base_dir.');
+}
+
+$baseDir = rtrim(str_replace('\\', '/', $baseDirRaw), '/');
+$docDir = $baseDir . '/documenti';
+if (!is_dir($docDir)) {
+    @mkdir($docDir, 0775, true);
+}
+if (!is_dir($docDir)) {
+    $docDir = $baseDir;
+    $relName = $pdfFileName;
+    $fullPath = rtrim($docDir, '/\\') . DIRECTORY_SEPARATOR . $pdfFileName;
+} else {
+    $relName = 'documenti/' . $pdfFileName;
+    $fullPath = rtrim($docDir, '/\\') . DIRECTORY_SEPARATOR . $pdfFileName;
+}
+
+$pdfBin = $pdf->Output($pdfFileName, 'S');
+if (!is_string($pdfBin) || strncmp($pdfBin, '%PDF', 4) !== 0) {
+    die('Generazione PDF dichiarazioni non valida.');
+}
+if (@file_put_contents($fullPath, $pdfBin) === false) {
+    die('Impossibile salvare PDF: ' . $fullPath);
+}
+
+if ($documentoId <= 0) {
+    $rsDoc = $this->Db->Execute("
+        SELECT d.id
+        FROM documenti d
+        INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+        WHERE d.subvettore_id = " . (int)$subvector . "
+          AND LOWER(td.nome) LIKE '%dichiaraz%'
+          AND (d.subvettore_autista_id IS NULL OR d.subvettore_autista_id = 0)
+          AND (d.subvettore_mezzo_id IS NULL OR d.subvettore_mezzo_id = 0)
+        ORDER BY d.id
+        LIMIT 1
+    ");
+    if ($rsDoc !== false && !$rsDoc->EOF) {
+        $documentoId = (int)$rsDoc->fields[0];
+        $rsDoc->Close();
+    }
+}
+
+if ($documentoId > 0) {
+    $this->Db->Execute("
+        UPDATE documenti
+        SET file = " . $sqlQuote($relName) . ",
+            stato_documento_id = 1,
+            updated_at = NOW()
+        WHERE id = " . (int)$documentoId . "
+    ");
+}
+
+if (function_exists('sc_log_add')) {
+    sc_log_add(
+        'PDF_SAVE',
+        'dichiarazioni_subvettore sub=' . (int)$subvector
+        . ' documentoId=' . (int)$documentoId
+        . ' fpdi=' . ($canFpdi ? '1' : '0')
+        . ' path=' . $fullPath
+    );
+}
+
+// Dopo salvataggio wizard: torna alla blank hub (non lasciare il PDF inline)
+$returnTo = '';
+if (isset($_GET['return_to']) && trim((string)$_GET['return_to']) !== '') {
+    $returnTo = preg_replace('/[^a-zA-Z0-9_\\-]/', '', (string)$_GET['return_to']);
+} elseif (!empty($_SESSION['dichiarazioni_return_to'])) {
+    $returnTo = preg_replace('/[^a-zA-Z0-9_\\-]/', '', (string)$_SESSION['dichiarazioni_return_to']);
+}
+if ($returnTo !== '') {
+    unset($_SESSION['dichiarazioni_return_to']);
+    unset($_SESSION['pdf_auto_save']);
+    $_SESSION['wizard_flash_msg'] = 'PDF Dichiarazioni generato. Ora puoi aprirlo e firmarlo.';
+    header('Location: ../' . $returnTo . '/?generated=1&documentoId=' . (int)$documentoId);
+    exit;
+}
+
+header('Content-Type: application/pdf');
+header('Content-Disposition: inline; filename="' . $pdfFileName . '"');
+echo $pdfBin;
+exit;

@@ -1,24 +1,17 @@
 /**
  * TV-oriented poster loader for webOS (QNED / limited RAM):
- * - load only when near viewport (IntersectionObserver) or focused
+ * - load only when near viewport (IntersectionObserver), focused, or after layout
  * - cap concurrent downloads
- * - drop `src` when off-screen so decoded bitmaps can be freed
- * - no IndexedDB image blobs (browser HTTP cache is enough)
+ * - keep decoded posters (webOS often fails to re-decode if src is cleared)
  */
 
 const MAX_CONCURRENT = 6;
-const UNLOAD_DELAY_MS = 2800;
 const ROOT_MARGIN = '160px 240px';
-
-/** Tiny transparent GIF — avoids broken-image icon when src is cleared. */
-const EMPTY_SRC =
-  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
 class LazyPosterController {
   private queue: HTMLImageElement[] = [];
   private active = 0;
   private io: IntersectionObserver | null = null;
-  private unloadTimers = new WeakMap<HTMLImageElement, number>();
   private observed = new WeakSet<HTMLImageElement>();
 
   constructor() {
@@ -28,7 +21,6 @@ class LazyPosterController {
           for (const entry of entries) {
             const img = entry.target as HTMLImageElement;
             if (entry.isIntersecting) this.enqueue(img, false);
-            else this.scheduleUnload(img);
           }
         },
         { root: null, rootMargin: ROOT_MARGIN, threshold: 0.01 },
@@ -43,26 +35,22 @@ class LazyPosterController {
     img.decoding = 'async';
     img.setAttribute('draggable', 'false');
     if (!img.getAttribute('alt')) img.alt = '';
-    img.classList.add('is-lazy');
-    if (!img.src || img.src === EMPTY_SRC || img.src.endsWith('/')) {
-      img.src = EMPTY_SRC;
-      img.classList.add('is-pending');
-    }
+    img.classList.add('is-lazy', 'is-pending');
 
     if (options?.eager) {
       this.enqueue(img, true);
       return;
     }
 
-    if (this.io) {
-      if (!this.observed.has(img)) {
-        this.observed.add(img);
-        this.io.observe(img);
-      }
-    } else {
-      // Older webOS without IO: still queue-limited, load soon after bind.
-      this.enqueue(img, false);
+    if (this.io && !this.observed.has(img)) {
+      this.observed.add(img);
+      this.io.observe(img);
     }
+    // webOS IntersectionObserver is flaky on horizontal rails — probe after layout.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => this.enqueueIfNear(img));
+    });
+    window.setTimeout(() => this.enqueueIfNear(img), 350);
   }
 
   /** Prefer loading this poster and nearby cards (remote D-pad focus). */
@@ -93,45 +81,23 @@ class LazyPosterController {
         this.observed.add(img);
         this.io.observe(img);
       }
+      this.enqueueIfNear(img);
     });
   }
 
-  private cancelUnload(img: HTMLImageElement): void {
-    const t = this.unloadTimers.get(img);
-    if (t != null) {
-      window.clearTimeout(t);
-      this.unloadTimers.delete(img);
-    }
-  }
-
-  private scheduleUnload(img: HTMLImageElement): void {
-    this.cancelUnload(img);
-    const timer = window.setTimeout(() => {
-      this.unloadTimers.delete(img);
-      if (!img.isConnected) return;
-      const url = img.dataset.lazySrc;
-      if (!url) return;
-      // Still on screen? (scroll / focus race)
-      const rect = img.getBoundingClientRect();
-      const vw = window.innerWidth || 1920;
-      const vh = window.innerHeight || 1080;
-      const margin = 80;
-      const visible =
-        rect.bottom > -margin &&
-        rect.right > -margin &&
-        rect.top < vh + margin &&
-        rect.left < vw + margin;
-      if (visible) return;
-
-      img.src = EMPTY_SRC;
-      img.classList.add('is-pending');
-      delete img.dataset.lazyReady;
-    }, UNLOAD_DELAY_MS);
-    this.unloadTimers.set(img, timer);
+  private enqueueIfNear(img: HTMLImageElement): void {
+    if (!img.isConnected || !img.dataset.lazySrc) return;
+    const rect = img.getBoundingClientRect();
+    const vw = window.innerWidth || 1920;
+    const vh = window.innerHeight || 1080;
+    const laidOut = rect.width > 2 && rect.height > 2;
+    if (!laidOut) return;
+    const near =
+      rect.bottom > -200 && rect.right > -280 && rect.top < vh + 200 && rect.left < vw + 280;
+    if (near) this.enqueue(img, false);
   }
 
   private enqueue(img: HTMLImageElement, front: boolean): void {
-    this.cancelUnload(img);
     if (!img.isConnected) return;
     const url = img.dataset.lazySrc;
     if (!url) return;
@@ -158,6 +124,7 @@ class LazyPosterController {
       };
 
       const onDone = () => {
+        if (!img.src || img.src.startsWith('data:')) return;
         img.removeEventListener('load', onDone);
         img.removeEventListener('error', onError);
         img.classList.remove('is-pending');
@@ -169,7 +136,6 @@ class LazyPosterController {
         img.removeEventListener('error', onError);
         img.classList.add('is-pending');
         delete img.dataset.lazyReady;
-        img.src = EMPTY_SRC;
         finish();
         this.replaceWithPlaceholder(img);
       };
@@ -178,6 +144,8 @@ class LazyPosterController {
       img.addEventListener('error', onError);
       img.classList.add('is-pending');
       img.src = url;
+      // Cached images may not fire `load` on webOS.
+      if (img.complete && img.naturalWidth > 0) onDone();
     }
   }
 

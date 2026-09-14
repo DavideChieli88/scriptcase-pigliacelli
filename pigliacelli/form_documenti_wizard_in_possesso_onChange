@@ -1,0 +1,7 @@
+/**
+ * form_documenti_wizard_inline → in_possesso
+ *
+ * NON usare Ajax onClick/onChange.
+ * Usa invece: campo → "Reload form when value has changed" = ON
+ * La logica hide/show e' tutta in onLoad.
+ */

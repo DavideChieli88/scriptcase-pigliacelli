@@ -1,0 +1,24 @@
+/**
+ * Scriptcase blank: blank_wizard_firma_documenti → onExecute
+ *
+ * Ponte legacy → grid_documenti_to_sign_wizard (step 5 firme).
+ * Mantenuta per vecchi bookmark / link EasyGN.
+ */
+
+$qs = array();
+if (isset($_GET['from'])) {
+    $qs[] = 'from=' . rawurlencode((string)$_GET['from']);
+}
+if (isset($_GET['generated'])) {
+    $qs[] = 'generated=' . rawurlencode((string)$_GET['generated']);
+}
+if (isset($_GET['documentoId']) && (int)$_GET['documentoId'] > 0) {
+    $qs[] = 'documentoId=' . (int)$_GET['documentoId'];
+}
+$suffix = !empty($qs) ? ('?' . implode('&', $qs)) : '';
+
+if (function_exists('sc_redir')) {
+    sc_redir('grid_documenti_to_sign_wizard', implode('&', $qs));
+}
+header('Location: ../grid_documenti_to_sign_wizard/' . $suffix);
+exit;

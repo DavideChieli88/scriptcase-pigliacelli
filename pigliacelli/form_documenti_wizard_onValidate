@@ -1,0 +1,114 @@
+/**
+ * form_documenti_wizard → onValidate
+ * Multiple Records — senza JS / senza sc_field_display.
+ *
+ * flag_possesso=1 + in_possesso≠1 → nessun file richiesto
+ * flag_possesso=1 + in_possesso=1  → file obbligatorio
+ * flag_possesso=0 + mandatory=1    → file (+ data_scadenza) obbligatori
+ *
+ * Campo reale: {in_possesso} (non in_possesso_flag).
+ * Non usare sc_error_exit.
+ */
+
+$err = array();
+
+$tipoId = isset({tipo_documento_id}) ? (int){tipo_documento_id} : 0;
+$isMandatory    = 0;
+$isFlagPossesso = 0;
+if ($tipoId > 0) {
+    sc_lookup(rsWizDocTipoMand, "
+        SELECT COALESCE(mandatory, 0), COALESCE(flag_possesso, 0)
+        FROM tipi_documento
+        WHERE id = $tipoId
+        LIMIT 1
+    ", 'pigliacelli');
+    $isMandatory    = !empty({rsWizDocTipoMand[0][0]}) ? (int){rsWizDocTipoMand[0][0]} : 0;
+    $isFlagPossesso = !empty({rsWizDocTipoMand[0][1]}) ? (int){rsWizDocTipoMand[0][1]} : 0;
+}
+
+$inPossesso = 0;
+if (isset({in_possesso}) && (string){in_possesso} !== '' && (string){in_possesso} !== 'null') {
+    $inPossesso = ((int){in_possesso} === 1) ? 1 : 0;
+}
+
+if ($isFlagPossesso === 1) {
+    if ($inPossesso !== 1) {
+        return;
+    }
+    $hasFile = trim((string){file}) !== '';
+    if (!$hasFile && !empty($_FILES)) {
+        foreach ($_FILES as $up) {
+            if (!empty($up['name'])) {
+                $hasFile = true;
+                break;
+            }
+        }
+    }
+    if (!$hasFile && isset({id}) && (int){id} > 0) {
+        sc_lookup(rsWizDocFlgDb, "
+            SELECT id FROM documenti
+            WHERE id = " . (int){id} . "
+              AND file IS NOT NULL AND TRIM(file) <> ''
+            LIMIT 1
+        ", 'pigliacelli');
+        $hasFile = !empty({rsWizDocFlgDb[0][0]});
+    }
+    if (!$hasFile) {
+        $nomeTipo = '';
+        if ($tipoId > 0) {
+            sc_lookup(rsWizDocFlgNome, "SELECT nome FROM tipi_documento WHERE id=$tipoId LIMIT 1", 'pigliacelli');
+            if (!empty({rsWizDocFlgNome[0][0]})) {
+                $nomeTipo = trim((string){rsWizDocFlgNome[0][0]});
+            }
+        }
+        $prefisso = $nomeTipo !== '' ? '"' . $nomeTipo . '": ' : '';
+        sc_error_message($prefisso . 'file obbligatorio (dichiarato in possesso).');
+    }
+    return;
+}
+
+if ($isMandatory !== 1) {
+    return;
+}
+
+$hasFile = trim((string){file}) !== '';
+if (!$hasFile && !empty($_FILES)) {
+    foreach ($_FILES as $up) {
+        if (!empty($up['name'])) {
+            $hasFile = true;
+            break;
+        }
+    }
+}
+if (!$hasFile && isset({id}) && (int){id} > 0) {
+    sc_lookup(rsWizDocFileDb, "
+        SELECT id FROM documenti
+        WHERE id = " . (int){id} . "
+          AND file IS NOT NULL AND TRIM(file) <> ''
+        LIMIT 1
+    ", 'pigliacelli');
+    $hasFile = !empty({rsWizDocFileDb[0][0]});
+}
+
+if (!$hasFile) {
+    $err[] = 'file';
+}
+if (empty({data_scadenza}) || {data_scadenza} == 'null') {
+    $err[] = 'data di scadenza';
+}
+
+if (!empty($err)) {
+    $nomeTipo = '';
+    if ($tipoId > 0) {
+        sc_lookup(rsWizDocTipoNome, "
+            SELECT nome FROM tipi_documento WHERE id = $tipoId LIMIT 1
+        ", 'pigliacelli');
+        if (!empty({rsWizDocTipoNome[0][0]})) {
+            $nomeTipo = trim((string){rsWizDocTipoNome[0][0]});
+        }
+    }
+    $prefisso = $nomeTipo !== ''
+        ? 'Documento obbligatorio "' . $nomeTipo . '": '
+        : 'Documento obbligatorio: ';
+    sc_error_message($prefisso . implode(' e ', $err) . '.');
+}

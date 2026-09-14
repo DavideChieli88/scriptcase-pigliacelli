@@ -11,6 +11,7 @@
     "proxy": "node tools/cors-proxy/server.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:live": "vitest run tests/integration/live-movies.test.ts --environment=jsdom",
     "package:webos": "npm run build && ares-package.cmd --no-minify dist -o release",
     "install:webos": "ares-install.cmd -d lg-tv release\\com.personal.webanimetv_0.1.0_all.ipk && ares-launch.cmd -d lg-tv com.personal.webanimetv",
     "deploy": "node scripts/deploy.mjs"

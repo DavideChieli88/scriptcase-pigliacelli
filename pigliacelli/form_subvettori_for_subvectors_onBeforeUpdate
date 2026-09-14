@@ -1,0 +1,14 @@
+/**
+ * form_subvettori_for_subvectors → onBeforeUpdate
+ *
+ * Solo assegnazione campi. NIENTE sc_exec_sql / sc_lookup qui:
+ * Scriptcase ha già aperto la transazione PDO del form → altrimenti
+ * "There is already an active transaction".
+ */
+
+$wizComplete = isset({wizard_complete}) ? (int){wizard_complete} : 0;
+$wizStep     = isset({wizard_step}) ? (int){wizard_step} : 1;
+
+if ($wizComplete === 0 && $wizStep === 1) {
+    {wizard_step} = 2;
+}

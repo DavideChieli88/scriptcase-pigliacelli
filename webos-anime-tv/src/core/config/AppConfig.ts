@@ -20,7 +20,7 @@ export interface AppConfig {
 export const defaultConfig: AppConfig = {
   appName: 'Anime TV',
   version: '0.1.0',
-  defaultProviderId: 'mock',
+  defaultProviderId: 'animesaturn',
   defaultMoviesProviderId: 'altadefinizione',
   // Optional LAN CORS proxy (fallback). HttpClient tries direct first on webOS.
   // `npm run deploy` can inject VITE_PROXY_BASE_URL; leave empty in Settings to force direct-only.

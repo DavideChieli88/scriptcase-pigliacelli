@@ -1,0 +1,83 @@
+/**
+ * form_subvettori_mezzi -> pulsante PHP "Prossimo"
+ *
+ * Errori: flash in sessione + sc_redir (niente sc_alert/JS).
+ * onScriptInit mostra il messaggio con sc_error_message.
+ */
+
+$subId = 0;
+if (isset([subvettoreId])) {
+    $subId = (int)[subvettoreId];
+}
+if ($subId <= 0 && isset($_SESSION['wizard_subvettore_id'])) {
+    $subId = (int)$_SESSION['wizard_subvettore_id'];
+}
+
+sc_log_add('WIZARD', 'MEZZI_PROSSIMO_V3 START sub=' . $subId);
+
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    @session_start();
+}
+
+if ($subId <= 0) {
+    $_SESSION['wizard_flash_msg'] = 'Subvettore non identificato.';
+    sc_redir('blank_wizard_landing');
+}
+
+sc_lookup(rsWizMezCnt, "SELECT COUNT(*) FROM subvettori_mezzi WHERE subvettore_id = $subId", 'pigliacelli');
+$nMezzi = !empty({rsWizMezCnt[0][0]}) ? (int){rsWizMezCnt[0][0]} : 0;
+
+sc_log_add('WIZARD', 'MEZZI_PROSSIMO_V3 COUNT_MEZZI=' . $nMezzi);
+
+[subvettoreId] = $subId;
+$_SESSION['wizard_subvettore_id'] = $subId;
+
+if ($nMezzi < 1) {
+    $_SESSION['wizard_flash_msg'] = 'Inserire almeno un mezzo prima di proseguire.';
+    sc_log_add('WIZARD', 'MEZZI_PROSSIMO_V3 BLOCK no mezzi');
+    sc_redir('form_subvettori_mezzi', subvettoreId=[subvettoreId]);
+}
+
+sc_lookup(rsWizMezDocOk, "
+    SELECT COUNT(DISTINCT sm.id)
+    FROM subvettori_mezzi sm
+    INNER JOIN documenti d ON d.subvettore_mezzo_id = sm.id
+    WHERE sm.subvettore_id = $subId
+      AND d.tipo_documento_id = 22
+      AND d.file IS NOT NULL
+      AND TRIM(d.file) <> ''
+", 'pigliacelli');
+$nDocOk = !empty({rsWizMezDocOk[0][0]}) ? (int){rsWizMezDocOk[0][0]} : 0;
+
+sc_log_add('WIZARD', 'MEZZI_PROSSIMO_V3 COUNT_CARTA=' . $nDocOk);
+
+sc_lookup(rsWizMezAutOk, "
+    SELECT COUNT(DISTINCT sm.id)
+    FROM subvettori_mezzi sm
+    INNER JOIN subvettori_autisti_mezzi sam ON sam.mezzo_id = sm.id
+    WHERE sm.subvettore_id = $subId
+      AND sam.autista_id > 0
+", 'pigliacelli');
+$nAutOk = !empty({rsWizMezAutOk[0][0]}) ? (int){rsWizMezAutOk[0][0]} : 0;
+
+sc_log_add('WIZARD', 'MEZZI_PROSSIMO_V3 COUNT_AUTISTA=' . $nAutOk);
+
+if ($nDocOk < $nMezzi || $nAutOk < $nMezzi) {
+    $_SESSION['wizard_flash_msg'] = 'Completare carta di circolazione e autista collegato per ogni mezzo prima di proseguire.';
+    sc_log_add('WIZARD', 'MEZZI_PROSSIMO_V3 BLOCK docs/autista');
+    sc_redir('form_subvettori_mezzi', subvettoreId=[subvettoreId]);
+}
+
+sc_log_add('WIZARD', 'MEZZI_PROSSIMO_V3 OK mezzi=' . $nMezzi);
+
+sc_commit_trans('pigliacelli');
+
+sc_exec_sql("
+    UPDATE subvettori
+    SET wizard_step = 4
+    WHERE id = $subId
+      AND wizard_complete = 0
+      AND wizard_step = 3
+", 'pigliacelli');
+
+sc_redir('form_documenti_wizard', subvettoreId=[subvettoreId]);

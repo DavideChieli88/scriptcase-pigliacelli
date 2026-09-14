@@ -1,0 +1,17 @@
+/**
+ * grid_documenti_to_sign_wizard → Action Bar open_pdf_btn (Ajax o Link)
+ *
+ * Apre/scarica il PDF del documento corrente.
+ */
+
+$documentoId = isset({id}) ? (int){id} : 0;
+if ($documentoId <= 0 && isset([documentoId])) {
+    $documentoId = (int)[documentoId];
+}
+if ($documentoId <= 0) {
+    sc_error_message('Documento non valido.');
+    sc_error_exit();
+}
+
+[documentoId] = $documentoId;
+sc_redir('download_documento', 'documentoId=' . $documentoId);

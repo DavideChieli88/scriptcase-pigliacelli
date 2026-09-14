@@ -1,0 +1,37 @@
+/**
+ * grid_documenti_to_sign_wizard → Action Bar generate_pdf_btn (Ajax)
+ *
+ * Genera (o rigenera) il PDF Dichiarazioni, poi torna a questa grid.
+ */
+
+$documentoId = isset({id}) ? (int){id} : 0;
+if ($documentoId <= 0) {
+    sc_error_message('Documento non valido.');
+    sc_error_exit();
+}
+$subId = 0;
+if (isset([subvettoreId]) && (int)[subvettoreId] > 0) {
+    $subId = (int)[subvettoreId];
+}
+if ($subId <= 0 && isset({subvettore_id})) {
+    $subId = (int){subvettore_id};
+}
+if ($subId <= 0) {
+    sc_lookup(rsGenSub, "SELECT subvettore_id FROM documenti WHERE id = $documentoId LIMIT 1", 'pigliacelli');
+    $subId = !empty({rsGenSub[0][0]}) ? (int){rsGenSub[0][0]} : 0;
+}
+if ($subId <= 0) {
+    sc_error_message('Subvettore non identificato.');
+    sc_error_exit();
+}
+
+[documentoId] = $documentoId;
+[subvettoreId] = $subId;
+[subvector] = $subId;
+
+sc_redir(
+    'generate_dichiarazioni_subvector',
+    'subvettoreId=' . $subId
+    . '&documentoId=' . $documentoId
+    . '&return_to=grid_documenti_to_sign_wizard'
+);

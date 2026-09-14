@@ -37,6 +37,9 @@ export class SettingsRepository extends BaseRepository<AppSettings> {
       if (!existing.preferredMoviesProviderId) {
         patch.preferredMoviesProviderId = config.defaultMoviesProviderId;
       }
+      if (existing.preferredProviderId === 'mock' && config.defaultProviderId !== 'mock') {
+        patch.preferredProviderId = config.defaultProviderId;
+      }
       if (Object.keys(patch).length) return this.update(patch);
       return existing;
     }

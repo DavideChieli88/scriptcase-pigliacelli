@@ -1,0 +1,87 @@
+/**
+ * form_subvettori_for_subvectors → onValidate
+ * Wizard step 1 — anagrafica + legale rappresentante.
+ *
+ * wizard_step in DB: 1 = questo step (default nuovi sub).
+ * Non usare sc_error_exit (AJAX).
+ */
+
+$subvettore_id = isset({id}) ? (int){id} : 0;
+if ($subvettore_id <= 0 && isset([subvettoreId]) && (int)[subvettoreId] > 0) {
+    $subvettore_id = (int)[subvettoreId];
+}
+
+$errors = array();
+
+$checkEmpty = function ($value) {
+    $v = trim((string)$value);
+    return ($v === '' || $v === 'null');
+};
+
+if ($checkEmpty(isset({ragione_sociale}) ? {ragione_sociale} : '')) {
+    $errors[] = 'Ragione sociale';
+}
+if ($checkEmpty(isset({sede_citta}) ? {sede_citta} : '')) {
+    $errors[] = 'Sede città';
+}
+if ($checkEmpty(isset({sede_prov}) ? {sede_prov} : '')) {
+    $errors[] = 'Sede provincia';
+}
+if ($checkEmpty(isset({indirizzo}) ? {indirizzo} : '')) {
+    $errors[] = 'Indirizzo';
+}
+if ($checkEmpty(isset({civico}) ? {civico} : '')) {
+    $errors[] = 'Civico';
+}
+if ($checkEmpty(isset({cod_fiscale}) ? {cod_fiscale} : '')) {
+    $errors[] = 'Codice fiscale';
+}
+if ($checkEmpty(isset({piva}) ? {piva} : '')) {
+    $errors[] = 'Partita IVA';
+}
+if ($checkEmpty(isset({num_iscrizione_reg_imprese}) ? {num_iscrizione_reg_imprese} : '')) {
+    $errors[] = 'Numero iscrizione Registro Imprese';
+}
+if ($checkEmpty(isset({locazione_iscrizione_reg_imprese}) ? {locazione_iscrizione_reg_imprese} : '')) {
+    $errors[] = 'Luogo iscrizione Registro Imprese';
+}
+if ($checkEmpty(isset({rea}) ? {rea} : '')) {
+    $errors[] = 'R.E.A.';
+}
+if ($checkEmpty(isset({phone}) ? {phone} : '')) {
+    $errors[] = 'Telefono / cellulare';
+}
+
+if ($checkEmpty(isset({nome_rappresentante}) ? {nome_rappresentante} : '')) {
+    $errors[] = 'Nome legale rappresentante';
+}
+if ($checkEmpty(isset({cognome_rappresentante}) ? {cognome_rappresentante} : '')) {
+    $errors[] = 'Cognome legale rappresentante';
+}
+if ($checkEmpty(isset({email_rappresentante}) ? {email_rappresentante} : '')) {
+    $errors[] = 'Email legale rappresentante';
+}
+if ($checkEmpty(isset({telefono_rappresentante}) ? {telefono_rappresentante} : '')) {
+    $errors[] = 'Telefono legale rappresentante';
+}
+if ($checkEmpty(isset({luogo_nascita_rappresentante}) ? {luogo_nascita_rappresentante} : '')) {
+    $errors[] = 'Luogo di nascita rappresentante';
+}
+if ($checkEmpty(isset({prov_luogo_nascita_rappresentante}) ? {prov_luogo_nascita_rappresentante} : '')) {
+    $errors[] = 'Provincia di nascita rappresentante';
+}
+if ($checkEmpty(isset({data_nascita_rappresentante}) ? {data_nascita_rappresentante} : '')) {
+    $errors[] = 'Data di nascita rappresentante';
+}
+
+$emailLr = isset({email_rappresentante}) ? trim((string){email_rappresentante}) : '';
+if ($emailLr !== '' && filter_var($emailLr, FILTER_VALIDATE_EMAIL) === false) {
+    $errors[] = 'Email legale rappresentante non valida';
+}
+
+if (!empty($errors)) {
+    sc_error_message(
+        "Compilare i campi obbligatori dell'anagrafica:\n- "
+        . implode("\n- ", $errors)
+    );
+}

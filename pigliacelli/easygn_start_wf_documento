@@ -1,0 +1,481 @@
+/**
+ * Scriptcase blank: easygn_start_wf_documento
+ *
+ * Avvia EasyGN su un documento verde (tipi_documento.is_readonly=1).
+ * Firmatario unico = legale rappresentante del subvettore.
+ * Parametri: documentoId, subvettoreId (GET o globali SC).
+ *
+ * Coordinate firma MVP: box fisso pagina 1 (basso-destra).
+ */
+
+$documentoId = 0;
+if (isset($_GET['documentoId']) && (int)$_GET['documentoId'] > 0) {
+    $documentoId = (int)$_GET['documentoId'];
+} elseif (isset([documentoId]) && (int)[documentoId] > 0) {
+    $documentoId = (int)[documentoId];
+}
+
+$subvettoreId = 0;
+if (isset($_GET['subvettoreId']) && (int)$_GET['subvettoreId'] > 0) {
+    $subvettoreId = (int)$_GET['subvettoreId'];
+} elseif (isset([subvettoreId]) && (int)[subvettoreId] > 0) {
+    $subvettoreId = (int)[subvettoreId];
+}
+
+$log = function ($msg) use ($documentoId, $subvettoreId) {
+    if (function_exists('sc_log_add')) {
+        sc_log_add('EASYGN_DOC', "[documentoId=$documentoId][subvettoreId=$subvettoreId] " . (string)$msg);
+    }
+};
+
+$fail = function ($msg) use ($log) {
+    $log('FAIL: ' . $msg);
+    sc_error_message("Impossibile avviare la firma del documento.\n\n" . (string)$msg);
+    sc_error_exit();
+};
+
+if ($documentoId <= 0) {
+    $fail('documentoId mancante o non valido');
+}
+if ($subvettoreId <= 0) {
+    sc_lookup(rsDocSub, "
+        SELECT subvettore_id FROM documenti WHERE id = $documentoId LIMIT 1
+    ", 'pigliacelli');
+    $subvettoreId = !empty({rsDocSub[0][0]}) ? (int){rsDocSub[0][0]} : 0;
+}
+if ($subvettoreId <= 0) {
+    $fail('subvettoreId mancante');
+}
+
+$log('start');
+
+$sc_setting = function ($name, $default = '') {
+    $safe = str_replace("'", "''", trim((string)$name));
+    sc_lookup(rsEgDocSet, "SELECT set_value FROM sec_settings WHERE set_name = '$safe' LIMIT 1", 'pigliacelli');
+    if (isset({rsEgDocSet[0][0]})) {
+        return trim((string){rsEgDocSet[0][0]});
+    }
+    return (string)$default;
+};
+
+if (!extension_loaded('curl')) {
+    $fail('Estensione PHP cURL non disponibile sul server (richiesta per EasyGN).');
+}
+
+$bearer = trim($sc_setting('easygn_bearer', ''));
+if ($bearer === '') {
+    $fail('Bearer Easygn mancante in sec_settings (easygn_bearer)');
+}
+$easygnBaseUrl = rtrim(trim($sc_setting('easygn_base_url', 'https://easygn.digiwebuno.it/api')), '/');
+
+// Documento verde + già firmato?
+sc_lookup(rsEgDoc, "
+    SELECT
+        d.id,
+        d.subvettore_id,
+        COALESCE(d.file, ''),
+        COALESCE(d.firmato_il, ''),
+        COALESCE(td.nome, 'Documento'),
+        COALESCE(td.is_readonly, 0),
+        COALESCE(d.easygn_sign_link, '')
+    FROM documenti d
+    INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+    WHERE d.id = $documentoId
+    LIMIT 1
+", 'pigliacelli');
+
+if (empty({rsEgDoc[0][0]})) {
+    $fail('Documento non trovato');
+}
+if ((int){rsEgDoc[0][1]} !== $subvettoreId) {
+    $fail('Documento non appartenente al subvettore');
+}
+if ((int){rsEgDoc[0][5]} !== 1) {
+    $fail('Documento non configurato come verde (is_readonly)');
+}
+$docFile = trim((string){rsEgDoc[0][2]});
+$firmatoIl = trim((string){rsEgDoc[0][3]});
+$docNome = trim((string){rsEgDoc[0][4]});
+$existingLinkJson = trim((string){rsEgDoc[0][6]});
+
+if ($firmatoIl !== '' && $firmatoIl !== '0000-00-00 00:00:00') {
+    $log('già firmato → grid_documenti_to_sign_wizard');
+    sc_redir('grid_documenti_to_sign_wizard');
+}
+
+// Se esiste già un link di firma salvato, riapri quello
+if ($existingLinkJson !== '') {
+    $meta = json_decode($existingLinkJson, true);
+    if (is_array($meta)) {
+        $linkReuse = '';
+        if (!empty($meta['link_subvettore'])) {
+            $linkReuse = trim((string)$meta['link_subvettore']);
+        } elseif (!empty($meta['link'])) {
+            $linkReuse = trim((string)$meta['link']);
+        }
+        if ($linkReuse !== '' && preg_match('#^https?://#i', $linkReuse) === 1) {
+            $log('reuse existing sign link');
+            header('Location: ' . $linkReuse);
+            exit;
+        }
+    }
+}
+
+// Resolve PDF
+$pdfB64 = '';
+$pdfFilename = 'documento_' . $documentoId . '.pdf';
+$baseDir = rtrim(trim($sc_setting('templates_path', '')), "/\\");
+if ($baseDir === '') {
+    $baseDir = rtrim(trim($sc_setting('contratti_base_dir', '')), "/\\");
+}
+
+if ($docFile !== '') {
+    if (strncmp($docFile, '%PDF', 4) === 0) {
+        $pdfB64 = base64_encode($docFile);
+    } else {
+        $tryPaths = array();
+        $rel = ltrim(str_replace('\\', '/', $docFile), '/');
+        $bn = basename($rel);
+        if ($baseDir !== '') {
+            $tryPaths[] = $baseDir . '/' . $rel;
+            $tryPaths[] = $baseDir . '/' . $bn;
+            $tryPaths[] = $baseDir . '/documenti/' . $bn;
+            $tryPaths[] = dirname($baseDir) . '/' . $bn;
+            $tryPaths[] = dirname($baseDir) . '/_lib/file/doc/' . $bn;
+            $tryPaths[] = dirname($baseDir) . '/file/doc/' . $bn;
+        }
+        // Accanto a questo script / workspace
+        $anchor = defined('__DIR__') ? __DIR__ : dirname(__FILE__);
+        $tryPaths[] = $anchor . '/' . $bn;
+        $tryPaths[] = dirname($anchor) . '/' . $bn;
+        $pdfPath = '';
+        foreach ($tryPaths as $try) {
+            if ($try !== '' && is_readable($try)) {
+                $pdfPath = $try;
+                break;
+            }
+        }
+        if ($pdfPath === '') {
+            $fail('PDF non leggibile. Impostare templates_path e copiare '
+                . $bn . ' (placeholder_documento_verde.pdf). Tentativi: '
+                . implode(' | ', array_slice($tryPaths, 0, 6)));
+        }
+        $bin = file_get_contents($pdfPath);
+        if ($bin === false || $bin === '' || strncmp($bin, '%PDF', 4) !== 0) {
+            $fail('File non sembra un PDF valido: ' . $pdfPath);
+        }
+        $pdfB64 = base64_encode($bin);
+        $pdfFilename = $bn;
+        $log('pdf ok path=' . $pdfPath);
+    }
+}
+
+if ($pdfB64 === '') {
+    $fail('Nessun file PDF sul documento (usare placeholder)');
+}
+
+// Firmatario = legale rappresentante
+sc_lookup(rsEgSub, "
+    SELECT
+        COALESCE(login_subvettore, ''),
+        COALESCE(email_rappresentante, ''),
+        COALESCE(telefono_rappresentante, ''),
+        COALESCE(nome_rappresentante, ''),
+        COALESCE(cognome_rappresentante, ''),
+        COALESCE(phone, ''),
+        COALESCE(ragione_sociale, '')
+    FROM subvettori
+    WHERE id = $subvettoreId
+    LIMIT 1
+", 'pigliacelli');
+
+$loginSub = !empty({rsEgSub[0][0]}) ? trim((string){rsEgSub[0][0]}) : '';
+$signerEmail = !empty({rsEgSub[0][1]}) ? trim((string){rsEgSub[0][1]}) : '';
+$signerPhone = !empty({rsEgSub[0][2]}) ? trim((string){rsEgSub[0][2]}) : '';
+$signerName = !empty({rsEgSub[0][3]}) ? trim((string){rsEgSub[0][3]}) : '';
+$signerSurname = !empty({rsEgSub[0][4]}) ? trim((string){rsEgSub[0][4]}) : '';
+$phoneFallback = !empty({rsEgSub[0][5]}) ? trim((string){rsEgSub[0][5]}) : '';
+
+if ($signerEmail === '' && $loginSub !== '' && filter_var($loginSub, FILTER_VALIDATE_EMAIL)) {
+    $signerEmail = $loginSub;
+}
+if ($signerPhone === '') {
+    $signerPhone = $phoneFallback;
+}
+if ($signerName === '') {
+    $signerName = 'Legale';
+}
+if ($signerSurname === '') {
+    $signerSurname = 'Rappresentante';
+}
+if ($signerEmail === '' || !filter_var($signerEmail, FILTER_VALIDATE_EMAIL)) {
+    $fail('Email legale rappresentante / login mancante o non valida');
+}
+if ($signerPhone !== '' && isset($signerPhone[0]) && $signerPhone[0] !== '+') {
+    $digits = preg_replace('/\D+/', '', $signerPhone);
+    if ($digits !== '') {
+        $signerPhone = '+39' . $digits;
+    }
+}
+$signerSurnameClean = trim(preg_replace('/\s+/u', ' ', preg_replace("/[^A-Za-zÀ-ÿ'\\-\\s]/u", ' ', $signerSurname)));
+if ($signerSurnameClean === '') {
+    $signerSurnameClean = 'NA';
+}
+
+// Visual firma MVP: pagina 1, box basso-destra (A4 595x842 pt ≈ mm)
+$mm_to_pt = function ($mmVal) {
+    return $mmVal * 72 / 25.4;
+};
+$pageMm = array(
+    'page' => 1,
+    'x' => 120.0,
+    'y' => 250.0,
+    'width' => 70.0,
+    'height' => 28.0,
+);
+$visual = array(
+    'page' => 1,
+    'type' => 'signature',
+    'x' => $mm_to_pt($pageMm['x']),
+    'y' => $mm_to_pt($pageMm['y']),
+    'width' => $mm_to_pt($pageMm['width']),
+    'height' => $mm_to_pt($pageMm['height']),
+    'position' => array(
+        'x' => $mm_to_pt($pageMm['x']),
+        'y' => $mm_to_pt($pageMm['y']),
+        'width' => $mm_to_pt($pageMm['width']),
+        'height' => $mm_to_pt($pageMm['height']),
+    ),
+);
+
+$easygn_request = function ($method, $url, $bearerKy, $jsonPayload = null) {
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+    $headers = array('Accept: application/json', 'Authorization: Bearer ' . $bearerKy);
+    if ($jsonPayload !== null) {
+        $headers[] = 'Content-Type: application/json';
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $jsonPayload);
+    }
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    $body = curl_exec($ch);
+    $errno = curl_errno($ch);
+    $err = curl_error($ch);
+    $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($errno) {
+        return array(false, "cURL error $errno: $err", $http, $body);
+    }
+    if ($http < 200 || $http >= 300) {
+        return array(false, "HTTP $http", $http, $body);
+    }
+    return array(true, '', $http, $body);
+};
+
+$extract_sign_link = function ($data) {
+    if (!is_array($data)) {
+        return '';
+    }
+    $isHttpUrl = function ($s) {
+        $s = trim((string)$s);
+        return $s !== '' && preg_match('#^https?://#i', $s) === 1;
+    };
+    $keys = array(
+        'link', 'url', 'href', 'sign_url', 'signUrl', 'sign_link', 'signLink',
+        'signing_url', 'signingUrl', 'invitation_url', 'invitationUrl',
+    );
+    $files = isset($data['files']) && is_array($data['files']) ? $data['files'] : null;
+    $file0 = is_array($files) && isset($files[0]) && is_array($files[0]) ? $files[0] : null;
+    $signers = is_array($file0) && isset($file0['signers']) ? $file0['signers'] : null;
+    if (!is_array($signers) && isset($data['signers']) && is_array($data['signers'])) {
+        $signers = $data['signers'];
+    }
+    if (is_array($signers)) {
+        foreach ($signers as $signer) {
+            if (!is_array($signer)) {
+                continue;
+            }
+            foreach ($keys as $k) {
+                if (isset($signer[$k]) && is_string($signer[$k]) && $isHttpUrl($signer[$k])) {
+                    return trim($signer[$k]);
+                }
+            }
+        }
+    }
+    $found = '';
+    $walker = function ($v) use (&$walker, &$found, $isHttpUrl) {
+        if ($found !== '') {
+            return;
+        }
+        if (is_string($v) && $isHttpUrl($v) && (
+            stripos($v, 'sign') !== false || stripos($v, 'firma') !== false
+            || stripos($v, 'invitation') !== false || stripos($v, '/platform/') !== false
+        )) {
+            $found = trim($v);
+            return;
+        }
+        if (is_array($v)) {
+            foreach ($v as $vv) {
+                $walker($vv);
+            }
+        }
+    };
+    $walker($data);
+    return $found;
+};
+
+$extract_ids = function ($data) {
+    $fileId = '';
+    $signerId = '';
+    if (!is_array($data)) {
+        return array($fileId, $signerId);
+    }
+    $f0 = isset($data['files'][0]) && is_array($data['files'][0]) ? $data['files'][0] : null;
+    if (is_array($f0) && isset($f0['id'])) {
+        $fileId = trim((string)$f0['id']);
+    }
+    $signers = null;
+    if (is_array($f0) && isset($f0['signers'])) {
+        $signers = $f0['signers'];
+    } elseif (isset($data['signers'])) {
+        $signers = $data['signers'];
+    }
+    if (is_array($signers) && isset($signers[0]) && is_array($signers[0])) {
+        foreach (array('id', 'signer_id', 'signerId', 'uuid') as $k) {
+            if (!empty($signers[0][$k])) {
+                $signerId = trim((string)$signers[0][$k]);
+                break;
+            }
+        }
+    }
+    return array($fileId, $signerId);
+};
+
+$payload = array(
+    'version' => 3,
+    'type' => 'FES',
+    'graphic' => true,
+    'files' => array(array(
+        'name' => $pdfFilename,
+        'content' => $pdfB64,
+        'signers' => array(array(
+            'name' => $signerName,
+            'surname' => $signerSurnameClean,
+            'email' => $signerEmail,
+            'phone' => $signerPhone,
+            'language' => 'it',
+            'ordered' => true,
+            'order' => 1,
+            'visuals' => array($visual),
+        )),
+    )),
+);
+
+// Torna allo step 5 dopo la firma (se EasyGN supporta redirect sul signer)
+$returnBlank = '';
+$mailBaseRet = rtrim(trim($sc_setting('mail_base_url', '')), '/');
+if ($mailBaseRet !== '' && preg_match('#^https?://#i', $mailBaseRet) === 1) {
+    $returnBlank = $mailBaseRet . '/grid_documenti_to_sign_wizard/?from=firma&documentoId=' . (int)$documentoId;
+}
+if ($returnBlank !== '') {
+    $payload['files'][0]['signers'][0]['redirect_url'] = $returnBlank;
+    $payload['files'][0]['signers'][0]['redirectUrl'] = $returnBlank;
+    $payload['files'][0]['signers'][0]['success_url'] = $returnBlank;
+    $payload['files'][0]['signers'][0]['successUrl'] = $returnBlank;
+    $payload['redirect_url'] = $returnBlank;
+    $payload['redirectUrl'] = $returnBlank;
+}
+
+$webhookUrl = rtrim(trim($sc_setting('easygn_webhook_url', '')), '/');
+if ($webhookUrl === '') {
+    $mailBaseWh = rtrim(trim($sc_setting('mail_base_url', '')), '/');
+    if ($mailBaseWh !== '') {
+        $webhookUrl = $mailBaseWh . '/web_hook_firma/';
+    }
+}
+if ($webhookUrl !== '' && preg_match('#^https?://#i', $webhookUrl) === 1) {
+    $payload['webhook_url'] = $webhookUrl;
+    $payload['webhookUrl'] = $webhookUrl;
+}
+
+$payloadJson = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+if ($payloadJson === false) {
+    $fail('Payload EasyGN non serializzabile');
+}
+
+list($ok, $err, $http, $resp) = $easygn_request('POST', $easygnBaseUrl . '/workflows/create', $bearer, $payloadJson);
+if (!$ok) {
+    $fail("Errore Easygn create: $err\nHTTP: $http\nRisposta: " . (string)$resp);
+}
+
+$out = json_decode((string)$resp, true);
+if (!is_array($out)) {
+    $fail('Risposta Easygn non JSON');
+}
+$wfId = isset($out['id']) ? trim((string)$out['id']) : '';
+if ($wfId === '') {
+    $fail('Risposta Easygn senza workflow id');
+}
+list($fileId, $signerId) = $extract_ids($out);
+$signLink = $extract_sign_link($out);
+
+list($ok2, $err2, $http2, $resp2) = $easygn_request(
+    'PUT',
+    $easygnBaseUrl . '/workflows/start/' . rawurlencode($wfId),
+    $bearer,
+    '{}'
+);
+if ($ok2) {
+    $out2 = json_decode((string)$resp2, true);
+    if (is_array($out2)) {
+        list($fileId2, $signerId2) = $extract_ids($out2);
+        if ($fileId2 !== '') {
+            $fileId = $fileId2;
+        }
+        if ($signerId2 !== '') {
+            $signerId = $signerId2;
+        }
+        $link2 = $extract_sign_link($out2);
+        if ($link2 !== '') {
+            $signLink = $link2;
+        }
+    }
+} else {
+    $log("start FAIL http=$http2 err=$err2 (workflow salvato comunque)");
+}
+
+$signMeta = array(
+    'link_subvettore' => $signLink,
+    'documento_nome' => $docNome,
+);
+$signerMap = array();
+if ($signerId !== '') {
+    $signerMap['signer_id_firmatario'] = $signerId;
+}
+
+$wfSql = str_replace("'", "''", $wfId);
+$linkSql = "'" . str_replace("'", "''", json_encode($signMeta, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) . "'";
+$fileSql = $fileId !== '' ? ("'" . str_replace("'", "''", $fileId) . "'") : 'NULL';
+$signerSql = count($signerMap) > 0
+    ? ("'" . str_replace("'", "''", json_encode($signerMap, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) . "'")
+    : 'NULL';
+
+sc_exec_sql("
+    UPDATE documenti
+    SET easygn_workflow_id = '$wfSql',
+        easygn_sign_link = $linkSql,
+        easygn_file_id = $fileSql,
+        easygn_signer_ids = $signerSql
+    WHERE id = $documentoId
+", 'pigliacelli');
+$log("db updated wf=$wfId fileId=$fileId link_len=" . strlen($signLink));
+
+if ($signLink === '' || preg_match('#^https?://#i', $signLink) !== 1) {
+    $fail('Workflow creato ma link di firma non disponibile. Riprovare tra poco dallo step 5.');
+}
+
+header('Location: ' . $signLink);
+exit;

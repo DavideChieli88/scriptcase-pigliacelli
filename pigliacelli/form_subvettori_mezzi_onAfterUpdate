@@ -1,0 +1,190 @@
+/**
+ * form_subvettori_mezzi -> onAfterUpdate
+ * Editable grid: {autista_id} e {carta_circolazione} spesso vuoti.
+ */
+
+if (!function_exists('mez_wiz_flatten')) {
+    function mez_wiz_flatten($src, $prefix = '')
+    {
+        $out = array();
+        if (!is_array($src)) {
+            return $out;
+        }
+        foreach ($src as $k => $v) {
+            $nk = $prefix === '' ? (string)$k : $prefix . '.' . (string)$k;
+            if (is_array($v)) {
+                $out = array_merge($out, mez_wiz_flatten($v, $nk));
+            } else {
+                $out[$nk] = $v;
+            }
+        }
+        return $out;
+    }
+}
+
+if (!function_exists('mez_wiz_find_autista')) {
+    function mez_wiz_find_autista($subId)
+    {
+        $autId = 0;
+        if (isset({autista_id}) && (int){autista_id} > 0) {
+            return (int){autista_id};
+        }
+
+        $flat = array_merge(
+            mez_wiz_flatten(isset($_POST) ? $_POST : array()),
+            mez_wiz_flatten(isset($_GET) ? $_GET : array()),
+            mez_wiz_flatten(isset($_REQUEST) ? $_REQUEST : array())
+        );
+
+        $needles = array('autista', 'assegnat', 'nominativ');
+        foreach ($flat as $k => $v) {
+            $ks = strtolower((string)$k);
+            $hit = false;
+            foreach ($needles as $n) {
+                if (strpos($ks, $n) !== false) {
+                    $hit = true;
+                    break;
+                }
+            }
+            if (!$hit) {
+                continue;
+            }
+            if ((int)$v > 0) {
+                return (int)$v;
+            }
+            $nome = trim((string)$v);
+            if ($nome !== '' && $subId > 0 && !ctype_digit($nome)) {
+                $nomeSql = str_replace("'", "''", $nome);
+                sc_lookup(rsMezAutByNome, "
+                    SELECT id FROM subvettori_autisti
+                    WHERE subvettore_id = $subId
+                      AND TRIM(nominativo) = '$nomeSql'
+                    LIMIT 1
+                ", 'pigliacelli');
+                if (!empty({rsMezAutByNome[0][0]})) {
+                    return (int){rsMezAutByNome[0][0]};
+                }
+            }
+        }
+
+        return $autId;
+    }
+}
+
+$mezzoId = (int){id};
+$subId = (int){subvettore_id};
+if ($subId <= 0 && isset([subvettoreId])) {
+    $subId = (int)[subvettoreId];
+}
+
+sc_log_add('MEZ_DOCS', 'onAfterUpdate START mezzo=' . $mezzoId . ' sub=' . $subId);
+
+if ($mezzoId <= 0 || $subId <= 0) {
+    sc_error_message('MEZ_DOCS: id mezzo o subvettore mancante.');
+    return;
+}
+
+$postKeys = array();
+$flatPost = mez_wiz_flatten(isset($_POST) ? $_POST : array());
+$nKeys = 0;
+foreach ($flatPost as $pk => $pv) {
+    $nKeys++;
+    if (count($postKeys) < 40) {
+        $postKeys[] = $pk . '=' . substr(trim((string)$pv), 0, 40);
+    }
+}
+$campoAut = isset({autista_id}) ? (string){autista_id} : '(unset)';
+sc_log_add('MEZ_DOCS', 'campo autista_id=[' . $campoAut . '] POST n=' . $nKeys);
+sc_log_add('MEZ_DOCS', 'POST dump: ' . implode(' | ', $postKeys));
+
+$login = trim((string)[usr_login]);
+sc_lookup(rsMezLoginU, "
+    SELECT login FROM sec_users
+    WHERE subvettore_id = $subId
+    ORDER BY login LIMIT 1
+", 'pigliacelli');
+if (!empty({rsMezLoginU[0][0]})) {
+    $login = trim((string){rsMezLoginU[0][0]});
+}
+$loginSql = str_replace("'", "''", $login);
+
+$fCarta = isset({carta_circolazione}) ? trim((string){carta_circolazione}) : '';
+if ($fCarta === '' && !empty($_FILES) && is_array($_FILES)) {
+    foreach ($_FILES as $up) {
+        if (!is_array($up)) {
+            continue;
+        }
+        $nm = isset($up['name']) ? $up['name'] : '';
+        if (is_array($nm)) {
+            $nm = reset($nm);
+        }
+        $err = isset($up['error']) ? $up['error'] : 4;
+        if (is_array($err)) {
+            $err = reset($err);
+        }
+        if (trim((string)$nm) !== '' && (int)$err === 0) {
+            $fCarta = basename(trim((string)$nm));
+            break;
+        }
+    }
+}
+sc_log_add('MEZ_DOCS', 'FILE carta=[' . $fCarta . ']');
+
+if ($fCarta !== '') {
+    $fileSql = str_replace("'", "''", basename($fCarta));
+    $scadSql = 'NULL';
+    if (isset({scadenza_carta_circolazione})
+        && {scadenza_carta_circolazione} !== ''
+        && {scadenza_carta_circolazione} !== 'null'
+    ) {
+        $scadSql = "'" . str_replace("'", "''", (string){scadenza_carta_circolazione}) . "'";
+    }
+
+    sc_lookup(rsMezDoc22, "
+        SELECT id FROM documenti
+        WHERE subvettore_mezzo_id = $mezzoId
+          AND tipo_documento_id = 22
+        ORDER BY id ASC LIMIT 1
+    ", 'pigliacelli');
+
+    if (!empty({rsMezDoc22[0][0]})) {
+        $docId = (int){rsMezDoc22[0][0]};
+        sc_exec_sql("
+            UPDATE documenti
+            SET file = '$fileSql',
+                data_scadenza = $scadSql,
+                stato_documento_id = 1,
+                updated_at = NOW()
+            WHERE id = $docId
+        ", 'pigliacelli');
+        sc_log_add('MEZ_DOCS', 'UPDATE 22 ' . $fileSql);
+    } else {
+        sc_exec_sql("
+            INSERT INTO documenti (
+                tipo_documento_id, subvettore_id, subvettore_mezzo_id,
+                login, stato_documento_id, file, data_scadenza
+            ) VALUES (
+                22, $subId, $mezzoId, '$loginSql', 1, '$fileSql', $scadSql
+            )
+        ", 'pigliacelli');
+        sc_log_add('MEZ_DOCS', 'INSERT 22 ' . $fileSql);
+    }
+}
+
+$autId = mez_wiz_find_autista($subId);
+sc_log_add('MEZ_DOCS', 'AUTISTA letto=' . $autId);
+
+if ($autId > 0) {
+    sc_exec_sql("
+        DELETE FROM subvettori_autisti_mezzi WHERE mezzo_id = $mezzoId
+    ", 'pigliacelli');
+    sc_exec_sql("
+        INSERT INTO subvettori_autisti_mezzi (subvettore_id, autista_id, mezzo_id)
+        VALUES ($subId, $autId, $mezzoId)
+    ", 'pigliacelli');
+    sc_log_add('MEZ_DOCS', 'PONTE autista=' . $autId . ' mezzo=' . $mezzoId);
+} else {
+    sc_log_add('MEZ_DOCS', 'PONTE SKIP autista vuoto mezzo=' . $mezzoId);
+}
+
+sc_log_add('MEZ_DOCS', 'FINE onAfterUpdate mezzo=' . $mezzoId);

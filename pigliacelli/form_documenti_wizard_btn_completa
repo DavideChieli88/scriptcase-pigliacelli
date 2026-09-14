@@ -1,0 +1,114 @@
+/**
+ * form_documenti_wizard → pulsante PHP send_for_activation (LEGACY)
+ * Stesso comportamento di next_step_btn_signs (flash + sc_redir, no sc_error_*).
+ */
+
+$subId = 0;
+if (isset([subvettoreId]) && (int)[subvettoreId] > 0) {
+    $subId = (int)[subvettoreId];
+}
+if ($subId <= 0) {
+    $usrLogin = trim((string)[usr_login]);
+    if ($usrLogin !== '' && strcasecmp($usrLogin, 'Guest') !== 0) {
+        $loginSql = str_replace("'", "''", $usrLogin);
+        sc_lookup(rsNextSubLeg, "
+            SELECT COALESCE(su.subvettore_id, 0)
+            FROM sec_users su
+            WHERE su.login = '$loginSql'
+            LIMIT 1
+        ", 'pigliacelli');
+        $subId = !empty({rsNextSubLeg[0][0]}) ? (int){rsNextSubLeg[0][0]} : 0;
+    }
+}
+
+if ($subId <= 0) {
+    $_SESSION['wizard_flash_msg'] = 'Subvettore non identificato.';
+    sc_redir('blank_wizard_landing');
+}
+
+[subvettoreId] = $subId;
+
+sc_lookup(rsWizDone, "
+    SELECT COALESCE(wizard_complete, 0), COALESCE(wizard_step, 1)
+    FROM subvettori
+    WHERE id = $subId
+    LIMIT 1
+", 'pigliacelli');
+$alreadyDone = !empty({rsWizDone[0][0]}) ? (int){rsWizDone[0][0]} : 0;
+
+if ($alreadyDone === 1) {
+    $_SESSION['wizard_flash_msg'] = 'Wizard gia completato.';
+    sc_redir('app_menu');
+}
+
+sc_lookup(rsWizDocBad, "
+    SELECT td.nome,
+           COALESCE(td.mandatory, 0),
+           COALESCE(td.flag_possesso, 0),
+           COALESCE(d.in_possesso, 0),
+           CASE WHEN d.file IS NOT NULL AND TRIM(d.file) <> '' THEN 1 ELSE 0 END,
+           CASE WHEN d.data_scadenza IS NOT NULL THEN 1 ELSE 0 END
+    FROM documenti d
+    INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+    WHERE d.subvettore_id = $subId
+      AND COALESCE(td.is_readonly, 0) = 0
+      AND (d.subvettore_autista_id IS NULL OR d.subvettore_autista_id = 0)
+      AND (d.subvettore_mezzo_id IS NULL OR d.subvettore_mezzo_id = 0)
+      AND (
+            (
+                COALESCE(td.mandatory, 0) = 1
+                AND COALESCE(td.flag_possesso, 0) = 0
+                AND (
+                    d.file IS NULL OR TRIM(d.file) = ''
+                    OR d.data_scadenza IS NULL
+                )
+            )
+            OR (
+                COALESCE(td.flag_possesso, 0) = 1
+                AND COALESCE(d.in_possesso, 0) = 1
+                AND (d.file IS NULL OR TRIM(d.file) = '')
+            )
+          )
+    ORDER BY td.nome
+", 'pigliacelli');
+
+$missing = array();
+if (isset({rsWizDocBad[0][0]})) {
+    foreach ({rsWizDocBad} as $row) {
+        $nome = trim((string)$row[0]);
+        $mand = (int)$row[1];
+        $flagP = (int)$row[2];
+        $inPoss = (int)$row[3];
+        $hasFile = (int)$row[4];
+        $hasScad = (int)$row[5];
+        $parts = array();
+        if ($hasFile !== 1) {
+            $parts[] = 'file';
+        }
+        if ($mand === 1 && $flagP === 0 && $hasScad !== 1) {
+            $parts[] = 'data scadenza';
+        }
+        if ($flagP === 1 && $inPoss === 1 && $hasFile !== 1 && empty($parts)) {
+            $parts[] = 'file';
+        }
+        if (!empty($parts)) {
+            $missing[] = ($nome !== '' ? $nome : 'Documento') . ' (' . implode(', ', $parts) . ')';
+        }
+    }
+}
+
+if (!empty($missing)) {
+    $_SESSION['wizard_flash_msg'] = 'Completare i documenti obbligatori prima di proseguire: '
+        . implode('; ', $missing);
+    sc_redir('form_documenti_wizard', subvettoreId=[subvettoreId]);
+}
+
+sc_exec_sql("
+    UPDATE subvettori
+    SET wizard_step = 5
+    WHERE id = $subId
+      AND wizard_complete = 0
+", 'pigliacelli');
+
+$_SESSION['wizard_flash_msg'] = 'Documenti caricati. Firmare i documenti predisposti e poi inviare per attivazione.';
+sc_redir('grid_documenti_to_sign_wizard', subvettoreId=[subvettoreId]);

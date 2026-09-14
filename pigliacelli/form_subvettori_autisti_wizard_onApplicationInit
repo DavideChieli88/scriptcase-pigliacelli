@@ -1,0 +1,31 @@
+/**
+ * form_subvettori_autisti_wizard → onApplicationInit
+ *
+ * Priorita': GET/REQUEST > sessione > globale gia' valorizzata.
+ * Evita di restare su un subvettoreId vecchio (es. 209) dopo upsert nuovo sub.
+ *
+ * Setup IDE (obbligatorio):
+ *   SQL → Where: subvettore_id = [subvettoreId]
+ *   Global: subvettoreId (Integer, default 0, non richiedere a startup)
+ */
+
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    @session_start();
+}
+
+$subId = 0;
+
+if (isset($_GET['subvettoreId']) && (int)$_GET['subvettoreId'] > 0) {
+    $subId = (int)$_GET['subvettoreId'];
+} elseif (isset($_REQUEST['subvettoreId']) && (int)$_REQUEST['subvettoreId'] > 0) {
+    $subId = (int)$_REQUEST['subvettoreId'];
+} elseif (isset($_SESSION['wizard_subvettore_id']) && (int)$_SESSION['wizard_subvettore_id'] > 0) {
+    $subId = (int)$_SESSION['wizard_subvettore_id'];
+} elseif (isset([subvettoreId]) && (int)[subvettoreId] > 0) {
+    $subId = (int)[subvettoreId];
+}
+
+if ($subId > 0) {
+    [subvettoreId] = $subId;
+    $_SESSION['wizard_subvettore_id'] = $subId;
+}

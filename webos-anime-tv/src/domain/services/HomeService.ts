@@ -24,7 +24,9 @@ export class HomeService {
     const kind = isMovieProviderId(preferredProviderId) ? 'movies' : 'anime';
     const candidates = this.registry
       .list(true)
-      .filter((p) => (kind === 'movies' ? isMovieProviderId(p.id) : !isMovieProviderId(p.id)));
+      .filter((p) => (kind === 'movies' ? isMovieProviderId(p.id) : !isMovieProviderId(p.id)))
+      // Mock is for telecomando tests — don't hide a real provider failure behind fake catalog.
+      .filter((p) => p.id !== 'mock' || preferredProviderId === 'mock');
     const ordered = orderProviders(candidates, preferredProviderId);
 
     for (let i = 0; i < ordered.length; i++) {

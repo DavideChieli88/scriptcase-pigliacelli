@@ -1,0 +1,28 @@
+/**
+ * form_documenti_wizard → onLoadRecord
+ *
+ * Campo virtuale {required}: "Si" / "No" da tipi_documento.mandatory
+ * del tipo_documento_id della riga.
+ *
+ * Setup SC: campo virtuale text (o label), Name = required, solo lettura.
+ */
+
+{required} = 'No';
+
+$tipoId = {tipo_documento_id};
+if ($tipoId === '' || $tipoId === null || $tipoId === 'undefined') {
+    $tipoId = 0;
+}
+$tipoId = (int)$tipoId;
+
+if ($tipoId > 0) {
+    sc_lookup(rsDocReqMand, "
+        SELECT COALESCE(mandatory, 0)
+        FROM tipi_documento
+        WHERE id = $tipoId
+        LIMIT 1
+    ", 'pigliacelli');
+    if (!empty({rsDocReqMand[0][0]}) && (int){rsDocReqMand[0][0]} === 1) {
+        {required} = 'Si';
+    }
+}

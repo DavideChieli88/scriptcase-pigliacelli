@@ -1,0 +1,42 @@
+/**
+ * form_subvettori_mezzi -> onLoadRecord
+ * Ricarica virtuali carta_circolazione e autista_id da DB.
+ */
+
+$subId = 0;
+if (isset({subvettore_id}) && (int){subvettore_id} > 0) {
+    $subId = (int){subvettore_id};
+}
+if ($subId <= 0 && isset([subvettoreId]) && (int)[subvettoreId] > 0) {
+    $subId = (int)[subvettoreId];
+}
+if ($subId > 0) {
+    {subvettore_id} = $subId;
+}
+
+$mezzoId = isset({id}) ? (int){id} : 0;
+if ($mezzoId <= 0) {
+    return;
+}
+
+sc_lookup(rsMezL22, "
+    SELECT file FROM documenti
+    WHERE subvettore_mezzo_id = $mezzoId
+      AND tipo_documento_id = 22
+      AND file IS NOT NULL AND TRIM(file) <> ''
+    ORDER BY id ASC LIMIT 1
+", 'pigliacelli');
+if (!empty({rsMezL22[0][0]})) {
+    {carta_circolazione} = trim((string){rsMezL22[0][0]});
+}
+
+sc_lookup(rsMezAut, "
+    SELECT autista_id
+    FROM subvettori_autisti_mezzi
+    WHERE mezzo_id = $mezzoId
+      AND autista_id > 0
+    ORDER BY id ASC LIMIT 1
+", 'pigliacelli');
+if (!empty({rsMezAut[0][0]})) {
+    {autista_id} = (int){rsMezAut[0][0]};
+}
