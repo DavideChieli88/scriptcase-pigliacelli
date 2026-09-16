@@ -1296,11 +1296,23 @@ function webhook_update_documento_firmato_il($documentoId)
     $dtSql = webhook_now_sql_literal();
     sc_exec_sql("
         UPDATE documenti
-        SET firmato_il = $dtSql
+        SET firmato_il = $dtSql,
+            stato_documento_id = 2,
+            updated_at = NOW()
         WHERE id = $documentoId
           AND (firmato_il IS NULL OR firmato_il = '0000-00-00 00:00:00')
     ");
-    webhook_sc_log('UPDATE documento_id=' . $documentoId . ' firmato_il=' . trim($dtSql, "'"));
+    webhook_sc_log('UPDATE documento_id=' . $documentoId . ' firmato_il=' . trim($dtSql, "'") . ' stato=2');
+    // Se firmato_il era gia' valorizzato, aggiorna comunque lo stato a caricato
+    sc_exec_sql("
+        UPDATE documenti
+        SET stato_documento_id = 2,
+            updated_at = NOW()
+        WHERE id = $documentoId
+          AND COALESCE(stato_documento_id, 0) <> 2
+          AND firmato_il IS NOT NULL
+          AND firmato_il <> '0000-00-00 00:00:00'
+    ");
     return true;
 }
 
@@ -1322,7 +1334,7 @@ function webhook_handle_documento_member_callback($documentoId, $memberId, $stat
         webhook_sc_log('documento rifiutato documento_id=' . $documentoId . ' status=' . $status);
         return;
     }
-    if ($status !== 'done') {
+    if ($status !== 'done' && !in_array($status, array('signed', 'finished', 'completed', 'complete'), true)) {
         webhook_sc_log('documento member status=' . $status . ' (nessun cambio) documento_id=' . $documentoId);
         return;
     }
@@ -1445,8 +1457,7 @@ function webhook_notify_ops_wizard_complete($subId, $ragioneSociale, $loginSub)
         $safeLoginUrl = htmlspecialchars($loginUrl, ENT_QUOTES, 'UTF-8');
         $soggetto = 'Wizard completato — abilitare subvettore ' . $labelSub;
         $testoPlain = "Gentile operatore,\n\n"
-            . "il subvettore $labelSub ha completato il wizard "
-            . "(documenti caricati e documenti verdi firmati).\n\n"
+            . "il subvettore $labelSub ha completato il wizard di onboarding.\n\n"
             . "Subvettore: $labelSub\n"
             . ($loginSub !== '' ? "Login: $loginSub\n" : '')
             . "ID: $subId\n\n"
@@ -1470,7 +1481,7 @@ function webhook_notify_ops_wizard_complete($subId, $ragioneSociale, $loginSub)
             . '</td></tr></table>';
         $innerHtml = '<p style="margin:0 0 12px;">Gentile operatore,</p>'
             . '<p style="margin:0 0 12px;">il subvettore <strong>' . $safeRagione . '</strong> ha completato '
-            . 'il wizard di onboarding (documenti caricati e documenti verdi firmati).</p>'
+            . 'il wizard di onboarding.</p>'
             . $infoBox
             . '<p style="margin:0 0 12px;">Verificare i documenti e <strong>abilitare il subvettore</strong> '
             . 'se tutto e\' corretto.</p>'

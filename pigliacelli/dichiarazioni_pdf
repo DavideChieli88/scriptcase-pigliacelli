@@ -1,5 +1,5 @@
 /**
- * Scriptcase Report PDF: dichiarazioni_subvettore
+ * Scriptcase Report PDF: dichiarazioni_pdf
  *
  * Strategia grafica (massima fedelta'):
  *  1) Se TCPDF/FPDI e' disponibile → importa le pagine di
@@ -32,23 +32,22 @@ foreach (array('subvector', 'subvettoreId', 'subvettore_id', 'subId') as $k) {
         $subvector = (int)$_REQUEST[$k];
     }
 }
-if ($subvector <= 0 && !empty($_SESSION['wizard_subvettore_id'])) {
-    $subvector = (int)$_SESSION['wizard_subvettore_id'];
-}
 if ($subvector <= 0 && isset($this->subvector) && (int)$this->subvector > 0) {
     $subvector = (int)$this->subvector;
 }
 
+// GET/REQUEST prima del globale SC: [documentoId] resta spesso sporco da form_documenti_wizard
 $documentoId = 0;
-if ((int)[documentoId] > 0) {
-    $documentoId = (int)[documentoId];
-}
-if ($documentoId <= 0 && isset($_REQUEST['documentoId']) && (int)$_REQUEST['documentoId'] > 0) {
+if (isset($_GET['documentoId']) && (int)$_GET['documentoId'] > 0) {
+    $documentoId = (int)$_GET['documentoId'];
+} elseif (isset($_REQUEST['documentoId']) && (int)$_REQUEST['documentoId'] > 0) {
     $documentoId = (int)$_REQUEST['documentoId'];
+} elseif ((int)[documentoId] > 0) {
+    $documentoId = (int)[documentoId];
 }
 
 if ($subvector <= 0) {
-    die('Parametro subvector mancante. Usare generate_dichiarazioni_subvector o ?subvector=<id>.');
+    die('Parametro subvector mancante. Usare generate_doc_to_sign o ?subvector=<id>.');
 }
 
 $pdf = $this->Pdf;
@@ -1069,7 +1068,9 @@ if ($canFpdi && $pageCount > 0) {
     $pdf->Cell($cw, 5, 'Si allega documento di identità in corso di validità del dichiarante.', 0, 1, 'L');
 }
 
-// --- Output / auto-save (invariato) ---
+// --- Persistenza + output ---
+// Anche in anteprima (senza auto_save) salviamo basename in DB,
+// cosi' la griglia documenti non resta sul placeholder statico.
 $autoSavePdf = (
     (isset($_SESSION['pdf_auto_save']) && strtoupper(trim((string)$_SESSION['pdf_auto_save'])) === 'S') ||
     (isset([auto_save_pdf]) && strtoupper(trim((string)[auto_save_pdf])) === 'S') ||
@@ -1077,17 +1078,114 @@ $autoSavePdf = (
     (isset($_REQUEST['auto_save_pdf']) && strtoupper(trim((string)$_REQUEST['auto_save_pdf'])) === 'S')
 );
 
-if (!$autoSavePdf) {
-    $pdf->Output($pdfFileName, 'I');
-    return;
-}
-
 $sqlQuote = function ($v) {
     return "'" . str_replace("'", "''", (string)$v) . "'";
 };
 
+/** Stessa risoluzione path di nuovo_contratto_vettore / finalize (DOCUMENT_ROOT + mkdir) */
+if (!function_exists('dich_detect_workspace_root')) {
+    function dich_detect_workspace_root($anchorFile = null)
+    {
+        if ($anchorFile === null || $anchorFile === '') {
+            $anchorFile = !empty($_SERVER['SCRIPT_FILENAME'])
+                ? (string)$_SERVER['SCRIPT_FILENAME']
+                : __FILE__;
+        }
+        $dir = is_dir($anchorFile) ? realpath($anchorFile) : dirname($anchorFile);
+        $resolved = realpath($dir);
+        if ($resolved !== false) {
+            $dir = $resolved;
+        }
+        if ($dir === false || $dir === '') {
+            return '';
+        }
+        $current = $dir;
+        for ($i = 0; $i < 12; $i++) {
+            // Root workspace = ha _lib a livello progetto, non la cartella di una singola app
+            if (is_file($current . DIRECTORY_SEPARATOR . 'index.php')
+                && is_dir($current . DIRECTORY_SEPARATOR . '_lib')
+                && (
+                    is_dir($current . DIRECTORY_SEPARATOR . 'grid_contratti')
+                    || is_dir($current . DIRECTORY_SEPARATOR . 'grid_documenti_to_sign_wizard')
+                    || is_dir($current . DIRECTORY_SEPARATOR . 'easygn_start_wf_docs')
+                )) {
+                return $current;
+            }
+            $parent = dirname($current);
+            if ($parent === $current) {
+                break;
+            }
+            $current = $parent;
+        }
+        $parent = dirname($dir);
+        return ($parent !== '' && $parent !== $dir) ? $parent : $dir;
+    }
+}
+if (!function_exists('dich_resolve_base_dir')) {
+    function dich_resolve_base_dir($configuredPath, $anchorFile = null)
+    {
+        $configuredPath = trim((string)$configuredPath);
+        if ($configuredPath === '') {
+            return '';
+        }
+        $normalized = str_replace('\\', '/', $configuredPath);
+        if ($normalized !== '' && $normalized[0] === '/') {
+            $resolved = @realpath($configuredPath);
+            if ($resolved !== false) {
+                return $resolved;
+            }
+            if (@mkdir($configuredPath, 0775, true) || is_dir($configuredPath)) {
+                $resolved = @realpath($configuredPath);
+                return $resolved !== false ? $resolved : rtrim($configuredPath, "/\\");
+            }
+            return rtrim($configuredPath, "/\\");
+        }
+        if (preg_match('#^[A-Za-z]:/#', $normalized) || preg_match('#^[A-Za-z]:\\\\#', $configuredPath)) {
+            $resolved = @realpath($configuredPath);
+            if ($resolved !== false) {
+                return $resolved;
+            }
+            if (@mkdir($configuredPath, 0775, true) || is_dir($configuredPath)) {
+                $resolved = @realpath($configuredPath);
+                return $resolved !== false ? $resolved : rtrim($configuredPath, "/\\");
+            }
+            return rtrim($configuredPath, "/\\");
+        }
+        // Come nuovo_contratto_vettore: SEMPRE prova DOCUMENT_ROOT (non solo con flag)
+        if (!empty($_SERVER['DOCUMENT_ROOT'])) {
+            $docRoot = @realpath((string)$_SERVER['DOCUMENT_ROOT']);
+            if ($docRoot !== false && $docRoot !== '') {
+                $docCand = $docRoot . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, trim($normalized, '/'));
+                if (is_dir($docCand)) {
+                    $resolved = @realpath($docCand);
+                    return $resolved !== false ? $resolved : $docCand;
+                }
+                if (@mkdir($docCand, 0775, true) || is_dir($docCand)) {
+                    $resolved = @realpath($docCand);
+                    return $resolved !== false ? $resolved : $docCand;
+                }
+            }
+        }
+        if ($anchorFile === null || $anchorFile === '') {
+            $anchorFile = !empty($_SERVER['SCRIPT_FILENAME'])
+                ? (string)$_SERVER['SCRIPT_FILENAME']
+                : __FILE__;
+        }
+        $root = dich_detect_workspace_root($anchorFile);
+        if ($root === '') {
+            return '';
+        }
+        $full = $root . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, trim($normalized, '/'));
+        if (!is_dir($full)) {
+            @mkdir($full, 0775, true);
+        }
+        $resolved = @realpath($full);
+        return $resolved !== false ? $resolved : $full;
+    }
+}
+
 $rsBaseDir = $this->Db->Execute("
-    SELECT set_value FROM sec_settings WHERE set_name = 'templates_path' LIMIT 1
+    SELECT set_value FROM sec_settings WHERE set_name = 'contratti_base_dir' LIMIT 1
 ");
 $baseDirRaw = '';
 if ($rsBaseDir !== false && !$rsBaseDir->EOF) {
@@ -1096,30 +1194,33 @@ if ($rsBaseDir !== false && !$rsBaseDir->EOF) {
 }
 if ($baseDirRaw === '') {
     $rsBaseDir2 = $this->Db->Execute("
-        SELECT set_value FROM sec_settings WHERE set_name = 'contratti_base_dir' LIMIT 1
+        SELECT set_value FROM sec_settings WHERE set_name = 'templates_path' LIMIT 1
     ");
     if ($rsBaseDir2 !== false && !$rsBaseDir2->EOF) {
         $baseDirRaw = trim((string)$rsBaseDir2->fields[0]);
         $rsBaseDir2->Close();
+        if (preg_match('#/templates$#', str_replace('\\', '/', $baseDirRaw))) {
+            $baseDirRaw = preg_replace('#/templates$#', '', str_replace('\\', '/', $baseDirRaw));
+        }
     }
 }
 if ($baseDirRaw === '') {
-    die('Impostare sec_settings.templates_path o contratti_base_dir.');
+    die('Impostare sec_settings.contratti_base_dir o templates_path (stesso path di easygn_start_wf).');
 }
 
-$baseDir = rtrim(str_replace('\\', '/', $baseDirRaw), '/');
-$docDir = $baseDir . '/documenti';
-if (!is_dir($docDir)) {
-    @mkdir($docDir, 0775, true);
+$anchorFile = !empty($_SERVER['SCRIPT_FILENAME']) ? (string)$_SERVER['SCRIPT_FILENAME'] : __FILE__;
+$baseDir = dich_resolve_base_dir($baseDirRaw, $anchorFile);
+if ($baseDir === '') {
+    die('Impossibile risolvere baseDir da: ' . $baseDirRaw);
 }
-if (!is_dir($docDir)) {
-    $docDir = $baseDir;
-    $relName = $pdfFileName;
-    $fullPath = rtrim($docDir, '/\\') . DIRECTORY_SEPARATOR . $pdfFileName;
-} else {
-    $relName = 'documenti/' . $pdfFileName;
-    $fullPath = rtrim($docDir, '/\\') . DIRECTORY_SEPARATOR . $pdfFileName;
+$baseDir = rtrim(str_replace('\\', '/', $baseDir), '/');
+
+// Basename in DB; fisico in baseDir (stessa cartella Document SC, senza subdir)
+if (!is_dir($baseDir) && !@mkdir($baseDir, 0775, true) && !is_dir($baseDir)) {
+    die('Impossibile creare la cartella: ' . $baseDir);
 }
+$relName = $pdfFileName;
+$fullPath = $baseDir . '/' . $pdfFileName;
 
 $pdfBin = $pdf->Output($pdfFileName, 'S');
 if (!is_string($pdfBin) || strncmp($pdfBin, '%PDF', 4) !== 0) {
@@ -1127,6 +1228,11 @@ if (!is_string($pdfBin) || strncmp($pdfBin, '%PDF', 4) !== 0) {
 }
 if (@file_put_contents($fullPath, $pdfBin) === false) {
     die('Impossibile salvare PDF: ' . $fullPath);
+}
+clearstatcache(true, $fullPath);
+@chmod($fullPath, 0664);
+if (!is_readable($fullPath) || filesize($fullPath) <= 0) {
+    die('PDF scritto ma non leggibile: ' . $fullPath);
 }
 
 if ($documentoId <= 0) {
@@ -1148,37 +1254,92 @@ if ($documentoId <= 0) {
 }
 
 if ($documentoId > 0) {
+    // Dichiarazioni: unico verde con PDF reale → solo basename in DB (come contratti)
     $this->Db->Execute("
         UPDATE documenti
         SET file = " . $sqlQuote($relName) . ",
-            stato_documento_id = 1,
+            stato_documento_id = 2,
             updated_at = NOW()
         WHERE id = " . (int)$documentoId . "
     ");
+    // Path assoluto + binario in sessione (EasyGN non dipende dal disco)
+    if (!isset($_SESSION['docs_pdf_abs']) || !is_array($_SESSION['docs_pdf_abs'])) {
+        $_SESSION['docs_pdf_abs'] = array();
+    }
+    $_SESSION['docs_pdf_abs'][$documentoId] = $fullPath;
+    if (!isset($_SESSION['docs_pdf_bin']) || !is_array($_SESSION['docs_pdf_bin'])) {
+        $_SESSION['docs_pdf_bin'] = array();
+    }
+    $_SESSION['docs_pdf_bin'][$documentoId] = base64_encode($pdfBin);
+    if (!isset($_SESSION['docs_pdf_generated']) || !is_array($_SESSION['docs_pdf_generated'])) {
+        $_SESSION['docs_pdf_generated'] = array();
+    }
+    $_SESSION['docs_pdf_generated'][$documentoId] = time();
+    if (!empty($_SESSION['docs_pdf_force_regen'][$documentoId])) {
+        unset($_SESSION['docs_pdf_force_regen'][$documentoId]);
+    }
 }
 
+clearstatcache(true, $fullPath);
+@chmod($fullPath, 0664);
 if (function_exists('sc_log_add')) {
     sc_log_add(
         'PDF_SAVE',
-        'dichiarazioni_subvettore sub=' . (int)$subvector
-        . ' documentoId=' . (int)$documentoId
-        . ' fpdi=' . ($canFpdi ? '1' : '0')
+        '[documentoId=' . (int)$documentoId . '][subvettoreId=' . (int)$subvector . '] '
+        . 'fpdi=' . ($canFpdi ? '1' : '0')
+        . ' baseDirRaw=' . $baseDirRaw
+        . ' baseDir=' . $baseDir
+        . ' docroot=' . (isset($_SERVER['DOCUMENT_ROOT']) ? (string)$_SERVER['DOCUMENT_ROOT'] : '')
+        . ' rel=' . $relName
         . ' path=' . $fullPath
+        . ' exists=' . (is_readable($fullPath) ? '1' : '0')
+        . ' size=' . (is_readable($fullPath) ? (string)filesize($fullPath) : '0')
+        . ' nextSign=' . (
+            (isset($_GET['next']) && strtolower(trim((string)$_GET['next'])) === 'sign') ? '1' : '0'
+        )
     );
 }
 
-// Dopo salvataggio wizard: torna alla blank hub (non lasciare il PDF inline)
+
+unset($_SESSION['pdf_auto_save']);
+
+// Dopo salvataggio da Firma: vai subito a EasyGN (non richiedere secondo click)
+$nextSign = (
+    (isset($_GET['next']) && strtolower(trim((string)$_GET['next'])) === 'sign')
+    || (!empty($_SESSION['pdf_next']) && strtolower(trim((string)$_SESSION['pdf_next'])) === 'sign')
+);
+if ($nextSign && $documentoId > 0) {
+    unset($_SESSION['pdf_next']);
+    unset($_SESSION['dichiarazioni_return_to']);
+    unset($_SESSION['documento_verde_return_to']);
+    $egUrl = '../easygn_start_wf_docs/'
+        . '?documentoId=' . (int)$documentoId
+        . '&subvettoreId=' . (int)$subvector
+        . '&from_generate=1'
+        . '&pdf_abs=' . rawurlencode($fullPath);
+    if (function_exists('sc_log_add')) {
+        sc_log_add('PDF_SAVE', '[documentoId=' . (int)$documentoId . '][subvettoreId=' . (int)$subvector . '] redirect EasyGN ' . $egUrl);
+    }
+    header('Location: ' . $egUrl);
+    exit;
+}
+
+// Dopo salvataggio wizard (solo se auto_save): torna alla griglia
 $returnTo = '';
-if (isset($_GET['return_to']) && trim((string)$_GET['return_to']) !== '') {
-    $returnTo = preg_replace('/[^a-zA-Z0-9_\\-]/', '', (string)$_GET['return_to']);
-} elseif (!empty($_SESSION['dichiarazioni_return_to'])) {
-    $returnTo = preg_replace('/[^a-zA-Z0-9_\\-]/', '', (string)$_SESSION['dichiarazioni_return_to']);
+if ($autoSavePdf) {
+    if (isset($_GET['return_to']) && trim((string)$_GET['return_to']) !== '') {
+        $returnTo = preg_replace('/[^a-zA-Z0-9_\\-]/', '', (string)$_GET['return_to']);
+    } elseif (!empty($_SESSION['documento_verde_return_to'])) {
+        $returnTo = preg_replace('/[^a-zA-Z0-9_\\-]/', '', (string)$_SESSION['documento_verde_return_to']);
+    } elseif (!empty($_SESSION['dichiarazioni_return_to'])) {
+        $returnTo = preg_replace('/[^a-zA-Z0-9_\\-]/', '', (string)$_SESSION['dichiarazioni_return_to']);
+    }
 }
 if ($returnTo !== '') {
     unset($_SESSION['dichiarazioni_return_to']);
-    unset($_SESSION['pdf_auto_save']);
-    $_SESSION['wizard_flash_msg'] = 'PDF Dichiarazioni generato. Ora puoi aprirlo e firmarlo.';
-    header('Location: ../' . $returnTo . '/?generated=1&documentoId=' . (int)$documentoId);
+    unset($_SESSION['documento_verde_return_to']);
+    $_SESSION['wizard_flash_msg'] = 'PDF Dichiarazioni generato. Ora puoi firmarlo.';
+    header('Location: ../' . $returnTo . '/?generated=1&documentoId=' . (int)$documentoId . '&subvettoreId=' . (int)$subvector);
     exit;
 }
 

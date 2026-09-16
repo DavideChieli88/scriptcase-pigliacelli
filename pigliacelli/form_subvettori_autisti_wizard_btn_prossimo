@@ -81,8 +81,6 @@ sc_lookup(rsWizAutStep, "
 $wizStep = !empty({rsWizAutStep[0][0]}) ? (int){rsWizAutStep[0][0]} : 1;
 $wizComplete = !empty({rsWizAutStep[0][1]}) ? (int){rsWizAutStep[0][1]} : 0;
 
-sc_commit_trans('pigliacelli');
-
 if ($wizComplete === 0 && $wizStep === 2) {
     sc_exec_sql("
         UPDATE subvettori
@@ -92,6 +90,8 @@ if ($wizComplete === 0 && $wizStep === 2) {
           AND wizard_step = 2
     ", 'pigliacelli');
 }
+
+sc_exec_sql('COMMIT');
 
 sc_log_add('WIZARD', 'form_subvettori_autisti_wizard Prossimo OK -> form_subvettori_mezzi subvettoreId=' . $subId);
 sc_redir('form_subvettori_mezzi', subvettoreId=[subvettoreId]);

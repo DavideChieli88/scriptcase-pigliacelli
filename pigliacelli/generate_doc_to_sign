@@ -1,0 +1,245 @@
+/**
+ * Scriptcase blank: generate_doc_to_sign → onExecute
+ *
+ * GEN_DOC_v3 — se vedi ancora "hasRealFile" nei log, l'app NON e' stata ridistribuita.
+ *
+ * Per Dichiarazioni + next=sign: va SEMPRE al Report salvo PDF gia' leggibile su disco
+ * oppure gia' in sessione (docs_pdf_bin).
+ */
+
+$subId = 0;
+if (isset($_GET['subvettoreId']) && (int)$_GET['subvettoreId'] > 0) {
+    $subId = (int)$_GET['subvettoreId'];
+} elseif (isset($_GET['subvector']) && (int)$_GET['subvector'] > 0) {
+    $subId = (int)$_GET['subvector'];
+} elseif ((int)[subvettoreId] > 0) {
+    $subId = (int)[subvettoreId];
+} elseif ((int)[subvector] > 0) {
+    $subId = (int)[subvector];
+}
+
+$documentoId = 0;
+if (isset($_GET['documentoId']) && (int)$_GET['documentoId'] > 0) {
+    $documentoId = (int)$_GET['documentoId'];
+} elseif ((int)[documentoId] > 0) {
+    $documentoId = (int)[documentoId];
+} elseif (!empty($_SESSION['documentoId']) && (int)$_SESSION['documentoId'] > 0) {
+    $documentoId = (int)$_SESSION['documentoId'];
+}
+
+$returnTo = 'grid_documenti_to_sign_wizard';
+if (isset($_GET['return_to']) && trim((string)$_GET['return_to']) !== '') {
+    $cand = preg_replace('/[^a-zA-Z0-9_\\-]/', '', (string)$_GET['return_to']);
+    if ($cand !== '') {
+        $returnTo = $cand;
+    }
+}
+
+$forceRegen = (
+    (isset($_GET['force']) && (int)$_GET['force'] === 1)
+    || (isset($_REQUEST['force']) && (int)$_REQUEST['force'] === 1)
+    || ($documentoId > 0 && !empty($_SESSION['docs_pdf_force_regen'][$documentoId]))
+);
+
+if ($subId <= 0) {
+    sc_error_message('subvettoreId mancante');
+    sc_error_exit();
+}
+
+$tipoNome = '';
+$fileVal = '';
+if ($documentoId > 0) {
+    sc_lookup(rsGenVerdeDoc, "
+        SELECT
+            d.id,
+            COALESCE(td.nome, ''),
+            COALESCE(d.file, '')
+        FROM documenti d
+        INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+        WHERE d.id = $documentoId
+          AND d.subvettore_id = $subId
+          AND COALESCE(td.is_readonly, 0) = 1
+        LIMIT 1
+    ", 'pigliacelli');
+    if (!empty({rsGenVerdeDoc[0][0]})) {
+        $documentoId = (int){rsGenVerdeDoc[0][0]};
+        $tipoNome = trim((string){rsGenVerdeDoc[0][1]});
+        $fileVal = trim((string){rsGenVerdeDoc[0][2]});
+    } else {
+        $documentoId = 0;
+    }
+}
+
+[subvector] = $subId;
+[subvettoreId] = $subId;
+if ($documentoId > 0) {
+    [documentoId] = $documentoId;
+}
+$_SESSION['documentoId'] = $documentoId;
+
+$nextSign = false;
+if (isset($_GET['next']) && strtolower(trim((string)$_GET['next'])) === 'sign') {
+    $nextSign = true;
+} elseif (!empty($_SESSION['pdf_next']) && strtolower(trim((string)$_SESSION['pdf_next'])) === 'sign') {
+    $nextSign = true;
+}
+
+$log = function ($msg) use ($documentoId, $subId) {
+    sc_log_add('GEN_DOC', "[documentoId=$documentoId][subvettoreId=$subId] GEN_DOC_v3 " . (string)$msg);
+};
+
+// PDF gia' in sessione (da dichiarazioni_pdf) → EasyGN senza Report
+$sessionBinOk = false;
+if ($documentoId > 0 && !empty($_SESSION['docs_pdf_bin'][$documentoId])) {
+    $b64 = (string)$_SESSION['docs_pdf_bin'][$documentoId];
+    $raw = base64_decode($b64, true);
+    if (is_string($raw) && strncmp($raw, '%PDF', 4) === 0) {
+        $sessionBinOk = true;
+    }
+}
+
+// Resolve baseDir (DOCUMENT_ROOT) per check disco
+$baseDir = '';
+sc_lookup(rsGenBaseDir, "
+    SELECT set_value FROM sec_settings WHERE set_name = 'contratti_base_dir' LIMIT 1
+", 'pigliacelli');
+$baseDirRaw = !empty({rsGenBaseDir[0][0]}) ? trim((string){rsGenBaseDir[0][0]}) : '';
+if ($baseDirRaw === '') {
+    sc_lookup(rsGenTpl, "
+        SELECT set_value FROM sec_settings WHERE set_name = 'templates_path' LIMIT 1
+    ", 'pigliacelli');
+    $baseDirRaw = !empty({rsGenTpl[0][0]}) ? trim((string){rsGenTpl[0][0]}) : '';
+    if (preg_match('#/templates$#', str_replace('\\', '/', $baseDirRaw))) {
+        $baseDirRaw = preg_replace('#/templates$#', '', str_replace('\\', '/', $baseDirRaw));
+    }
+}
+if ($baseDirRaw !== '' && !empty($_SERVER['DOCUMENT_ROOT'])) {
+    $docRoot = @realpath((string)$_SERVER['DOCUMENT_ROOT']);
+    if ($docRoot !== false) {
+        $cand = $docRoot . DIRECTORY_SEPARATOR . str_replace(
+            '/',
+            DIRECTORY_SEPARATOR,
+            trim(str_replace('\\', '/', $baseDirRaw), '/')
+        );
+        if (is_dir($cand)) {
+            $rp = @realpath($cand);
+            $baseDir = $rp !== false ? $rp : $cand;
+        }
+    }
+}
+$baseDir = rtrim(str_replace('\\', '/', (string)$baseDir), '/');
+
+$fileAbs = '';
+$fileOnDisk = false;
+if ($fileVal !== '' && stripos($fileVal, 'placeholder') === false && $baseDir !== '') {
+    $rel = ltrim(str_replace('\\', '/', $fileVal), '/');
+    $bn = basename($rel);
+    foreach (array($baseDir . '/' . $rel, $baseDir . '/documenti/' . $bn, $baseDir . '/' . $bn) as $try) {
+        clearstatcache(true, $try);
+        if (is_readable($try) && filesize($try) > 0) {
+            $head = @file_get_contents($try, false, null, 0, 4);
+            if ($head === '%PDF') {
+                $fileAbs = $try;
+                $fileOnDisk = true;
+                break;
+            }
+        }
+    }
+}
+
+$log(
+    'tipo=' . $tipoNome
+    . ' fileDb=' . $fileVal
+    . ' nextSign=' . ($nextSign ? '1' : '0')
+    . ' force=' . ($forceRegen ? '1' : '0')
+    . ' sessionBin=' . ($sessionBinOk ? '1' : '0')
+    . ' fileOnDisk=' . ($fileOnDisk ? '1' : '0')
+    . ' baseDir=' . $baseDir
+);
+
+// Unico caso di skip Report: PDF pronto (disco o sessione) e non force
+if ($nextSign && $documentoId > 0 && !$forceRegen && ($fileOnDisk || $sessionBinOk)) {
+    $eg = '../easygn_start_wf_docs/'
+        . '?documentoId=' . (int)$documentoId
+        . '&subvettoreId=' . (int)$subId
+        . '&from_generate=1';
+    if ($fileOnDisk) {
+        $eg .= '&pdf_abs=' . rawurlencode($fileAbs);
+    }
+    $log('skip report → easygn (pdf ready) ' . $eg);
+    unset($_SESSION['pdf_next']);
+    if ($documentoId > 0 && !empty($_SESSION['docs_pdf_force_regen'][$documentoId])) {
+        unset($_SESSION['docs_pdf_force_regen'][$documentoId]);
+    }
+    header('Location: ' . $eg);
+    exit;
+}
+
+// Path DB stale (senza file): non toccare Dichiarazioni; per gli altri lascia placeholder statico solo se non e' gia' un docverde_
+if ($documentoId > 0 && !$fileOnDisk && !$sessionBinOk
+    && $fileVal !== ''
+    && stripos($fileVal, 'placeholder') === false
+    && stripos($tipoNome, 'dichiaraz') === false
+    && stripos($fileVal, 'dichiarazioni_') === false
+) {
+    sc_exec_sql("
+        UPDATE documenti
+        SET file = 'placeholder_documento_verde.pdf',
+            updated_at = NOW()
+        WHERE id = " . (int)$documentoId . "
+    ");
+    $log('cleared stale DB path → placeholder');
+}
+
+[auto_save_pdf] = 'S';
+$_SESSION['pdf_auto_save'] = 'S';
+$_SESSION['documento_verde_return_to'] = $returnTo;
+if ($nextSign) {
+    $_SESSION['pdf_next'] = 'sign';
+}
+
+$tipoKey = strtolower($tipoNome);
+$reportApp = '';
+if (strpos($tipoKey, 'dichiaraz') !== false) {
+    $reportApp = 'dichiarazioni_pdf';
+} else {
+    // Altri verdi: PDF placeholder generato (firma via EasyGN)
+    $reportApp = 'placeholder_docs_firma';
+}
+
+if ($reportApp === '') {
+    if ($fileOnDisk || $sessionBinOk) {
+        header(
+            'Location: ../easygn_start_wf_docs/'
+            . '?documentoId=' . (int)$documentoId
+            . '&subvettoreId=' . (int)$subId
+            . '&from_generate=1'
+            . ($fileOnDisk ? '&pdf_abs=' . rawurlencode($fileAbs) : '')
+        );
+        exit;
+    }
+    $_SESSION['wizard_flash_msg'] = 'Nessun PDF generabile per il tipo: '
+        . ($tipoNome !== '' ? $tipoNome : ('documento ' . (int)$documentoId));
+    sc_redir($returnTo, subvettoreId=[subvettoreId]);
+}
+
+// Non marcare "generated" PRIMA del Report: spezza solo dopo PDF_SAVE
+if ($documentoId > 0 && !empty($_SESSION['docs_pdf_generated'][$documentoId])) {
+    unset($_SESSION['docs_pdf_generated'][$documentoId]);
+}
+
+$reportUrl = '../' . rawurlencode($reportApp) . '/?subvector=' . (int)$subId
+    . '&subvettoreId=' . (int)$subId
+    . '&auto_save_pdf=S'
+    . '&return_to=' . rawurlencode($returnTo);
+if ($documentoId > 0) {
+    $reportUrl .= '&documentoId=' . (int)$documentoId;
+}
+if ($nextSign) {
+    $reportUrl .= '&next=sign';
+}
+
+$log('FORCE REPORT → ' . $reportUrl);
+
+header('Location: ' . $reportUrl);
+exit;

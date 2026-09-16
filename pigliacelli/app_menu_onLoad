@@ -1,5 +1,9 @@
 // Scriptcase — app_menu → onLoad
 // NON usare "return" (pagina bianca).
+//
+// Subvettore (group 2) con wizard_complete=0 → blank_wizard_landing.
+// Filtrare SEMPRE sug.group_id = 2: un utente può avere più gruppi e
+// LIMIT 1 senza filtro rendeva il redirect casuale (menu vs blank).
 
 [menu_description] = "";
 
@@ -17,34 +21,52 @@ if (!empty([usr_phone])) {
     [menu_description] .= [usr_phone];
 }
 
-// Flash da Completa wizard / firme verdi (redirect qui dopo wizard_complete=1)
-if (!empty($_SESSION['wizard_flash_msg'])) {
-    $flashMsg = (string)$_SESSION['wizard_flash_msg'];
-    unset($_SESSION['wizard_flash_msg']);
-    sc_error_message($flashMsg);
-}
-
 $usrLogin = trim((string)[usr_login]);
 if ($usrLogin === '' || strcasecmp($usrLogin, 'Guest') === 0) {
     // skip
 } else {
     $loginSql = str_replace("'", "''", $usrLogin);
 
-    // group 2 + wizard incompleto → solo starting wizard
-    sc_lookup(rsWizMenu, "
-        SELECT sug.group_id, COALESCE(s.wizard_complete, 0)
+    // group 2: valorizza [subvettoreId] (serve alle grid menu
+    // con WHERE subvettore_id = [subvettoreId]; onApplicationInit NON puo' fare lookup)
+    sc_lookup(rsMenuSubId, "
+        SELECT COALESCE(su.subvettore_id, 0)
         FROM sec_users su
-        INNER JOIN sec_users_groups sug ON sug.login = su.login
-        LEFT JOIN subvettori s ON s.id = su.subvettore_id
+        INNER JOIN sec_users_groups sug
+            ON sug.login = su.login
+           AND sug.group_id = 2
         WHERE su.login = '$loginSql'
+          AND su.active = 'Y'
+          AND su.subvettore_id > 0
+        LIMIT 1
+    ", 'pigliacelli');
+    $menuSubId = !empty({rsMenuSubId[0][0]}) ? (int){rsMenuSubId[0][0]} : 0;
+    if ($menuSubId > 0) {
+        [subvettoreId] = $menuSubId;
+    }
+
+    // group 2 + wizard incompleto + subvettore associato → landing
+    sc_lookup(rsWizMenuOk, "
+        SELECT 1
+        FROM sec_users su
+        INNER JOIN sec_users_groups sug
+            ON sug.login = su.login
+           AND sug.group_id = 2
+        INNER JOIN subvettori s ON s.id = su.subvettore_id
+        WHERE su.login = '$loginSql'
+          AND COALESCE(s.wizard_complete, 0) = 0
         LIMIT 1
     ", 'pigliacelli');
 
-    if (!empty({rsWizMenu[0][0]})
-        && (int){rsWizMenu[0][0]} === 2
-        && (int){rsWizMenu[0][1]} === 0
-    ) {
+    if (!empty({rsWizMenuOk[0][0]})) {
         sc_redir('blank_wizard_landing');
+    }
+
+    // Flash solo se restiamo sul menu
+    if (!empty($_SESSION['wizard_flash_msg'])) {
+        $flashMsg = (string)$_SESSION['wizard_flash_msg'];
+        unset($_SESSION['wizard_flash_msg']);
+        sc_error_message($flashMsg);
     }
 
     // primo accesso menu

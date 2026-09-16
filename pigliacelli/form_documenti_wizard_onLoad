@@ -1,12 +1,15 @@
 /**
  * form_documenti_wizard → onLoad
  *
- * Tasti wizard: ON in griglia, OFF in modale edit (stessa logica autisti/mezzi).
+ * Tasti wizard: ON in griglia, OFF in modale edit.
  *
  * Name pulsanti SC:
  *   - next_step_btn_signs   (Prossimo / Next → step 5)
  *   - back_btn_docs
- *   - send_for_activation   (legacy: nascosto; ora sulla grid step 5)
+ *   - send_for_activation   (legacy: sempre off qui)
+ *
+ * Nota: su primo load nmgp_opcao è spesso '' — NON va trattato come modale
+ * (altrimenti Prossimo resta nascosto).
  */
 
 $op = '';
@@ -20,16 +23,37 @@ if (isset($this->nmgp_opcao)) {
 
 sc_log_add('WIZ_BTN', 'documenti onLoad op=[' . $op . ']');
 
-$isModal = ($op === 'igual' || $op === '' || $op === 'busca');
+// Solo operazioni di form/record = modale. Griglia / primo load = mostra tasti.
+$isModal = in_array($op, array(
+    'igual',
+    'alterar',
+    'incluir',
+    'novo',
+    'edit',
+    'update',
+    'insert',
+    'reload',
+    'refresh',
+), true);
+
+sc_btn_display('send_for_activation', 'off');
 
 if ($isModal) {
+    // Wizard nav nascosti in edit; salvataggio + annulla SC sempre ON
     sc_btn_display('next_step_btn_signs', 'off');
     sc_btn_display('back_btn_docs', 'off');
-    sc_btn_display('send_for_activation', 'off');
+    sc_btn_display('update', 'on');
+    sc_btn_display('ok', 'on');
+    sc_btn_display('save', 'on');
+    sc_btn_display('insert', 'on');
+    sc_btn_display('cancel', 'on');
+    sc_btn_display('annulla', 'on');
+    sc_btn_display('exit', 'on');
+    sc_btn_display('sair', 'on');
+    sc_btn_display('back', 'on');
 } else {
     sc_btn_display('next_step_btn_signs', 'on');
     sc_btn_display('back_btn_docs', 'on');
-    sc_btn_display('send_for_activation', 'off');
 }
 
 // --- in_possesso / file (modale) ---

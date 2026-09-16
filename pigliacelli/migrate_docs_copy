@@ -1,0 +1,128 @@
+/**
+ * Scriptcase blank: migrate_docs_copy → onExecute
+ *
+ * Copia i PDF da Documents Path "vecchio" (scriptcase/file/doc)
+ * al path workspace (_lib/file/doc), cosi' grid_documenti_subvectors
+ * con il nuovo Documents Path trova anche i file storici.
+ *
+ * Uso:
+ *   migrate_docs_copy/?dry=1     → solo report (default)
+ *   migrate_docs_copy/?dry=0     → esegue le copie
+ *
+ * Opz: ?limit=50  per testare su pochi file
+ */
+
+header('Content-Type: text/plain; charset=utf-8');
+
+$dry = !isset($_GET['dry']) || (int)$_GET['dry'] !== 0;
+$limit = isset($_GET['limit']) ? max(0, (int)$_GET['limit']) : 0;
+
+$srcDirs = array(
+    '/opt/Scriptcase/v9-php81/wwwroot/scriptcase/file/doc',
+    '/opt/Scriptcase/v9-php82/wwwroot/scriptcase/file/doc',
+);
+$dstDir = '/opt/Scriptcase/v9-php82/wwwroot/scriptcase/app/pigliacelli_workspace/_lib/file/doc';
+
+echo "=== migrate_docs_copy ===\n";
+echo "mode=" . ($dry ? 'DRY-RUN (nessuna copia)' : 'COPY') . "\n";
+echo "dst=$dstDir\n";
+foreach ($srcDirs as $s) {
+    echo "src=" . $s . " is_dir=" . (is_dir($s) ? '1' : '0') . "\n";
+}
+echo "\n";
+
+if (!is_dir($dstDir)) {
+    echo "ERRORE: destinazione non esiste.\n";
+    exit;
+}
+
+$sql = "
+    SELECT DISTINCT TRIM(file) AS f
+    FROM documenti
+    WHERE file IS NOT NULL
+      AND TRIM(file) <> ''
+";
+if ($limit > 0) {
+    $sql .= " LIMIT " . (int)$limit;
+}
+
+sc_lookup(rsMigDocs, $sql, 'pigliacelli');
+if (empty({rsMigDocs[0][0]})) {
+    echo "Nessun file in documenti.file\n";
+    exit;
+}
+
+$stats = array(
+    'total' => 0,
+    'already' => 0,
+    'copied' => 0,
+    'missing_src' => 0,
+    'fail' => 0,
+);
+
+foreach ({rsMigDocs} as $row) {
+    $raw = trim((string)$row[0]);
+    if ($raw === '') {
+        continue;
+    }
+    $bn = basename(str_replace('\\', '/', $raw));
+    if ($bn === '' || $bn === '.' || $bn === '..') {
+        continue;
+    }
+    $stats['total']++;
+
+    $dstFile = $dstDir . '/' . $bn;
+    if (is_readable($dstFile) && filesize($dstFile) > 0) {
+        $stats['already']++;
+        echo "SKIP already $bn\n";
+        continue;
+    }
+
+    $srcFile = '';
+    foreach ($srcDirs as $srcDir) {
+        $try = array(
+            $srcDir . '/' . $bn,
+            $srcDir . '/documenti/' . $bn,
+        );
+        // se in DB c'era un path relativo tipo documenti/x.pdf
+        if (strpos(str_replace('\\', '/', $raw), '/') !== false) {
+            $try[] = $srcDir . '/' . ltrim(str_replace('\\', '/', $raw), '/');
+        }
+        foreach ($try as $t) {
+            if (is_readable($t) && filesize($t) > 0) {
+                $srcFile = $t;
+                break 2;
+            }
+        }
+    }
+
+    if ($srcFile === '') {
+        $stats['missing_src']++;
+        echo "MISS $bn\n";
+        continue;
+    }
+
+    if ($dry) {
+        $stats['copied']++;
+        echo "WOULD COPY $bn\n  from $srcFile\n  to   $dstFile\n";
+        continue;
+    }
+
+    if (@copy($srcFile, $dstFile)) {
+        @chmod($dstFile, 0664);
+        $stats['copied']++;
+        echo "OK $bn\n";
+    } else {
+        $stats['fail']++;
+        echo "FAIL $bn\n  from $srcFile\n";
+    }
+}
+
+echo "\n=== summary ===\n";
+foreach ($stats as $k => $v) {
+    echo "$k=$v\n";
+}
+echo $dry
+    ? "\nRilancia con ?dry=0 per copiare davvero.\n"
+    : "\nFatto. Ricarica grid_documenti_subvectors.\n";
+exit;

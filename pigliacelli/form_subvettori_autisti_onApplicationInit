@@ -1,14 +1,15 @@
 /**
- * form_subvettori_mezzi → onApplicationInit
+ * form_subvettori_autisti → onApplicationInit
  *
  * Doc SC: prima della SQL. Globali OK; niente sc_lookup.
  *
- * Setup IDE:
- *   subvettoreId          → Integer, default 0, NON richiedere a startup
- *   subvettoreContrattoId → NON richiedere a startup
+ * Usata da grid_subvettori_autisti_for_subvectors (edit) e contesti contratto.
+ * Onboarding senza contratto: [subvettoreContrattoId] = 'null'.
  *
- * Wizard / menu: contratto non serve → 'null' se assente.
- * Se arriva da GET/REQUEST con id > 0, lo conserva.
+ * Setup IDE (obbligatorio):
+ *   subvettoreId          → IN, default 0, NON richiedere a startup
+ *   subvettoreContrattoId → IN o OUT, OPTIONAL, NON richiedere a startup
+ *   (altrimenti "Crea connessioni" prima di qualsiasi evento PHP)
  */
 
 if (!isset([subvettoreId]) || (string)[subvettoreId] === '' || (int)[subvettoreId] < 0) {

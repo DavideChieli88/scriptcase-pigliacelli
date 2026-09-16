@@ -5,12 +5,11 @@
  * 2) Show/hide Action Bar send_credentials_btn
  *
  * IMPORTANTE: per Action Bar NON usare sc_btn_display.
- * Usare sc_actionbar_show / sc_actionbar_hide (come in grid_contratti).
- * Chiamare SEMPRE show o hide su ogni riga (altrimenti resta lo stato della riga prima).
+ * Usare sc_actionbar_show / sc_actionbar_hide.
+ * Chiamare SEMPRE show o hide su ogni riga.
  *
- * Pulsante visibile SOLO se:
- *  - mail_credenziali_inviata_at IS NULL
- *  - E utenza sec_users attiva (group 2) con stesso login
+ * Pulsante visibile SOLO se mail_credenziali_inviata_at è vuoto
+ * (NULL / '' / 0000-00-00). Unica condizione.
  *
  * Name Action Bar: send_credentials_btn (Ajax)
  */
@@ -27,45 +26,27 @@ if ({su.active} == 'Y') {
 // --- Invia credenziali (Action Bar) ---
 $showCredBtn = 0;
 $subId = isset({id}) ? (int){id} : 0;
-$loginRow = trim((string){login_subvettore});
 
-if ($subId > 0 && $loginRow !== '') {
-    $mailVuota = true;
-
+if ($subId > 0) {
     sc_lookup(rsCredFlag, "
         SELECT mail_credenziali_inviata_at
         FROM subvettori
         WHERE id = $subId
         LIMIT 1
     ", 'pigliacelli');
-    if (isset({rsCredFlag[0][0]})
-        && {rsCredFlag[0][0]} !== ''
-        && {rsCredFlag[0][0]} !== null
-        && (string){rsCredFlag[0][0]} !== 'null'
-    ) {
-        $mailVuota = false;
+
+    $mailAt = '';
+    if (isset({rsCredFlag[0][0]}) && {rsCredFlag[0][0]} !== null) {
+        $mailAt = trim((string){rsCredFlag[0][0]});
     }
 
-    $hasActiveUser = false;
+    $mailVuota = (
+        $mailAt === ''
+        || strcasecmp($mailAt, 'null') === 0
+        || strpos($mailAt, '0000-00-00') === 0
+    );
+
     if ($mailVuota) {
-        $loginSql = str_replace("'", "''", $loginRow);
-        sc_lookup(rsCredUser, "
-            SELECT su.login
-            FROM sec_users su
-            INNER JOIN sec_users_groups sug
-                ON sug.login = su.login
-               AND sug.group_id = 2
-            WHERE su.subvettore_id = $subId
-              AND su.login = '$loginSql'
-              AND su.active = 'Y'
-            LIMIT 1
-        ", 'pigliacelli');
-        if (!empty({rsCredUser[0][0]})) {
-            $hasActiveUser = true;
-        }
-    }
-
-    if ($mailVuota && $hasActiveUser) {
         $showCredBtn = 1;
     }
 }

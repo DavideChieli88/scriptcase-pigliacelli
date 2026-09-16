@@ -1,17 +1,154 @@
 /**
- * grid_documenti_to_sign_wizard → Action Bar open_pdf_btn (Ajax o Link)
+ * grid_documenti_to_sign_wizard → Action Bar open_pdf_btn (Ajax)
  *
- * Apre/scarica il PDF del documento corrente.
+ * Campi SC: {d.id}, {d.subvettore_id}, {d.tipo_documento_id}, {d.file}, {td_nome}
+ *
+ * IMPORTANTE ScriptCase:
+ *  - non concatenare PHP dentro sc_redir / sc_lookup (parse error redirInfo)
+ *  - sc_redir solo con sintassi: nome=[globale]
  */
 
-$documentoId = isset({id}) ? (int){id} : 0;
-if ($documentoId <= 0 && isset([documentoId])) {
-    $documentoId = (int)[documentoId];
+$subId = 0;
+if (isset([subvettoreId]) && (int)[subvettoreId] > 0) {
+    $subId = (int)[subvettoreId];
 }
-if ($documentoId <= 0) {
-    sc_error_message('Documento non valido.');
+if ($subId <= 0 && isset({d.subvettore_id}) && (int){d.subvettore_id} > 0) {
+    $subId = (int){d.subvettore_id};
+}
+
+$documentoId = 0;
+if (isset({d.id}) && (int){d.id} > 0) {
+    $documentoId = (int){d.id};
+}
+
+$tipoDocumentoId = 0;
+if (isset({d.tipo_documento_id}) && (int){d.tipo_documento_id} > 0) {
+    $tipoDocumentoId = (int){d.tipo_documento_id};
+}
+
+$tipoNome = '';
+if (isset({td_nome}) && trim((string){td_nome}) !== '') {
+    $tipoNome = trim((string){td_nome});
+}
+
+if ($documentoId > 0 && $subId > 0) {
+    sc_lookup(rsOpenChk, "
+        SELECT d.id, d.tipo_documento_id, COALESCE(td.nome, '')
+        FROM documenti d
+        INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+        WHERE d.id = $documentoId
+          AND d.subvettore_id = $subId
+          AND COALESCE(td.is_readonly, 0) = 1
+        LIMIT 1
+    ", 'pigliacelli');
+    if (empty({rsOpenChk[0][0]})) {
+        $documentoId = 0;
+    } else {
+        $documentoId = (int){rsOpenChk[0][0]};
+        if ($tipoDocumentoId <= 0) {
+            $tipoDocumentoId = (int){rsOpenChk[0][1]};
+        }
+        if ($tipoNome === '') {
+            $tipoNome = trim((string){rsOpenChk[0][2]});
+        }
+    }
+} elseif ($documentoId > 0) {
+    sc_lookup(rsOpenChk2, "
+        SELECT d.id, d.subvettore_id, d.tipo_documento_id, COALESCE(td.nome, '')
+        FROM documenti d
+        INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+        WHERE d.id = $documentoId
+          AND COALESCE(td.is_readonly, 0) = 1
+        LIMIT 1
+    ", 'pigliacelli');
+    if (empty({rsOpenChk2[0][0]})) {
+        $documentoId = 0;
+    } else {
+        $documentoId = (int){rsOpenChk2[0][0]};
+        if ($subId <= 0) {
+            $subId = (int){rsOpenChk2[0][1]};
+        }
+        if ($tipoDocumentoId <= 0) {
+            $tipoDocumentoId = (int){rsOpenChk2[0][2]};
+        }
+        if ($tipoNome === '') {
+            $tipoNome = trim((string){rsOpenChk2[0][3]});
+        }
+    }
+}
+
+if ($documentoId <= 0 && $subId > 0 && $tipoDocumentoId > 0) {
+    sc_lookup(rsOpenByTipo, "
+        SELECT d.id, COALESCE(td.nome, '')
+        FROM documenti d
+        INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+        WHERE d.subvettore_id = $subId
+          AND d.tipo_documento_id = $tipoDocumentoId
+          AND COALESCE(td.is_readonly, 0) = 1
+          AND (d.subvettore_autista_id IS NULL OR d.subvettore_autista_id = 0)
+          AND (d.subvettore_mezzo_id IS NULL OR d.subvettore_mezzo_id = 0)
+        ORDER BY d.id
+        LIMIT 1
+    ", 'pigliacelli');
+    if (!empty({rsOpenByTipo[0][0]})) {
+        $documentoId = (int){rsOpenByTipo[0][0]};
+        if ($tipoNome === '') {
+            $tipoNome = trim((string){rsOpenByTipo[0][1]});
+        }
+    }
+}
+
+if ($documentoId <= 0 || $subId <= 0) {
+    sc_ajax_message('Documento non identificato. Controllare campi {d.id} e [subvettoreId].');
     sc_error_exit();
 }
 
+[subvettoreId] = $subId;
 [documentoId] = $documentoId;
-sc_redir('download_documento', 'documentoId=' . $documentoId);
+[subvector] = $subId;
+$_SESSION['documentoId'] = $documentoId;
+
+// Rileggere sempre nome tipo da DB (grid {td_nome} a volte vuoto/stale)
+$fileVal = '';
+if (isset({d.file})) {
+    $fileVal = trim((string){d.file});
+}
+sc_lookup(rsOpenTipo, "
+    SELECT COALESCE(td.nome, ''), COALESCE(d.file, '')
+    FROM documenti d
+    INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+    WHERE d.id = $documentoId
+    LIMIT 1
+", 'pigliacelli');
+if (!empty({rsOpenTipo[0][0]})) {
+    $tipoNome = trim((string){rsOpenTipo[0][0]});
+}
+if (isset({rsOpenTipo[0][1]}) && trim((string){rsOpenTipo[0][1]}) !== '') {
+    $fileVal = trim((string){rsOpenTipo[0][1]});
+}
+
+$tipoKey = strtolower($tipoNome);
+$fileKey = strtolower($fileVal);
+$isDichiarazioni = (
+    strpos($tipoKey, 'dichiaraz') !== false
+    || strpos($fileKey, 'dichiarazioni_') !== false
+);
+
+// Un solo sc_redir: senza else ScriptCase esegue anche il secondo → apre sempre placeholder
+$qs = 'documentoId=' . (int)$documentoId
+    . '&subvettoreId=' . (int)$subId
+    . '&subvector=' . (int)$subId;
+
+if ($isDichiarazioni) {
+    $openUrl = '../dichiarazioni_pdf/?' . $qs;
+} else {
+    $openUrl = '../placeholder_docs_firma/?' . $qs;
+}
+
+if (function_exists('sc_ajax_javascript')) {
+    sc_ajax_javascript('window.open(' . json_encode($openUrl) . ', "_blank");');
+} elseif ($isDichiarazioni) {
+    sc_redir('dichiarazioni_pdf', subvector=[subvector];subvettoreId=[subvettoreId];documentoId=[documentoId], "_blank");
+} else {
+    sc_redir('placeholder_docs_firma', subvector=[subvector];subvettoreId=[subvettoreId];documentoId=[documentoId], "_blank");
+}

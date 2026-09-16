@@ -1,0 +1,297 @@
+/**
+ * form_documenti_wizard → onBeforeUpdate
+ *
+ * ScriptCase Document (file name): in modifica, se il campo ha gia' un valore,
+ * l'upload nuovo spesso NON sostituisce il file (resta il vecchio in DB/disco).
+ *
+ * Casi gestiti:
+ *  A) nuovo file in $_FILES → salva su disco + forza {file} basename
+ *  B) SC ajax upload: {file} punta a un tmp (sc_… / path) diverso dal DB → sposta in doc/
+ *
+ * Log: cerca WIZ_DOCS in Application Log dopo Salva.
+ * Niente COMMIT qui (SC ha gia' la tx aperta).
+ */
+
+$docId = isset({id}) ? (int){id} : 0;
+$fileField = trim((string){file});
+
+$op = '';
+if (isset($this->nmgp_opcao)) {
+    $op = strtolower(trim((string)$this->nmgp_opcao));
+} elseif (isset($_POST['nmgp_opcao'])) {
+    $op = strtolower(trim((string)$_POST['nmgp_opcao']));
+}
+
+$fileKeys = array();
+if (!empty($_FILES) && is_array($_FILES)) {
+    foreach ($_FILES as $k => $up) {
+        $err = is_array($up) && isset($up['error']) ? (int)$up['error'] : -1;
+        $nm  = is_array($up) && isset($up['name']) ? (string)$up['name'] : '';
+        $fileKeys[] = $k . '(err=' . $err . ',name=' . $nm . ')';
+    }
+}
+
+if (function_exists('sc_log_add')) {
+    sc_log_add(
+        'WIZ_DOCS',
+        'onBeforeUpdate ENTER doc=' . $docId
+        . ' op=[' . $op . ']'
+        . ' fileField=[' . $fileField . ']'
+        . ' FILES=[' . (empty($fileKeys) ? '-' : implode('|', $fileKeys)) . ']'
+    );
+}
+
+// --- helper locali (niente sc_lookup dentro function) ---
+$wizSafeBase = function ($name) {
+    $name = basename(str_replace('\\', '/', (string)$name));
+    $name = preg_replace('/[^\w.\-() +\p{L}]/u', '_', $name);
+    $name = trim((string)$name, '._ ');
+    return $name !== '' ? $name : ('documento_' . date('Ymd_His') . '.bin');
+};
+
+$wizUniqueName = function ($docId, $origName) use ($wizSafeBase) {
+    $origName = $wizSafeBase($origName);
+    $ext = '';
+    if (preg_match('/(\.[A-Za-z0-9]{1,8})$/', $origName, $m)) {
+        $ext = $m[1];
+    }
+    $stem = $ext !== '' ? substr($origName, 0, -strlen($ext)) : $origName;
+    $stem = substr($stem, 0, 80);
+    return ($docId > 0 ? 'doc' . $docId . '_' : 'doc_') . date('Ymd_His') . '_' . $stem . $ext;
+};
+
+$dirs = array();
+if (!empty($_SESSION['scriptcase']) && is_array($_SESSION['scriptcase'])) {
+    foreach ($_SESSION['scriptcase'] as $cfg) {
+        if (!is_array($cfg) || empty($cfg['glo_nm_path_doc'])) {
+            continue;
+        }
+        $p = rtrim(str_replace('\\', '/', (string)$cfg['glo_nm_path_doc']), '/');
+        if ($p !== '' && is_dir($p)) {
+            $dirs[$p] = true;
+        }
+    }
+}
+
+sc_lookup(rsWizUpBase, "
+    SELECT set_value FROM sec_settings WHERE set_name = 'contratti_base_dir' LIMIT 1
+", 'pigliacelli');
+$baseRaw = !empty({rsWizUpBase[0][0]}) ? trim((string){rsWizUpBase[0][0]}) : '';
+if ($baseRaw === '') {
+    sc_lookup(rsWizUpTpl, "
+        SELECT set_value FROM sec_settings WHERE set_name = 'templates_path' LIMIT 1
+    ", 'pigliacelli');
+    $baseRaw = !empty({rsWizUpTpl[0][0]}) ? trim((string){rsWizUpTpl[0][0]}) : '';
+    if ($baseRaw !== '' && preg_match('#/templates$#', str_replace('\\', '/', $baseRaw))) {
+        $baseRaw = preg_replace('#/templates$#', '', str_replace('\\', '/', $baseRaw));
+    }
+}
+
+$resolved = '';
+$normalized = str_replace('\\', '/', trim($baseRaw));
+if ($normalized !== '') {
+    if ($normalized[0] === '/') {
+        $resolved = is_dir($normalized) ? $normalized : rtrim($normalized, '/');
+    } elseif (!empty($_SERVER['DOCUMENT_ROOT'])) {
+        $docRoot = @realpath((string)$_SERVER['DOCUMENT_ROOT']);
+        if ($docRoot !== false) {
+            $cand = $docRoot . DIRECTORY_SEPARATOR
+                . str_replace('/', DIRECTORY_SEPARATOR, trim($normalized, '/'));
+            if (!is_dir($cand)) {
+                @mkdir($cand, 0775, true);
+            }
+            $rp = @realpath($cand);
+            $resolved = $rp !== false ? $rp : $cand;
+        }
+    }
+}
+$resolved = rtrim(str_replace('\\', '/', (string)$resolved), '/');
+if ($resolved !== '') {
+    if (!is_dir($resolved)) {
+        @mkdir($resolved, 0775, true);
+    }
+    if (is_dir($resolved)) {
+        $dirs[$resolved] = true;
+    }
+}
+$dirList = array_keys($dirs);
+
+$saveBinToDirs = function ($bin, $newName) use ($dirList) {
+    $savedPath = '';
+    foreach ($dirList as $dir) {
+        $full = rtrim($dir, '/') . '/' . $newName;
+        if (@file_put_contents($full, $bin) !== false) {
+            @chmod($full, 0664);
+            $savedPath = $full;
+        }
+    }
+    return $savedPath;
+};
+
+$markReplaced = function ($docId, $newName, $savedPath) {
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        @session_start();
+    }
+    $_SESSION['wizard_doc_file_replaced'] = array(
+        'id'   => (int)$docId,
+        'file' => $newName,
+        'path' => $savedPath,
+    );
+};
+
+// --- A) upload classico $_FILES ---
+$upload = null;
+$uploadKey = '';
+if (!empty($_FILES) && is_array($_FILES)) {
+    foreach ($_FILES as $key => $up) {
+        if (!is_array($up)) {
+            continue;
+        }
+        // SC a volte manda name/tmp_name come array
+        $name = $up['name'];
+        $tmp  = $up['tmp_name'];
+        $err  = isset($up['error']) ? $up['error'] : UPLOAD_ERR_NO_FILE;
+        if (is_array($name)) {
+            $name = reset($name);
+        }
+        if (is_array($tmp)) {
+            $tmp = reset($tmp);
+        }
+        if (is_array($err)) {
+            $err = (int)reset($err);
+        } else {
+            $err = (int)$err;
+        }
+        if ($name === '' || $tmp === '' || $err !== UPLOAD_ERR_OK) {
+            continue;
+        }
+        if (!is_uploaded_file($tmp) && !is_readable($tmp)) {
+            continue;
+        }
+        $upload = array('name' => (string)$name, 'tmp_name' => (string)$tmp);
+        $uploadKey = (string)$key;
+        break;
+    }
+}
+
+if ($upload !== null) {
+    if (empty($dirList)) {
+        sc_error_message('Cartella documenti non configurata (contratti_base_dir / Documents Path).');
+        return;
+    }
+    $newName = $wizUniqueName($docId, $upload['name']);
+    $bin = @file_get_contents($upload['tmp_name']);
+    if ($bin === false || $bin === '') {
+        sc_error_message('Upload non leggibile.');
+        return;
+    }
+    $savedPath = $saveBinToDirs($bin, $newName);
+    if ($savedPath === '') {
+        sc_error_message('Impossibile salvare il nuovo file nella cartella documenti.');
+        return;
+    }
+    {file} = $newName;
+    if ($uploadKey !== '' && isset($_FILES[$uploadKey])) {
+        unset($_FILES[$uploadKey]);
+    }
+    $markReplaced($docId, $newName, $savedPath);
+    if (function_exists('sc_log_add')) {
+        sc_log_add('WIZ_DOCS', "onBeforeUpdate replace FILES doc=$docId → $newName path=$savedPath");
+    }
+    return;
+}
+
+// --- B) SC ha gia' messo un path/tmp in {file} (ajax upload), diverso dal DB ---
+$fileDb = '';
+if ($docId > 0) {
+    sc_lookup(rsWizUpOld, "
+        SELECT COALESCE(file, '') FROM documenti WHERE id = $docId LIMIT 1
+    ", 'pigliacelli');
+    $fileDb = !empty({rsWizUpOld[0][0]})
+        ? basename(str_replace('\\', '/', trim((string){rsWizUpOld[0][0]})))
+        : '';
+}
+
+$fieldNorm = str_replace('\\', '/', $fileField);
+$fieldBase = $fieldNorm !== '' ? basename($fieldNorm) : '';
+$looksLikeTmp = (
+    $fieldNorm !== ''
+    && (
+        strpos($fieldBase, 'sc_') === 0
+        || strpos($fieldNorm, '/tmp') !== false
+        || strpos($fieldNorm, '\\tmp') !== false
+        || strpos($fieldNorm, '/') !== false
+        || strpos($fieldNorm, '\\') !== false
+    )
+);
+$isNewVsDb = ($fieldBase !== '' && $fileDb !== '' && strcasecmp($fieldBase, $fileDb) !== 0);
+
+if ($fileField !== '' && ($looksLikeTmp || $isNewVsDb)) {
+    $src = $fieldNorm;
+    if ($src !== '' && $src[0] !== '/' && !preg_match('#^[A-Za-z]:/#', $src)) {
+        // relative: prova sotto path doc SC / tmp comuni
+        $tried = array();
+        foreach ($dirList as $d) {
+            $tried[] = rtrim($d, '/') . '/' . $fieldBase;
+            $tried[] = rtrim($d, '/') . '/../tmp/' . $fieldBase;
+        }
+        if (!empty($_SERVER['DOCUMENT_ROOT'])) {
+            $tried[] = rtrim(str_replace('\\', '/', (string)$_SERVER['DOCUMENT_ROOT']), '/')
+                . '/scriptcase/tmp/' . $fieldBase;
+        }
+        foreach ($tried as $cand) {
+            if (is_readable($cand)) {
+                $src = $cand;
+                break;
+            }
+        }
+    }
+
+    if (is_readable($src) && !is_dir($src)) {
+        if (empty($dirList)) {
+            sc_error_message('Cartella documenti non configurata (contratti_base_dir / Documents Path).');
+            return;
+        }
+        $newName = $wizUniqueName($docId, $fieldBase);
+        $bin = @file_get_contents($src);
+        if ($bin !== false && $bin !== '') {
+            $savedPath = $saveBinToDirs($bin, $newName);
+            if ($savedPath !== '') {
+                {file} = $newName;
+                $markReplaced($docId, $newName, $savedPath);
+                if (function_exists('sc_log_add')) {
+                    sc_log_add(
+                        'WIZ_DOCS',
+                        "onBeforeUpdate replace TMP/FIELD doc=$docId old=$fileDb → $newName src=$src"
+                    );
+                }
+                return;
+            }
+        }
+    }
+
+    // Campo diverso dal DB ma file fisico non trovato: forza almeno il basename nuovo
+    if ($isNewVsDb && $fieldBase !== '') {
+        {file} = $fieldBase;
+        $markReplaced($docId, $fieldBase, '');
+        if (function_exists('sc_log_add')) {
+            sc_log_add(
+                'WIZ_DOCS',
+                "onBeforeUpdate rename-only doc=$docId old=$fileDb → $fieldBase (src non leggibile: $fieldNorm)"
+            );
+        }
+        return;
+    }
+}
+
+// Nessun nuovo upload: normalizza path → basename
+if ($fileField !== '') {
+    $bn = basename(str_replace('\\', '/', $fileField));
+    if ($bn !== '' && $bn !== $fileField) {
+        {file} = $bn;
+    }
+}
+
+if (function_exists('sc_log_add')) {
+    sc_log_add('WIZ_DOCS', "onBeforeUpdate NO-UPLOAD doc=$docId file=[$fileField] db=[$fileDb]");
+}

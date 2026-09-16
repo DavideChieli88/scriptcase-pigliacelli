@@ -16,7 +16,7 @@
 
 $WIZ_APP = array(
     1 => 'form_subvettori_starting_wizard', // anagrafica
-    2 => 'form_subvettori_autisti',
+    2 => 'form_subvettori_autisti_wizard',  // onboarding (NON form_subvettori_autisti: quella chiede subvettoreContrattoId)
     3 => 'form_subvettori_mezzi',
     4 => 'form_documenti_wizard',
     5 => 'grid_documenti_to_sign_wizard',
@@ -76,15 +76,17 @@ sc_lookup(rsWizLand, "
         COALESCE(s.ragione_sociale, '') AS ragione_sociale,
         COALESCE(s.id, 0) AS subvettore_id
     FROM sec_users su
-    INNER JOIN sec_users_groups sug ON sug.login = su.login
+    INNER JOIN sec_users_groups sug
+        ON sug.login = su.login
+       AND sug.group_id = 2
     LEFT JOIN subvettori s ON s.id = su.subvettore_id
     WHERE su.login = '$loginSql'
     LIMIT 1
 ", 'pigliacelli');
 
 $groupId = !empty({rsWizLand[0][0]}) ? (int){rsWizLand[0][0]} : 0;
-$wizComplete = !empty({rsWizLand[0][1]}) ? (int){rsWizLand[0][1]} : 0;
-$wizStep = !empty({rsWizLand[0][2]}) ? (int){rsWizLand[0][2]} : 1;
+$wizComplete = isset({rsWizLand[0][1]}) ? (int){rsWizLand[0][1]} : 0;
+$wizStep = isset({rsWizLand[0][2]}) ? (int){rsWizLand[0][2]} : 1;
 $ragione = !empty({rsWizLand[0][3]}) ? trim((string){rsWizLand[0][3]}) : '';
 $subId = !empty({rsWizLand[0][4]}) ? (int){rsWizLand[0][4]} : 0;
 
@@ -92,7 +94,7 @@ $subId = !empty({rsWizLand[0][4]}) ? (int){rsWizLand[0][4]} : 0;
 if ($groupId !== 2) {
     sc_redir('app_menu');
 }
-if ($wizComplete === 1 || $wizStep === 0) {
+if ($wizComplete === 1) {
     sc_redir('app_menu');
 }
 if ($subId <= 0) {
@@ -100,21 +102,22 @@ if ($subId <= 0) {
     sc_redir('app_menu');
 }
 
+// wizard_step=0 con complete=0 non è "finito": riparti da 1 (evita bounce menu↔blank)
 if ($wizStep < 1 || $wizStep > 5) {
     $wizStep = 1;
 }
 
-$nextApp = isset($WIZ_APP[$wizStep]) ? $WIZ_APP[$wizStep] : $WIZ_APP[1];
 $nextLabel = isset($WIZ_LABEL[$wizStep]) ? $WIZ_LABEL[$wizStep] : $WIZ_LABEL[1];
 
-// Pulsante: ?go=1 → redir allo step incompleto (sc_exec non serve qui)
+[subvettoreId] = $subId;
+
+// ?go=N → apri quello step (solo se gia' raggiunto: N <= wizard_step)
 $go = isset($_GET['go']) ? (int)$_GET['go'] : 0;
-if ($go === 1) {
-    sc_redir($nextApp);
+if ($go >= 1 && $go <= 5 && $go <= $wizStep && isset($WIZ_APP[$go])) {
+    sc_redir($WIZ_APP[$go], subvettoreId=[subvettoreId]);
 }
 
 $logoSrc = wiz_landing_logo_src();
-$selfUrl = 'blank_wizard_landing'; // nome app Scriptcase; il link usa sc_redir via ?go=1 sulla stessa blank
 
 header('Content-Type: text/html; charset=UTF-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -133,12 +136,20 @@ echo '<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">'
     . 'h1{margin:12px 0 8px;font-size:24px;line-height:1.3;color:#1a3a5c;text-align:center;}'
     . '.lead{margin:0 0 20px;text-align:center;color:#4a5568;}'
     . '.steps{margin:20px 0;padding:0;list-style:none;}'
-    . '.steps li{display:flex;align-items:center;gap:12px;padding:10px 12px;margin:0 0 8px;'
-    . 'border:1px solid #e2e8f0;border-radius:8px;background:#fafbfc;font-size:15px;}'
-    . '.steps li.done{opacity:.55;}'
+    . '.steps li{display:flex;align-items:center;gap:12px;padding:0;margin:0 0 8px;'
+    . 'border:1px solid #e2e8f0;border-radius:8px;background:#fafbfc;font-size:15px;overflow:hidden;}'
+    . '.steps li.locked{opacity:.45;}'
     . '.steps li.current{border-color:#1a3a5c;background:#f0f5fa;font-weight:bold;}'
-    . '.num{flex:0 0 28px;height:28px;border-radius:50%;background:#1a3a5c;color:#fff;'
+    . '.steps li.done{border-color:#c5d9c7;background:#f6faf6;}'
+    . '.steps a.step-link{display:flex;align-items:center;gap:12px;padding:10px 12px;width:100%;'
+    . 'color:inherit;text-decoration:none;box-sizing:border-box;}'
+    . '.steps a.step-link:hover{background:#e8eef5;}'
+    . '.steps li.done a.step-link:hover{background:#e8f3ea;}'
+    . '.steps .step-static{display:flex;align-items:center;gap:12px;padding:10px 12px;width:100%;'
+    . 'box-sizing:border-box;cursor:default;}'
+    . '.num{flex:0 0 28px;height:28px;border-radius:50%;background:#94a3b8;color:#fff;'
     . 'display:flex;align-items:center;justify-content:center;font-size:13px;}'
+    . '.steps li.current .num{background:#1a3a5c;}'
     . '.steps li.done .num{background:#68a06e;}'
     . '.note{margin:16px 0 24px;padding:14px 16px;background:#f7f9fb;border:1px solid #e2e8f0;'
     . 'border-radius:8px;font-size:14px;color:#4a5568;}'
@@ -164,33 +175,37 @@ if ($ragione !== '') {
 echo '<p>Per completare l\'accreditamento le verrà chiesto di compilare i dati anagrafici, '
     . 'inserire almeno un autista e un mezzo, caricare i documenti richiesti e firmare '
     . 'digitalmente i documenti predisposti da Pigliacelli.</p>'
-    . '<p>Può interrompere e riprendere in qualsiasi momento: al prossimo accesso tornerà '
-    . 'su questa pagina e potrà continuare dallo step ancora da completare.</p>'
+    . '<p>Può interrompere e riprendere in qualsiasi momento. Gli step già raggiunti restano '
+    . 'modificabili: clicchi sullo step per aprirlo e aggiornare i dati.</p>'
     . '<ul class="steps">';
 
 for ($i = 1; $i <= 5; $i++) {
-    $cls = '';
-    if ($i < $wizStep) {
-        $cls = 'done';
-    } elseif ($i === $wizStep) {
-        $cls = 'current';
-    }
+    $unlocked = ($i <= $wizStep);
+    $cls = 'locked';
     $suffix = '';
     if ($i < $wizStep) {
-        $suffix = ' — completato';
+        $cls = 'done';
+        $suffix = ' — completato (modificabile)';
     } elseif ($i === $wizStep) {
+        $cls = 'current';
         $suffix = ' — da completare';
     }
-    echo '<li class="' . $cls . '"><span class="num">' . $i . '</span>'
-        . '<span>' . wiz_landing_h($WIZ_LABEL[$i] . $suffix) . '</span></li>';
+    $label = wiz_landing_h($WIZ_LABEL[$i] . $suffix);
+    $inner = '<span class="num">' . $i . '</span><span>' . $label . '</span>';
+    echo '<li class="' . $cls . '">';
+    if ($unlocked) {
+        echo '<a class="step-link" href="?go=' . (int)$i . '">' . $inner . '</a>';
+    } else {
+        echo '<span class="step-static">' . $inner . '</span>';
+    }
+    echo '</li>';
 }
 
 echo '</ul>'
     . '<div class="note">Prossimo passo: <strong>' . wiz_landing_h($nextLabel) . '</strong></div>'
     . '<div class="actions">'
-    // Link relativo Scriptcase: stessa blank con go=1
-    . '<a class="btn" href="?go=1">Continua</a>'
-    . '<p class="hint">Step ' . (int)$wizStep . ' di 5</p>'
+    . '<a class="btn" href="?go=' . (int)$wizStep . '">Continua</a>'
+    . '<p class="hint">Step ' . (int)$wizStep . ' di 5 — clicchi uno step precedente per modificarlo</p>'
     . '</div>'
     . '</div></div></div></body></html>';
 

@@ -1,45 +1,164 @@
 /**
  * grid_documenti_to_sign_wizard → Action Bar sign_doc_btn (Ajax)
  *
- * Avvia EasyGN sul documento verde della riga corrente.
+ * Campi SC: {d.id}, {d.subvettore_id}, {d.tipo_documento_id}, {d.file}, {td_nome}
+ *
+ * Al primo atterraggio dallo step 4 i globali SC ([documentoId], a volte
+ * [subvettoreId]) restano sporchi: sc_redir con macro li riusa e EasyGN
+ * vede un documento sbagliato. Fix: sub dal login, doc da riga/DB,
+ * redirect con URL esplicito (niente macro sc_redir).
  */
 
-$documentoId = isset({id}) ? (int){id} : 0;
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    @session_start();
+}
+
+// 1) Subvettore = login (fonte di verità), non il globale ereditato dallo step 4
 $subId = 0;
-if (isset([subvettoreId]) && (int)[subvettoreId] > 0) {
-    $subId = (int)[subvettoreId];
+$usrLogin = trim((string)[usr_login]);
+if ($usrLogin !== '' && strcasecmp($usrLogin, 'Guest') !== 0) {
+    $loginSql = str_replace("'", "''", $usrLogin);
+    sc_lookup(rsSignSubAuth, "
+        SELECT COALESCE(su.subvettore_id, 0)
+        FROM sec_users su
+        INNER JOIN sec_users_groups sug
+            ON sug.login = su.login
+           AND sug.group_id = 2
+        WHERE su.login = '$loginSql'
+        LIMIT 1
+    ", 'pigliacelli');
+    $subId = !empty({rsSignSubAuth[0][0]}) ? (int){rsSignSubAuth[0][0]} : 0;
+}
+if ($subId <= 0 && !empty($_SESSION['wizard_subvettore_id'])) {
+    $subId = (int)$_SESSION['wizard_subvettore_id'];
+}
+if ($subId <= 0 && isset({d.subvettore_id}) && (int){d.subvettore_id} > 0) {
+    $subId = (int){d.subvettore_id};
+}
+
+$documentoId = 0;
+if (isset({d.id}) && (int){d.id} > 0) {
+    $documentoId = (int){d.id};
+}
+
+$tipoDocumentoId = 0;
+if (isset({d.tipo_documento_id}) && (int){d.tipo_documento_id} > 0) {
+    $tipoDocumentoId = (int){d.tipo_documento_id};
+}
+
+if ($documentoId > 0 && $subId > 0) {
+    sc_lookup(rsSignChk, "
+        SELECT d.id
+        FROM documenti d
+        INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+        WHERE d.id = $documentoId
+          AND d.subvettore_id = $subId
+          AND COALESCE(td.is_readonly, 0) = 1
+          AND (d.firmato_il IS NULL OR d.firmato_il = '0000-00-00 00:00:00')
+        LIMIT 1
+    ", 'pigliacelli');
+    if (empty({rsSignChk[0][0]})) {
+        $documentoId = 0;
+    }
+} elseif ($documentoId > 0) {
+    sc_lookup(rsSignChk2, "
+        SELECT d.id, d.subvettore_id
+        FROM documenti d
+        INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+        WHERE d.id = $documentoId
+          AND COALESCE(td.is_readonly, 0) = 1
+          AND (d.firmato_il IS NULL OR d.firmato_il = '0000-00-00 00:00:00')
+        LIMIT 1
+    ", 'pigliacelli');
+    if (empty({rsSignChk2[0][0]})) {
+        $documentoId = 0;
+    } else {
+        $documentoId = (int){rsSignChk2[0][0]};
+        if ($subId <= 0) {
+            $subId = (int){rsSignChk2[0][1]};
+        }
+    }
+}
+
+if ($documentoId <= 0 && $subId > 0 && $tipoDocumentoId > 0) {
+    sc_lookup(rsSignByTipo, "
+        SELECT d.id
+        FROM documenti d
+        INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+        WHERE d.subvettore_id = $subId
+          AND d.tipo_documento_id = $tipoDocumentoId
+          AND COALESCE(td.is_readonly, 0) = 1
+          AND (d.subvettore_autista_id IS NULL OR d.subvettore_autista_id = 0)
+          AND (d.subvettore_mezzo_id IS NULL OR d.subvettore_mezzo_id = 0)
+          AND (d.firmato_il IS NULL OR d.firmato_il = '0000-00-00 00:00:00')
+        ORDER BY d.id
+        LIMIT 1
+    ", 'pigliacelli');
+    if (!empty({rsSignByTipo[0][0]})) {
+        $documentoId = (int){rsSignByTipo[0][0]};
+    }
 }
 
 if ($documentoId <= 0) {
-    sc_error_message('Documento non valido.');
+    sc_ajax_message('Documento non identificato. Controllare campo {d.id} sulla griglia.');
+    sc_error_exit();
+}
+if ($subId <= 0) {
+    sc_ajax_message('Subvettore non identificato. Ricaricare lo step 5 e riprovare.');
     sc_error_exit();
 }
 
 sc_lookup(rsSignOk, "
-    SELECT d.id, d.subvettore_id
+    SELECT
+        d.id,
+        d.subvettore_id,
+        COALESCE(d.file, ''),
+        COALESCE(td.nome, '')
     FROM documenti d
     INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
     WHERE d.id = $documentoId
+      AND d.subvettore_id = $subId
       AND COALESCE(td.is_readonly, 0) = 1
-      AND d.firmato_il IS NULL
+      AND (d.firmato_il IS NULL OR d.firmato_il = '0000-00-00 00:00:00')
     LIMIT 1
 ", 'pigliacelli');
 
 if (empty({rsSignOk[0][0]})) {
-    sc_error_message('Documento non firmabile (già firmato o non verde).');
+    sc_ajax_message('Documento non firmabile (gia firmato, non verde, o non del subvettore corrente).');
     sc_error_exit();
 }
 
 $docSub = (int){rsSignOk[0][1]};
-if ($subId > 0 && $docSub !== $subId) {
-    sc_error_message('Documento non appartenente al subvettore corrente.');
-    sc_error_exit();
-}
-if ($subId <= 0) {
-    $subId = $docSub;
-}
+$tipoNome = trim((string){rsSignOk[0][3]});
+$subId = $docSub > 0 ? $docSub : $subId;
 
 [documentoId] = $documentoId;
 [subvettoreId] = $subId;
+$_SESSION['documentoId'] = $documentoId;
+$_SESSION['wizard_subvettore_id'] = $subId;
+$_SESSION['pdf_next'] = 'sign';
+if (!isset($_SESSION['docs_pdf_force_regen']) || !is_array($_SESSION['docs_pdf_force_regen'])) {
+    $_SESSION['docs_pdf_force_regen'] = array();
+}
+$_SESSION['docs_pdf_force_regen'][$documentoId] = time();
 
-sc_redir('easygn_start_wf_documento', 'documentoId=' . $documentoId . '&subvettoreId=' . $subId);
+if (function_exists('sc_log_add')) {
+    sc_log_add(
+        'WIZ_FIRMA',
+        "btn_firma doc=$documentoId sub=$subId tipo=[$tipoNome] open generate_doc_to_sign"
+    );
+}
+
+// URL esplicito: evita che sc_redir riusi globali sporchi al primo atterraggio
+$genUrl = '../generate_doc_to_sign/'
+    . '?documentoId=' . (int)$documentoId
+    . '&subvettoreId=' . (int)$subId
+    . '&next=sign'
+    . '&force=1'
+    . '&return_to=' . rawurlencode('grid_documenti_to_sign_wizard');
+
+if (function_exists('sc_ajax_javascript')) {
+    sc_ajax_javascript('window.open(' . json_encode($genUrl) . ', "_blank");');
+} else {
+    sc_redir('generate_doc_to_sign', documentoId=[documentoId];subvettoreId=[subvettoreId];return_to=grid_documenti_to_sign_wizard, "_blank");
+}

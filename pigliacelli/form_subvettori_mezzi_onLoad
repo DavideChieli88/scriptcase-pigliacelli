@@ -44,8 +44,7 @@ if ($subId > 0) {
     [subvettoreId] = $subId;
 }
 
-// Tasti wizard: ON in griglia, OFF in modale edit (stessa logica autisti).
-// Name da verificare in ScriptCase Buttons se diversi.
+// Tasti wizard — stessa regola autisti
 $op = '';
 if (isset($this->nmgp_opcao)) {
     $op = strtolower(trim((string)$this->nmgp_opcao));
@@ -57,12 +56,53 @@ if (isset($this->nmgp_opcao)) {
 
 sc_log_add('WIZ_BTN', 'mezzi onLoad op=[' . $op . ']');
 
-$isModal = ($op === 'igual' || $op === '' || $op === 'busca');
+$isInline = false;
+$codApl = (isset($this->Ini->nm_cod_apl) ? (string)$this->Ini->nm_cod_apl : '');
+$checks = array(
+    $codApl,
+    (string)__FILE__,
+    isset($_SERVER['PHP_SELF']) ? (string)$_SERVER['PHP_SELF'] : '',
+    isset($_SERVER['SCRIPT_NAME']) ? (string)$_SERVER['SCRIPT_NAME'] : '',
+    isset($_SERVER['REQUEST_URI']) ? (string)$_SERVER['REQUEST_URI'] : '',
+    isset($_SERVER['SCRIPT_FILENAME']) ? (string)$_SERVER['SCRIPT_FILENAME'] : '',
+);
+foreach ($checks as $p) {
+    $p = str_replace('\\', '/', strtolower($p));
+    if ($p !== '' && (
+        substr($p, -7) === '_inline'
+        || strpos($p, '_inline/') !== false
+        || strpos($p, '_inline.') !== false
+        || strpos($p, '_inline_') !== false
+    )) {
+        $isInline = true;
+        break;
+    }
+}
 
-if ($isModal) {
+if ($isInline) {
     sc_btn_display('next_step_btn_mezzi', 'off');
     sc_btn_display('back_step_btn_autisti', 'off');
+    sc_btn_display('update', 'on');
+    sc_btn_display('ok', 'on');
+    sc_btn_display('save', 'on');
+    sc_btn_display('insert', 'on');
+    sc_btn_display('alterar', 'on');
+    sc_btn_display('incluir', 'on');
+    sc_btn_display('cancel', 'on');
+    sc_btn_display('annulla', 'on');
+    sc_btn_display('exit', 'on');
+    sc_btn_display('sair', 'on');
+    sc_btn_display('back', 'on');
 } else {
     sc_btn_display('next_step_btn_mezzi', 'on');
     sc_btn_display('back_step_btn_autisti', 'on');
 }
+
+sc_log_add(
+    'WIZ_BTN',
+    'mezzi onLoad inline=' . ($isInline ? '1' : '0')
+    . ' op=[' . $op . ']'
+    . ' cod=[' . $codApl . ']'
+    . ' self=[' . (isset($_SERVER['PHP_SELF']) ? $_SERVER['PHP_SELF'] : '') . ']'
+    . ' id=' . (isset({id}) ? (int){id} : 0)
+);

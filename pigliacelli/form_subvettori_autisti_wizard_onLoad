@@ -29,20 +29,60 @@ if (isset($this->nmgp_opcao)) {
 
 sc_log_add('WIZ_BTN', 'autisti onLoad op=[' . $op . ']');
 
-$isModal = in_array($op, array(
-    'igual', '', 'busca',
-    'alterar', 'incluir', 'novo',
-    'edit', 'update', 'insert',
-    'reload', 'refresh'
-), true);
+// Modale SOLO se path/nome app contengono davvero "_inline".
+// NON usare Embutida_*: sulla main (op=novo) sono spesso true → falso positivo
+// e spariscono Avanti/Indietro sulla griglia dietro la modale.
+$isInline = false;
+$codApl = (isset($this->Ini->nm_cod_apl) ? (string)$this->Ini->nm_cod_apl : '');
+$checks = array(
+    $codApl,
+    (string)__FILE__,
+    isset($_SERVER['PHP_SELF']) ? (string)$_SERVER['PHP_SELF'] : '',
+    isset($_SERVER['SCRIPT_NAME']) ? (string)$_SERVER['SCRIPT_NAME'] : '',
+    isset($_SERVER['REQUEST_URI']) ? (string)$_SERVER['REQUEST_URI'] : '',
+    isset($_SERVER['SCRIPT_FILENAME']) ? (string)$_SERVER['SCRIPT_FILENAME'] : '',
+);
+foreach ($checks as $p) {
+    $p = str_replace('\\', '/', strtolower($p));
+    if ($p !== '' && (
+        substr($p, -7) === '_inline'
+        || strpos($p, '_inline/') !== false
+        || strpos($p, '_inline.') !== false
+        || strpos($p, '_inline_') !== false
+    )) {
+        $isInline = true;
+        break;
+    }
+}
 
-if ($isModal) {
+if ($isInline) {
     sc_btn_display('next_step_btn_mezzi', 'off');
     sc_btn_display('back_step_btn_autisti', 'off');
+    sc_btn_display('update', 'on');
+    sc_btn_display('ok', 'on');
+    sc_btn_display('save', 'on');
+    sc_btn_display('insert', 'on');
+    sc_btn_display('alterar', 'on');
+    sc_btn_display('incluir', 'on');
+    sc_btn_display('cancel', 'on');
+    sc_btn_display('annulla', 'on');
+    sc_btn_display('exit', 'on');
+    sc_btn_display('sair', 'on');
+    sc_btn_display('back', 'on');
 } else {
+    // App principale = editable grid: SEMPRE Avanti/Indietro
     sc_btn_display('next_step_btn_mezzi', 'on');
     sc_btn_display('back_step_btn_autisti', 'on');
 }
+
+sc_log_add(
+    'WIZ_BTN',
+    'autisti onLoad inline=' . ($isInline ? '1' : '0')
+    . ' op=[' . $op . ']'
+    . ' cod=[' . $codApl . ']'
+    . ' self=[' . (isset($_SERVER['PHP_SELF']) ? $_SERVER['PHP_SELF'] : '') . ']'
+    . ' id=' . (isset({id}) ? (int){id} : 0)
+);
 
 // --- Precarica documenti (necessario in modale *_inline dove manca onLoadRecord) ---
 $autistaId = isset({id}) ? (int){id} : 0;

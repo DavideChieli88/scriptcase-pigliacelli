@@ -1,0 +1,9 @@
+/**
+ * form_subvettori_mezzi → onBeforeUpdate
+ *
+ * Solo COMMIT: chiude eventuale tx lasciata da sc_lookup in onValidate/onLoad
+ * prima che SC apra la sua (PDO → "There is already an active transaction").
+ * Niente altre query qui.
+ */
+
+sc_exec_sql('COMMIT');

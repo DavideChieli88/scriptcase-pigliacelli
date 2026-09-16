@@ -1,0 +1,117 @@
+/**
+ * Scriptcase blank: diag_doc_path → onExecute
+ *
+ * Mostra dove SC cerca i Document e se i PDF verdi esistono.
+ * Aprire DOPO aver visitato almeno una volta il form/grid documenti
+ * (così in sessione c'e' glo_nm_path_doc).
+ *
+ * Uso: ?documentoId=2153  oppure senza param (usa i 4 di test).
+ */
+
+header('Content-Type: text/plain; charset=utf-8');
+
+$ids = array();
+if (isset($_GET['documentoId']) && (int)$_GET['documentoId'] > 0) {
+    $ids[] = (int)$_GET['documentoId'];
+} else {
+    $ids = array(2153, 2154, 2155, 2156);
+}
+
+echo "=== diag_doc_path ===\n\n";
+
+echo "DOCUMENT_ROOT=" . (isset($_SERVER['DOCUMENT_ROOT']) ? (string)$_SERVER['DOCUMENT_ROOT'] : '') . "\n";
+
+$pathCandidates = array();
+if (!empty($_SESSION['scriptcase']) && is_array($_SESSION['scriptcase'])) {
+    foreach ($_SESSION['scriptcase'] as $appName => $cfg) {
+        if (!is_array($cfg)) {
+            continue;
+        }
+        if (!empty($cfg['glo_nm_path_doc'])) {
+            $pathCandidates[$appName] = (string)$cfg['glo_nm_path_doc'];
+        }
+    }
+}
+
+if (empty($pathCandidates)) {
+    echo "glo_nm_path_doc: NESSUNO in sessione.\n";
+    echo "Apri prima form_documenti / grid documenti, poi rilancia questo blank.\n\n";
+} else {
+    echo "glo_nm_path_doc trovati in sessione:\n";
+    foreach ($pathCandidates as $app => $p) {
+        echo "  [$app] = $p\n";
+        echo "    is_dir=" . (is_dir($p) ? '1' : '0') . "\n";
+    }
+    echo "\n";
+}
+
+sc_lookup(rsDiagBase, "
+    SELECT set_value FROM sec_settings WHERE set_name = 'contratti_base_dir' LIMIT 1
+", 'pigliacelli');
+$baseRaw = !empty({rsDiagBase[0][0]}) ? trim((string){rsDiagBase[0][0]}) : '';
+echo "contratti_base_dir(setting)=$baseRaw\n";
+
+$resolvedBase = '';
+if ($baseRaw !== '' && !empty($_SERVER['DOCUMENT_ROOT'])) {
+    $cand = rtrim((string)$_SERVER['DOCUMENT_ROOT'], '/\\')
+        . '/' . trim(str_replace('\\', '/', $baseRaw), '/');
+    $rp = @realpath($cand);
+    $resolvedBase = $rp !== false ? $rp : $cand;
+}
+echo "contratti_base_dir(resolved)=$resolvedBase"
+    . " is_dir=" . ($resolvedBase !== '' && is_dir($resolvedBase) ? '1' : '0') . "\n\n";
+
+$idList = implode(',', array_map('intval', $ids));
+sc_lookup(rsDiagDocs, "
+    SELECT d.id, COALESCE(d.file, ''), COALESCE(td.nome, '')
+    FROM documenti d
+    LEFT JOIN tipi_documento td ON td.id = d.tipo_documento_id
+    WHERE d.id IN ($idList)
+    ORDER BY d.id
+", 'pigliacelli');
+
+if (empty({rsDiagDocs[0][0]})) {
+    echo "Nessun documento trovato per id: $idList\n";
+    exit;
+}
+
+foreach ({rsDiagDocs} as $row) {
+    $id = (int)$row[0];
+    $bn = trim((string)$row[1]);
+    $tipo = trim((string)$row[2]);
+    echo "---- documento id=$id tipo=$tipo\n";
+    echo "DB file=[$bn]\n";
+    if ($bn === '') {
+        echo "  (vuoto in DB)\n\n";
+        continue;
+    }
+    $bnOnly = basename(str_replace('\\', '/', $bn));
+
+    $tries = array();
+    foreach ($pathCandidates as $app => $p) {
+        $p = rtrim(str_replace('\\', '/', $p), '/');
+        $tries[] = array("SC[$app]/doc", $p . '/' . $bnOnly);
+        $tries[] = array("SC[$app]/documenti", $p . '/documenti/' . $bnOnly);
+    }
+    if ($resolvedBase !== '') {
+        $rb = rtrim(str_replace('\\', '/', $resolvedBase), '/');
+        $tries[] = array('contratti_base', $rb . '/' . $bnOnly);
+        $tries[] = array('contratti_base/documenti', $rb . '/documenti/' . $bnOnly);
+    }
+
+    $found = false;
+    foreach ($tries as $t) {
+        $ok = is_readable($t[1]);
+        echo "  " . ($ok ? 'OK ' : 'NO ') . $t[0] . " => " . $t[1] . "\n";
+        if ($ok) {
+            $found = true;
+        }
+    }
+    echo $found ? "  => TROVATO almeno in un path\n\n" : "  => NON TROVATO in nessun path\n\n";
+}
+
+echo "=== fine ===\n";
+echo "Se OK solo su contratti_base ma NO su SC[...]: Documents Path dell'app documenti\n";
+echo "non punta a _lib/file/doc del workspace. Allinealo in Application > Settings\n";
+echo "e ridistribuisci in Advanced.\n";
+exit;

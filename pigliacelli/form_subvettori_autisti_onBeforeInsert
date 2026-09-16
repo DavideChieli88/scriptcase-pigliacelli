@@ -1,7 +1,14 @@
 /**
- * form_subvettori_autisti onBeforeInsert
- * Detail wizard: subvettore_id dalla relazione master-detail; subvettore_contratto_id senza valore.
+ * form_subvettori_autisti / form_subvettori_autisti_wizard → onBeforeInsert
+ *
+ * Onboarding: solo subvettore_id obbligatorio.
+ * subvettore_contratto_id deve essere NULL (niente contratto ancora).
+ *
+ * NON usare {campo} = 'null' su campi numerici: in PHP/SC diventa (int)0
+ * e l'INSERT fallisce sulla FK verso subvettori_contratti.
  */
+
+sc_exec_sql('COMMIT');
 
 $subId = 0;
 if (isset({subvettore_id}) && (int){subvettore_id} > 0) {
@@ -12,9 +19,11 @@ if ($subId <= 0 && isset([subvettoreId]) && (int)[subvettoreId] > 0) {
 }
 
 if ($subId <= 0) {
-    sc_error_message("Subvettore non identificato.");
+    sc_error_message('Subvettore non identificato.');
     sc_error_exit();
 }
 
 {subvettore_id} = $subId;
+
+// Convenzione ScriptCase: stringa 'null' → NULL in SQL (non 0).
 {subvettore_contratto_id} = 'null';

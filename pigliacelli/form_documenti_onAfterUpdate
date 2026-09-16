@@ -311,6 +311,22 @@ $fileNow  = trim((string){file});
 $statoDoc = (int){stato_documento_id};
 $docSubId = (int){subvettore_id};
 
+// Fallback: in onAfterUpdate {file} spesso non e' valorizzato → rileggi dal DB
+if ($fileNow === '' && (int)$docId > 0) {
+    sc_lookup(rsFdFileDb, "
+        SELECT COALESCE(file, ''), COALESCE(stato_documento_id, 0)
+        FROM documenti
+        WHERE id = " . (int)$docId . "
+        LIMIT 1
+    ", 'pigliacelli');
+    if (!empty({rsFdFileDb[0][0]})) {
+        $fileNow = trim((string){rsFdFileDb[0][0]});
+    }
+    if ($statoDoc <= 0 && isset({rsFdFileDb[0][1]})) {
+        $statoDoc = (int){rsFdFileDb[0][1]};
+    }
+}
+
 // 1 = in attesa, 2 = caricato, 3 = da revisionare
 $statiAttesaCaricamento = array(1, 3);
 

@@ -5,23 +5,22 @@
  * del subvettore loggato. Crea gli slot mancanti, blocca accesso se non in step 5.
  *
  * SETUP GRID (ScriptCase IDE):
- * - Table: documenti (join tipi_documento td ON td.id = documenti.tipo_documento_id)
- * - WHERE fisso (o macro):
- *     COALESCE(td.is_readonly,0)=1
- *     AND (documenti.subvettore_autista_id IS NULL OR documenti.subvettore_autista_id=0)
- *     AND (documenti.subvettore_mezzo_id IS NULL OR documenti.subvettore_mezzo_id=0)
- *     AND documenti.subvettore_id = [subvettoreId]
- * - Colonne utili: td.nome, documenti.file, documenti.firmato_il,
- *   virtuale stato_firma_label (HTML), flag is_dichiarazioni (nascosto)
- * - Action Bar (Ajax/Link):
- *     open_pdf_btn, sign_doc_btn, generate_pdf_btn
- * - Security: stesso gruppo del menu subvettore (group 2)
+ * - SQL esempio:
+ *     SELECT d.id, d.subvettore_id, d.tipo_documento_id, d.file, d.firmato_il,
+ *            td.nome AS td_nome
+ *     FROM documenti d
+ *     INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+ *     WHERE td.is_readonly = 1 AND d.subvettore_id = [subvettoreId]
+ * - Campi SC: {d.id}, {d.tipo_documento_id}, {d.file}, {d.firmato_il},
+ *   {d.subvettore_id}, {td_nome}  (punto sull'alias; td_nome perché ha AS)
+ * - Action Bar Ajax: open_pdf_btn, sign_doc_btn
+ * - Toolbar: send_for_activation
+ * - Security: group 2
  *
- * Helpers: incollare anche wizard_documenti_verdi_helpers in Library
- * oppure lasciare le function_exists sotto.
+ * onScriptInit: auth step 5, crea slot documenti, sync firmato_il da EasyGN.
+ * Mail operatori: solo nel pulsante "Invia per attivazione".
  */
 
-// --- helpers minimi (se non in Library) ---
 if (!function_exists('wiz_verdi_sql_quote')) {
     function wiz_verdi_sql_quote($s)
     {
@@ -82,53 +81,9 @@ if (!function_exists('wiz_verdi_ensure_documenti')) {
               AND (d.subvettore_autista_id IS NULL OR d.subvettore_autista_id = 0)
               AND (d.subvettore_mezzo_id IS NULL OR d.subvettore_mezzo_id = 0)
               AND (d.file IS NULL OR TRIM(d.file) = '')
-              AND d.firmato_il IS NULL
               AND LOWER(COALESCE(td.nome, '')) NOT LIKE '%dichiaraz%'
         ", 'pigliacelli');
         return 1;
-    }
-}
-if (!function_exists('wiz_verdi_tutti_firmati')) {
-    function wiz_verdi_tutti_firmati($subvettore_id)
-    {
-        $subvettore_id = (int)$subvettore_id;
-        if ($subvettore_id <= 0) {
-            return false;
-        }
-        sc_lookup(rsWizVerdiCnt, "
-            SELECT COUNT(*) AS tot,
-                   SUM(CASE WHEN d.firmato_il IS NOT NULL THEN 1 ELSE 0 END) AS firmati
-            FROM documenti d
-            INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
-            WHERE d.subvettore_id = $subvettore_id
-              AND COALESCE(td.is_readonly, 0) = 1
-              AND (d.subvettore_autista_id IS NULL OR d.subvettore_autista_id = 0)
-              AND (d.subvettore_mezzo_id IS NULL OR d.subvettore_mezzo_id = 0)
-        ", 'pigliacelli');
-        $tot = !empty({rsWizVerdiCnt[0][0]}) ? (int){rsWizVerdiCnt[0][0]} : 0;
-        $firmati = !empty({rsWizVerdiCnt[0][1]}) ? (int){rsWizVerdiCnt[0][1]} : 0;
-        return $tot > 0 && $firmati >= $tot;
-    }
-}
-if (!function_exists('wiz_verdi_complete_wizard_and_notify')) {
-    function wiz_verdi_complete_wizard_and_notify($subvettore_id)
-    {
-        $subvettore_id = (int)$subvettore_id;
-        if ($subvettore_id <= 0 || !wiz_verdi_tutti_firmati($subvettore_id)) {
-            return false;
-        }
-        sc_lookup(rsWizVerdiDone2, "
-            SELECT COALESCE(wizard_complete, 0)
-            FROM subvettori WHERE id = $subvettore_id LIMIT 1
-        ", 'pigliacelli');
-        if (!empty({rsWizVerdiDone2[0][0]}) && (int){rsWizVerdiDone2[0][0]} === 1) {
-            return true;
-        }
-        sc_exec_sql("
-            UPDATE subvettori SET wizard_complete = 1, wizard_step = 0
-            WHERE id = $subvettore_id AND wizard_complete = 0
-        ", 'pigliacelli');
-        return true;
     }
 }
 
@@ -146,15 +101,17 @@ sc_lookup(rsGridFirmAuth, "
         COALESCE(s.id, 0),
         COALESCE(s.login_subvettore, '')
     FROM sec_users su
-    INNER JOIN sec_users_groups sug ON sug.login = su.login
+    INNER JOIN sec_users_groups sug
+        ON sug.login = su.login
+       AND sug.group_id = 2
     LEFT JOIN subvettori s ON s.id = su.subvettore_id
     WHERE su.login = '$loginSql'
     LIMIT 1
 ", 'pigliacelli');
 
 $groupId = !empty({rsGridFirmAuth[0][0]}) ? (int){rsGridFirmAuth[0][0]} : 0;
-$wizComplete = !empty({rsGridFirmAuth[0][1]}) ? (int){rsGridFirmAuth[0][1]} : 0;
-$wizStep = !empty({rsGridFirmAuth[0][2]}) ? (int){rsGridFirmAuth[0][2]} : 1;
+$wizComplete = isset({rsGridFirmAuth[0][1]}) ? (int){rsGridFirmAuth[0][1]} : 0;
+$wizStep = isset({rsGridFirmAuth[0][2]}) ? (int){rsGridFirmAuth[0][2]} : 1;
 $subId = !empty({rsGridFirmAuth[0][3]}) ? (int){rsGridFirmAuth[0][3]} : 0;
 $loginSub = !empty({rsGridFirmAuth[0][4]}) ? trim((string){rsGridFirmAuth[0][4]}) : '';
 
@@ -173,8 +130,192 @@ if ($wizStep < 5) {
 }
 
 [subvettoreId] = $subId;
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    @session_start();
+}
+$_SESSION['wizard_subvettore_id'] = $subId;
+
+// Primo atterraggio da step 4: [documentoId] / SESSION restano dello step documenti
+// (gialli) → Firma apre EasyGN sul doc sbagliato. Refresh "sistema" perché
+// la sessione e' gia' pulita. Pulisci sempre tranne ritorno da EasyGN.
+$fromFirma = (
+    isset($_GET['from'])
+    && strtolower(trim((string)$_GET['from'])) === 'firma'
+);
+if (!$fromFirma) {
+    [documentoId] = 0;
+    if (isset($_SESSION['documentoId'])) {
+        unset($_SESSION['documentoId']);
+    }
+    if (isset($_SESSION['pdf_next'])) {
+        unset($_SESSION['pdf_next']);
+    }
+}
 
 wiz_verdi_ensure_documenti($subId, $loginSub !== '' ? $loginSub : $usrLogin);
+
+// Ritorno da EasyGN (redirect_url): marca firmato_il sul documento firmato
+if (isset($_GET['from']) && strtolower(trim((string)$_GET['from'])) === 'firma') {
+    $didRet = 0;
+    if (isset($_GET['documentoId']) && (int)$_GET['documentoId'] > 0) {
+        $didRet = (int)$_GET['documentoId'];
+    } elseif (isset($_REQUEST['documentoId']) && (int)$_REQUEST['documentoId'] > 0) {
+        $didRet = (int)$_REQUEST['documentoId'];
+    }
+    if ($didRet > 0) {
+        sc_exec_sql("
+            UPDATE documenti
+            SET firmato_il = NOW(),
+                stato_documento_id = 2,
+                updated_at = NOW()
+            WHERE id = $didRet
+              AND subvettore_id = $subId
+              AND (firmato_il IS NULL OR firmato_il = '0000-00-00 00:00:00')
+        ", 'pigliacelli');
+        if (function_exists('sc_log_add')) {
+            sc_log_add('WIZ_FIRMA', "from=firma → firmato_il+stato=2 documentoId=$didRet sub=$subId");
+        }
+    }
+}
+
+// Sync: documenti con workflow EasyGN ma senza firmato_il → interroga API
+if (!function_exists('wiz_verdi_sync_firmato_easygn')) {
+    function wiz_verdi_sync_firmato_easygn($subvettore_id)
+    {
+        $subvettore_id = (int)$subvettore_id;
+        if ($subvettore_id <= 0 || !function_exists('curl_init')) {
+            return 0;
+        }
+        sc_lookup(rsWizEgBear, "
+            SELECT set_value FROM sec_settings WHERE set_name = 'easygn_bearer' LIMIT 1
+        ", 'pigliacelli');
+        $bearer = !empty({rsWizEgBear[0][0]}) ? trim((string){rsWizEgBear[0][0]}) : '';
+        if ($bearer === '') {
+            return 0;
+        }
+        sc_lookup(rsWizEgBase, "
+            SELECT set_value FROM sec_settings WHERE set_name = 'easygn_base_url' LIMIT 1
+        ", 'pigliacelli');
+        $base = !empty({rsWizEgBase[0][0]})
+            ? rtrim(trim((string){rsWizEgBase[0][0]}), '/')
+            : 'https://easygn.digiwebuno.it/api';
+        if ($base === '') {
+            return 0;
+        }
+
+        sc_lookup(rsWizEgPend, "
+            SELECT d.id, COALESCE(d.easygn_workflow_id, '')
+            FROM documenti d
+            INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+            WHERE d.subvettore_id = $subvettore_id
+              AND COALESCE(td.is_readonly, 0) = 1
+              AND (d.subvettore_autista_id IS NULL OR d.subvettore_autista_id = 0)
+              AND (d.subvettore_mezzo_id IS NULL OR d.subvettore_mezzo_id = 0)
+              AND (d.firmato_il IS NULL OR d.firmato_il = '0000-00-00 00:00:00')
+              AND d.easygn_workflow_id IS NOT NULL
+              AND TRIM(d.easygn_workflow_id) <> ''
+            LIMIT 20
+        ", 'pigliacelli');
+        if (empty({rsWizEgPend[0][0]})) {
+            return 0;
+        }
+
+        $doneStatuses = array(
+            'done', 'signed', 'finished', 'completed', 'complete',
+            'closed', 'archived', 'success',
+        );
+        $updated = 0;
+        $rows = {rsWizEgPend};
+        foreach ($rows as $row) {
+            $docId = (int)$row[0];
+            $wfId = trim((string)$row[1]);
+            if ($docId <= 0 || $wfId === '') {
+                continue;
+            }
+            $url = $base . '/workflows/' . rawurlencode($wfId);
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $url);
+            curl_setopt($ch, CURLOPT_HTTPGET, true);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 8);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+                'Accept: application/json',
+                'Authorization: Bearer ' . $bearer,
+            ));
+            $body = curl_exec($ch);
+            $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            if ($http < 200 || $http >= 300 || !is_string($body) || $body === '') {
+                continue;
+            }
+            $data = json_decode($body, true);
+            if (!is_array($data)) {
+                continue;
+            }
+            $st = '';
+            foreach (array('status', 'state', 'workflow_status', 'workflowStatus') as $k) {
+                if (!empty($data[$k]) && is_string($data[$k])) {
+                    $st = strtolower(trim($data[$k]));
+                    break;
+                }
+            }
+            // fallback: tutti i signer done
+            $allSignersDone = false;
+            $signers = null;
+            if (isset($data['files'][0]['signers']) && is_array($data['files'][0]['signers'])) {
+                $signers = $data['files'][0]['signers'];
+            } elseif (isset($data['signers']) && is_array($data['signers'])) {
+                $signers = $data['signers'];
+            }
+            if (is_array($signers) && count($signers) > 0) {
+                $allSignersDone = true;
+                foreach ($signers as $sg) {
+                    if (!is_array($sg)) {
+                        $allSignersDone = false;
+                        break;
+                    }
+                    $sst = '';
+                    foreach (array('status', 'state') as $sk) {
+                        if (!empty($sg[$sk])) {
+                            $sst = strtolower(trim((string)$sg[$sk]));
+                            break;
+                        }
+                    }
+                    if (!in_array($sst, $doneStatuses, true)) {
+                        $allSignersDone = false;
+                        break;
+                    }
+                }
+            }
+            if (in_array($st, $doneStatuses, true) || $allSignersDone) {
+                sc_exec_sql("
+                    UPDATE documenti
+                    SET firmato_il = NOW(),
+                        stato_documento_id = 2,
+                        updated_at = NOW()
+                    WHERE id = $docId
+                      AND subvettore_id = $subvettore_id
+                      AND (firmato_il IS NULL OR firmato_il = '0000-00-00 00:00:00')
+                ", 'pigliacelli');
+                $updated++;
+                if (function_exists('sc_log_add')) {
+                    sc_log_add('WIZ_FIRMA', "sync EasyGN firmato_il+stato=2 doc=$docId wf=$wfId status=$st");
+                }
+            }
+        }
+        return $updated;
+    }
+}
+
+$synced = wiz_verdi_sync_firmato_easygn($subId);
+if ($synced > 0 && function_exists('sc_ajax_message')) {
+    sc_ajax_message(
+        'Aggiornato stato firma da EasyGN: ' . (int)$synced . ' documento/i.',
+        'Firma documenti',
+        'Ok'
+    );
+}
 
 // Non chiudere il wizard qui: lo fa il pulsante "Invia per attivazione".
 
@@ -189,5 +330,5 @@ if (isset($_GET['generated']) && (int)$_GET['generated'] === 1 && function_exist
     sc_ajax_message('PDF Dichiarazioni generato. Aprilo e firmalo.', 'Dichiarazioni', 'Ok');
 }
 if (isset($_GET['from']) && (string)$_GET['from'] === 'firma' && function_exists('sc_ajax_message')) {
-    sc_ajax_message('Firma completata o in corso. Aggiorna la griglia se lo stato non è ancora aggiornato.', 'Firma', 'Ok');
+    sc_ajax_message('Firma registrata. Controlla lo stato in griglia.', 'Firma', 'Ok');
 }

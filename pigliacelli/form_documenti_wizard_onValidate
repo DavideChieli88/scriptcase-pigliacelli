@@ -8,6 +8,8 @@
  *
  * Campo reale: {in_possesso} (non in_possesso_flag).
  * Non usare sc_error_exit.
+ *
+ * Niente COMMIT (versione che funzionava su questo form).
  */
 
 $err = array();

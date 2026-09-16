@@ -1,8 +1,16 @@
 /**
- * form_subvettori_autisti onBeforeUpdate
- * Mantiene subvettore_contratto_id vuoto finche non agganciato da check_new_trips.
+ * form_subvettori_autisti / form_subvettori_autisti_wizard → onBeforeUpdate
+ * Mantiene subvettore_contratto_id NULL finché non agganciato da check_new_trips.
+ * Non usare 'null' (stringa) su numerico → diventa 0 e rompe la FK.
  */
 
-if (!isset({subvettore_contratto_id}) || {subvettore_contratto_id} === '' || {subvettore_contratto_id} === 'null' || (int){subvettore_contratto_id} <= 0) {
+sc_exec_sql('COMMIT');
+
+if (!isset({subvettore_contratto_id})
+    || {subvettore_contratto_id} === ''
+    || {subvettore_contratto_id} === 'null'
+    || {subvettore_contratto_id} === null
+    || (int){subvettore_contratto_id} <= 0
+) {
     {subvettore_contratto_id} = 'null';
 }

@@ -1,0 +1,9 @@
+/**
+ * grid_subvettori_autisti_for_subvectors → onRecord
+ *
+ * Flag integer 0/1 → Si / No in griglia.
+ */
+
+{has_cat_trasp_rifiuti_1} = (isset({has_cat_trasp_rifiuti_1}) && (int){has_cat_trasp_rifiuti_1} === 1) ? 'Si' : 'No';
+{has_cat_trasp_rifiuti_4} = (isset({has_cat_trasp_rifiuti_4}) && (int){has_cat_trasp_rifiuti_4} === 1) ? 'Si' : 'No';
+{has_cat_trasp_rifiuti_5} = (isset({has_cat_trasp_rifiuti_5}) && (int){has_cat_trasp_rifiuti_5} === 1) ? 'Si' : 'No';

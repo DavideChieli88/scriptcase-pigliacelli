@@ -110,6 +110,70 @@ if (!function_exists('gsc_portal_url')) {
     }
 }
 
+// Stesso logo/layout delle altre mail Pigliacelli (form_subvettori / batch)
+if (!function_exists('gsc_mail_logo_src')) {
+    function gsc_mail_logo_src()
+    {
+        $rel = '_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png';
+        $dir = realpath(dirname(__FILE__));
+        for ($i = 0; $i < 12 && $dir; $i++) {
+            $try = $dir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel);
+            if (is_readable($try)) {
+                $bin = @file_get_contents($try);
+                if ($bin !== false && $bin !== '' && strlen($bin) < 500000) {
+                    return 'data:image/png;base64,' . base64_encode($bin);
+                }
+            }
+            $p = dirname($dir);
+            if ($p === $dir) {
+                break;
+            }
+            $dir = $p;
+        }
+        $base = rtrim(gsc_mail_setting('mail_base_url', ''), '/');
+        if ($base !== '' && preg_match('#^https?://#i', $base) === 1) {
+            return htmlspecialchars(
+                $base . '/_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png',
+                ENT_QUOTES,
+                'UTF-8'
+            );
+        }
+        return '';
+    }
+}
+
+if (!function_exists('gsc_mail_layout')) {
+    function gsc_mail_layout($title, $innerHtml, $mailLogoUrl)
+    {
+        $t = htmlspecialchars((string)$title, ENT_QUOTES, 'UTF-8');
+        $logoTd = '';
+        if ((string)$mailLogoUrl !== '') {
+            $logoTd = '<td align="right" valign="middle" style="width:148px;padding-left:16px;">'
+                . '<img src="' . (string)$mailLogoUrl . '" alt="Pigliacelli" width="140" '
+                . 'style="display:block;max-width:140px;width:140px;height:auto;border:0;" />'
+                . '</td>';
+        }
+        return '<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">'
+            . '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            . '<title>' . $t . '</title></head>'
+            . '<body style="margin:0;padding:0;background:#eef1f4;">'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef1f4;">'
+            . '<tr><td align="center" style="padding:32px 16px;">'
+            . '<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" '
+            . 'style="max-width:600px;width:100%;background:#fff;border-radius:12px;border:1px solid #dde1e6;">'
+            . '<tr><td style="padding:22px 28px 18px;border-bottom:1px solid #e8ebef;background:#fafbfc;">'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
+            . '<td valign="middle" style="font-family:Arial,Helvetica,sans-serif;font-size:19px;font-weight:bold;color:#1a3a5c;line-height:1.3;">' . $t . '</td>'
+            . $logoTd . '</tr></table></td></tr>'
+            . '<tr><td style="padding:26px 28px 22px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#2d3748;">'
+            . $innerHtml . '</td></tr>'
+            . '<tr><td style="padding:14px 28px;background:#f4f6f8;border-top:1px solid #e8ebef;'
+            . 'font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#718096;">'
+            . 'Messaggio automatico &mdash; non rispondere.</td></tr>'
+            . '</table></td></tr></table></body></html>';
+    }
+}
+
 if (!function_exists('gsc_invia_mail_credenziali')) {
     function gsc_invia_mail_credenziali($to, $login, $plainPassword, $displayName)
     {
@@ -131,7 +195,7 @@ if (!function_exists('gsc_invia_mail_credenziali')) {
             $nome = 'Gentile subvettore';
         }
 
-        $titolo = 'Credenziali area riservata — Pigliacelli';
+        $titolo = 'Credenziali area riservata';
         $testo = $nome . ",\n\n"
             . "E' stato creato il tuo accesso all'area riservata subvettori.\n"
             . "Puoi accedere con le credenziali seguenti (password temporanea).\n\n"
@@ -145,14 +209,23 @@ if (!function_exists('gsc_invia_mail_credenziali')) {
         $safeLogin = htmlspecialchars($login, ENT_QUOTES, 'UTF-8');
         $safePwd = htmlspecialchars($plainPassword, ENT_QUOTES, 'UTF-8');
         $safeNome = htmlspecialchars($nome, ENT_QUOTES, 'UTF-8');
-        $html = '<p>' . $safeNome . ',</p>'
-            . '<p>Accesso all\'area riservata subvettori (password temporanea).</p>'
-            . '<p><strong>Login:</strong> ' . $safeLogin . '<br>'
-            . '<strong>Password:</strong> ' . $safePwd . '</p>';
+        $inner = '<p style="margin:0 0 16px;">' . $safeNome . ',</p>'
+            . '<p style="margin:0 0 20px;">E\' stato creato il tuo accesso all\'<strong>area riservata subvettori</strong>. '
+            . 'Ecco le credenziali di accesso (password temporanea).</p>'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+            . 'style="margin:0 0 20px;background:#f8f9fb;border:1px solid #e2e6ea;border-radius:8px;">'
+            . '<tr><td style="padding:16px 18px;font-size:14px;line-height:1.6;">'
+            . '<strong>Login:</strong> ' . $safeLogin . '<br><strong>Password:</strong> ' . $safePwd
+            . '</td></tr></table>';
         if ($portalUrl !== '') {
             $safePortal = htmlspecialchars($portalUrl, ENT_QUOTES, 'UTF-8');
-            $html .= '<p><a href="' . $safePortal . '">Accedi all\'area riservata</a></p>';
+            $inner .= '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px;"><tr>'
+                . '<td align="center" bgcolor="#1a3a5c" style="border-radius:8px;background-color:#1a3a5c;">'
+                . '<a href="' . $safePortal . '" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:bold;'
+                . 'color:#ffffff;text-decoration:none;">Accedi all\'area riservata</a>'
+                . '</td></tr></table>';
         }
+        $html = gsc_mail_layout($titolo, $inner, gsc_mail_logo_src());
 
         try {
             $mailOk = sc_send_mail_api(array_merge(gsc_get_smtp_config(), array(
@@ -178,6 +251,9 @@ if (!function_exists('gsc_invia_mail_credenziali')) {
 // Main
 // ---------------------------------------------------------------------------
 
+// Evita lookup vuoti / fatal PDO su tx già aperta (Ajax Action Bar)
+sc_exec_sql('COMMIT');
+
 $subId = isset({id}) ? (int){id} : 0;
 sc_log_add('GRID_CRED', 'send_credentials_btn START sub=' . $subId);
 
@@ -196,17 +272,24 @@ sc_lookup(rsGscSub, "
     LIMIT 1
 ", 'pigliacelli');
 
-if (empty({rsGscSub[0][0]}) && empty({rsGscSub[0][1]})) {
-    sc_ajax_message('Subvettore non trovato.');
+if ((!isset({rsGscSub[0][0]}) || trim((string){rsGscSub[0][0]}) === '')
+    && (!isset({rsGscSub[0][1]}) || trim((string){rsGscSub[0][1]}) === '')
+) {
+    sc_ajax_message('Subvettore non trovato (id=' . $subId . ').');
     return;
 }
 
-$login = trim((string){rsGscSub[0][0]});
-$nome  = trim((string){rsGscSub[0][1]});
-$inviataAt = {rsGscSub[0][2]};
+$login = isset({rsGscSub[0][0]}) ? trim((string){rsGscSub[0][0]}) : '';
+$nome  = isset({rsGscSub[0][1]}) ? trim((string){rsGscSub[0][1]}) : '';
+$inviataAt = isset({rsGscSub[0][2]}) ? {rsGscSub[0][2]} : null;
+
+sc_log_add(
+    'GRID_CRED',
+    'sub row id=' . $subId . ' login=[' . $login . '] nome=[' . $nome . '] inviataAt=[' . (string)$inviataAt . ']'
+);
 
 if ($login === '' || !gsc_email_valida($login)) {
-    sc_ajax_message('Email/login subvettore mancante o non valida.');
+    sc_ajax_message('Email/login subvettore mancante o non valida (sub=' . $subId . ').');
     return;
 }
 
@@ -215,19 +298,144 @@ if ($inviataAt !== '' && $inviataAt !== null && (string)$inviataAt !== 'null') {
     return;
 }
 
+// Cerca utenza per login (case-insensitive) — non dipende dal join sul gruppo
 sc_lookup(rsGscUser, "
-    SELECT su.login
+    SELECT
+        su.login,
+        su.active,
+        su.subvettore_id
     FROM sec_users su
-    INNER JOIN sec_users_groups sug ON sug.login = su.login AND sug.group_id = 2
-    WHERE su.subvettore_id = $subId
-      AND su.login = " . gsc_sql_quote($login) . "
-      AND su.active = 'Y'
+    WHERE LOWER(su.login) = LOWER(" . gsc_sql_quote($login) . ")
     LIMIT 1
 ", 'pigliacelli');
 
-if (empty({rsGscUser[0][0]})) {
-    sc_ajax_message('Utenza portale non trovata o non attiva. Eseguire prima il sync subvettori.');
-    return;
+$userLogin = (isset({rsGscUser[0][0]}) && trim((string){rsGscUser[0][0]}) !== '')
+    ? trim((string){rsGscUser[0][0]})
+    : '';
+$userActive = isset({rsGscUser[0][1]}) ? trim((string){rsGscUser[0][1]}) : '';
+$userSubId = isset({rsGscUser[0][2]}) && {rsGscUser[0][2]} !== null && {rsGscUser[0][2]} !== ''
+    ? (int){rsGscUser[0][2]}
+    : 0;
+
+sc_log_add(
+    'GRID_CRED',
+    'lookup user login=[' . $login . '] found=' . ($userLogin !== '' ? '1' : '0')
+        . ' active=[' . $userActive . '] sub_id=' . $userSubId . ' grid_sub=' . $subId
+);
+
+if ($userLogin === '') {
+    // Fallback: utenza collegata al subvettore con login diverso
+    sc_lookup(rsGscUserBySub, "
+        SELECT su.login, su.active, su.subvettore_id
+        FROM sec_users su
+        WHERE su.subvettore_id = $subId
+        LIMIT 1
+    ", 'pigliacelli');
+    $userLogin = !empty({rsGscUserBySub[0][0]}) ? trim((string){rsGscUserBySub[0][0]}) : '';
+    $userActive = isset({rsGscUserBySub[0][1]}) ? trim((string){rsGscUserBySub[0][1]}) : '';
+    $userSubId = isset({rsGscUserBySub[0][2]}) && {rsGscUserBySub[0][2]} !== null && {rsGscUserBySub[0][2]} !== ''
+        ? (int){rsGscUserBySub[0][2]}
+        : 0;
+    if ($userLogin !== '') {
+        sc_log_add('GRID_CRED', 'fallback by subvettore_id: login=[' . $userLogin . ']');
+        $login = $userLogin;
+    }
+}
+
+if ($userLogin === '') {
+    sc_log_add('GRID_CRED', 'utenza assente: creo ora sub=' . $subId . ' login=' . $login);
+    sc_lookup(rsGscPhone, "
+        SELECT TRIM(COALESCE(phone, '')), TRIM(COALESCE(cellphone, ''))
+        FROM subvettori
+        WHERE id = $subId
+        LIMIT 1
+    ", 'pigliacelli');
+    $phone = '';
+    if (!empty({rsGscPhone[0][0]})) {
+        $phone = trim((string){rsGscPhone[0][0]});
+    }
+    if ($phone === '' && !empty({rsGscPhone[0][1]})) {
+        $phone = trim((string){rsGscPhone[0][1]});
+    }
+
+    $plainBootstrap = gsc_generate_temp_password();
+    try {
+        sc_exec_sql("
+            INSERT INTO sec_users (
+                login, pswd, name, email, phone, active, subvettore_id
+            ) VALUES (
+                " . gsc_sql_quote($login) . ",
+                " . gsc_sql_quote(md5($plainBootstrap)) . ",
+                " . gsc_sql_quote($nome) . ",
+                " . gsc_sql_quote($login) . ",
+                " . gsc_sql_quote($phone) . ",
+                'Y',
+                $subId
+            )
+        ", 'pigliacelli');
+        sc_exec_sql("
+            INSERT INTO sec_users_groups (login, group_id)
+            VALUES (" . gsc_sql_quote($login) . ", 2)
+        ", 'pigliacelli');
+        sc_exec_sql('COMMIT');
+        $userLogin = $login;
+        $userActive = 'Y';
+        $userSubId = $subId;
+    } catch (Throwable $e) {
+        sc_log_add('GRID_CRED', 'ERRORE create utenza sub=' . $subId . ' — ' . $e->getMessage());
+        sc_ajax_message('Impossibile creare l\'utenza portale. Controllare i log.');
+        return;
+    }
+}
+
+// Allinea subvettore_id se manca o diverso
+if ($userSubId !== $subId) {
+    sc_log_add(
+        'GRID_CRED',
+        'fix subvettore_id su sec_users login=' . $login . ' old=' . $userSubId . ' new=' . $subId
+    );
+    try {
+        sc_exec_sql("
+            UPDATE sec_users
+            SET subvettore_id = $subId
+            WHERE login = " . gsc_sql_quote($login) . "
+            LIMIT 1
+        ", 'pigliacelli');
+        $userSubId = $subId;
+    } catch (Throwable $e) {
+        sc_log_add('GRID_CRED', 'ERRORE link subvettore_id — ' . $e->getMessage());
+        sc_ajax_message('Utenza trovata ma non collegabile al subvettore.');
+        return;
+    }
+}
+
+// Assicura gruppo 2
+sc_lookup(rsGscGrp, "
+    SELECT 1 FROM sec_users_groups
+    WHERE login = " . gsc_sql_quote($login) . "
+      AND group_id = 2
+    LIMIT 1
+", 'pigliacelli');
+if (empty({rsGscGrp[0][0]})) {
+    sc_log_add('GRID_CRED', 'manca group_id=2: lo aggiungo login=' . $login);
+    try {
+        sc_exec_sql("
+            INSERT INTO sec_users_groups (login, group_id)
+            VALUES (" . gsc_sql_quote($login) . ", 2)
+        ", 'pigliacelli');
+    } catch (Throwable $e) {
+        sc_log_add('GRID_CRED', 'ERRORE add group 2 sub=' . $subId . ' — ' . $e->getMessage());
+        sc_ajax_message('Utenza senza gruppo portale (2). Controllare i log.');
+        return;
+    }
+}
+
+if ($userActive !== 'Y') {
+    sc_exec_sql("
+        UPDATE sec_users SET active = 'Y'
+        WHERE login = " . gsc_sql_quote($login) . "
+        LIMIT 1
+    ", 'pigliacelli');
 }
 
 $plain = gsc_generate_temp_password();
@@ -237,9 +445,9 @@ try {
     sc_exec_sql("
         UPDATE sec_users
         SET pswd = " . gsc_sql_quote($hash) . ",
-            active = 'Y'
+            active = 'Y',
+            subvettore_id = $subId
         WHERE login = " . gsc_sql_quote($login) . "
-          AND subvettore_id = $subId
         LIMIT 1
     ", 'pigliacelli');
 } catch (Throwable $e) {

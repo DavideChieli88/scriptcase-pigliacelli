@@ -1,0 +1,96 @@
+/**
+ * form_documenti_wizard → onAfterInsert
+ *
+ * Stesso codice di onAfterUpdate (stato=2 + basename).
+ * Niente mail qui — solo a fine step 5.
+ * Niente COMMIT: lo gestisce SC (nm_commit_db).
+ */
+
+$docId = 0;
+if (isset({id}) && (int){id} > 0) {
+    $docId = (int){id};
+}
+if (function_exists('sc_log_add')) {
+    sc_log_add('WIZ_DOCS', 'onAfterInsert ENTER doc=' . $docId . ' file=[' . trim((string){file}) . ']');
+}
+if ($docId <= 0) {
+    return;
+}
+
+$usrLogin = trim((string)[usr_login]);
+if ($usrLogin === '' || strcasecmp($usrLogin, 'Guest') === 0) {
+    return;
+}
+
+$loginSql = str_replace("'", "''", $usrLogin);
+sc_lookup(rsWizDocGrp, "
+    SELECT sug.group_id
+    FROM sec_users_groups sug
+    WHERE sug.login = '$loginSql'
+      AND sug.group_id = 2
+    LIMIT 1
+", 'pigliacelli');
+if (empty({rsWizDocGrp[0][0]})) {
+    return;
+}
+
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    @session_start();
+}
+
+$replaced = null;
+if (!empty($_SESSION['wizard_doc_file_replaced']) && is_array($_SESSION['wizard_doc_file_replaced'])) {
+    $replaced = $_SESSION['wizard_doc_file_replaced'];
+    unset($_SESSION['wizard_doc_file_replaced']);
+    if ((int)$replaced['id'] !== $docId) {
+        $replaced = null;
+    }
+}
+
+$fileNow = trim((string){file});
+if ($replaced !== null && !empty($replaced['file'])) {
+    $fileNow = basename(str_replace('\\', '/', (string)$replaced['file']));
+} elseif ($fileNow !== '') {
+    $fileNow = basename(str_replace('\\', '/', $fileNow));
+}
+
+if ($fileNow === '') {
+    sc_lookup(rsWizDocSt, "
+        SELECT COALESCE(file, ''), COALESCE(stato_documento_id, 0)
+        FROM documenti
+        WHERE id = $docId
+        LIMIT 1
+    ", 'pigliacelli');
+    $fileNow = !empty({rsWizDocSt[0][0]})
+        ? basename(str_replace('\\', '/', trim((string){rsWizDocSt[0][0]})))
+        : '';
+    $statoDb = !empty({rsWizDocSt[0][1]}) ? (int){rsWizDocSt[0][1]} : 0;
+} else {
+    sc_lookup(rsWizDocSt2, "
+        SELECT COALESCE(stato_documento_id, 0)
+        FROM documenti
+        WHERE id = $docId
+        LIMIT 1
+    ", 'pigliacelli');
+    $statoDb = !empty({rsWizDocSt2[0][0]}) ? (int){rsWizDocSt2[0][0]} : 0;
+}
+
+if ($fileNow === '') {
+    return;
+}
+
+$fileSql = str_replace("'", "''", $fileNow);
+
+sc_exec_sql("
+    UPDATE documenti
+    SET file = '$fileSql',
+        stato_documento_id = 2,
+        is_not_ok = 0,
+        updated_at = NOW()
+    WHERE id = $docId
+", 'pigliacelli');
+
+if (function_exists('sc_log_add')) {
+    $how = $replaced !== null ? 'replace' : 'insert';
+    sc_log_add('WIZ_DOCS', "wizard onAfterInsert doc=$docId → stato=2 file=$fileNow ($how, prev_stato=$statoDb)");
+}

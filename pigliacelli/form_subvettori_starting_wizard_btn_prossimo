@@ -66,8 +66,6 @@ if (!empty($errors)) {
     sc_redir('form_subvettori_starting_wizard', $redirBack);
 }
 
-sc_commit_trans('pigliacelli');
-
 sc_exec_sql("
     UPDATE subvettori
     SET wizard_step = 2
@@ -75,6 +73,10 @@ sc_exec_sql("
       AND wizard_complete = 0
       AND wizard_step = 1
 ", 'pigliacelli');
+
+// COMMIT DOPO l'UPDATE (non prima): altrimenti resta aperta la transazione
+// del form → fatal PDO "already an active transaction" su autisti/mezzi.
+sc_exec_sql('COMMIT');
 
 $log3 = 'START_PROSSIMO_V1 OK autisti sub=' . $subId;
 sc_log_add('WIZARD', $log3);

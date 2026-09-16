@@ -70,8 +70,6 @@ if ($nDocOk < $nMezzi || $nAutOk < $nMezzi) {
 
 sc_log_add('WIZARD', 'MEZZI_PROSSIMO_V3 OK mezzi=' . $nMezzi);
 
-sc_commit_trans('pigliacelli');
-
 sc_exec_sql("
     UPDATE subvettori
     SET wizard_step = 4
@@ -79,5 +77,7 @@ sc_exec_sql("
       AND wizard_complete = 0
       AND wizard_step = 3
 ", 'pigliacelli');
+
+sc_exec_sql('COMMIT');
 
 sc_redir('form_documenti_wizard', subvettoreId=[subvettoreId]);

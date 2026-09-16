@@ -1,0 +1,28 @@
+/**
+ * grid_subvettori_mezzi → onApplicationInit
+ *
+ * Doc SC: primo evento, PRIMA di SQL/HTML. Globali OK.
+ * DB NON ancora aperto → niente sc_lookup.
+ *
+ * SQL: WHERE subvettore_id = [subvettoreId]
+ * Globale: Integer, default 0, NON richiedere a startup.
+ *
+ * Risolve: GET / REQUEST / [subvettoreId] (settato da app_menu o link).
+ */
+
+// Evita WHERE "subvettore_id = )" se la globale e' vuota
+if (!isset([subvettoreId]) || (string)[subvettoreId] === '' || (int)[subvettoreId] < 0) {
+    [subvettoreId] = 0;
+}
+
+$subId = 0;
+
+if (isset($_GET['subvettoreId']) && (int)$_GET['subvettoreId'] > 0) {
+    $subId = (int)$_GET['subvettoreId'];
+} elseif (isset($_REQUEST['subvettoreId']) && (int)$_REQUEST['subvettoreId'] > 0) {
+    $subId = (int)$_REQUEST['subvettoreId'];
+} elseif ((int)[subvettoreId] > 0) {
+    $subId = (int)[subvettoreId];
+}
+
+[subvettoreId] = $subId > 0 ? $subId : 0;

@@ -118,5 +118,58 @@ sc_exec_sql("
       AND wizard_complete = 0
 ", 'pigliacelli');
 
+// Crea subito i documenti verdi (is_readonly=1): la SQL della grid
+// può girare PRIMA di onScriptInit, quindi non bastare ensure lì.
+$usrLoginIns = trim((string)[usr_login]);
+$loginIns = $usrLoginIns;
+sc_lookup(rsVerdiLogin, "
+    SELECT COALESCE(login_subvettore, '')
+    FROM subvettori
+    WHERE id = $subId
+    LIMIT 1
+", 'pigliacelli');
+if (!empty({rsVerdiLogin[0][0]}) && trim((string){rsVerdiLogin[0][0]}) !== '') {
+    $loginIns = trim((string){rsVerdiLogin[0][0]});
+}
+$loginInsSql = str_replace("'", "''", $loginIns);
+$phSql = 'placeholder_documento_verde.pdf';
+sc_lookup(rsVerdiPh, "
+    SELECT set_value FROM sec_settings
+    WHERE set_name = 'documento_verde_placeholder'
+    LIMIT 1
+", 'pigliacelli');
+if (!empty({rsVerdiPh[0][0]}) && trim((string){rsVerdiPh[0][0]}) !== '') {
+    $phSql = str_replace("'", "''", trim((string){rsVerdiPh[0][0]}));
+}
+
+sc_exec_sql("
+    INSERT INTO documenti (tipo_documento_id, subvettore_id, login, stato_documento_id, file)
+    SELECT td.id, $subId, '$loginInsSql', 1,
+        CASE
+            WHEN LOWER(COALESCE(td.nome, '')) LIKE '%dichiaraz%' THEN NULL
+            ELSE '$phSql'
+        END
+    FROM tipi_documento td
+    WHERE COALESCE(td.is_readonly, 0) = 1
+      AND NOT EXISTS (
+          SELECT 1
+          FROM documenti d
+          WHERE d.subvettore_id = $subId
+            AND d.tipo_documento_id = td.id
+            AND (d.subvettore_autista_id IS NULL OR d.subvettore_autista_id = 0)
+            AND (d.subvettore_mezzo_id IS NULL OR d.subvettore_mezzo_id = 0)
+      )
+", 'pigliacelli');
+
+// Pulisci id documento dello step 4 (altrimenti Firma al 1° click usa il giallo)
+[documentoId] = 0;
+if (isset($_SESSION['documentoId'])) {
+    unset($_SESSION['documentoId']);
+}
+if (isset($_SESSION['pdf_next'])) {
+    unset($_SESSION['pdf_next']);
+}
+$_SESSION['wizard_subvettore_id'] = $subId;
+
 $_SESSION['wizard_flash_msg'] = 'Documenti caricati. Firmare i documenti predisposti e poi inviare per attivazione.';
 sc_redir('grid_documenti_to_sign_wizard', subvettoreId=[subvettoreId]);

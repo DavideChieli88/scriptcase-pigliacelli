@@ -1,7 +1,12 @@
 /**
  * form_subvettori_mezzi → onBeforeInsert
  * Allinea subvettore_id (stesso pattern di form_subvettori_autisti_onBeforeInsert).
+ *
+ * COMMIT iniziale: chiude eventuale tx lasciata aperta da sc_lookup in onValidate
+ * (PDO PHP 8.2 → "There is already an active transaction").
  */
+
+sc_exec_sql('COMMIT');
 
 $subId = 0;
 if (isset({subvettore_id}) && (int){subvettore_id} > 0) {

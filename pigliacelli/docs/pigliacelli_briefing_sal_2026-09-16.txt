@@ -1,0 +1,967 @@
+📝 Note
+set 16, 2026
+Pigliacelli Workspace - Briefing e SAL
+invitato marcoccia.davide@pigliacelli.it davide.chieli@digiwebuno.it flavia.pigliacelli@pigliacelli.it Erik Capoccetta
+Allegati Pigliacelli Workspace - Briefing e SAL
+Record delle riunioni Trascrizione 
+Riepilogo
+Revisione del flusso di onboarding e finalizzazione dei requisiti tecnici per i test della piattaforma subvettori.Ottimizzazione flusso onboarding subvettoriIl sistema di onboarding è stato completato includendo la gestione automatizzata dei dati aziendali e la firma digitale tramite codici OTP. È stato deciso di non rendere obbligatoria l'associazione tra autisti e mezzi per garantire flessibilità operativa.Integrazione documenti e requisitiÈ stata definita la necessità di spostare la gestione dei documenti legati ai trasporti rifiuti dai conducenti ai veicoli, configurando richieste separate per le diverse categorie. Si lavorerà alla creazione di un modulo dedicato per la compilazione annuale delle dichiarazioni complesse.Pianificazione test e manutenzioneIl database verrà ripulito per consentire test puliti a partire da domani. Le correzioni minori all'interfaccia amministrativa e ai moduli saranno completate entro venerdì.
+Decisioni
+Concordato
+Registrazione della presa visione documentale nei log La presa visione dei documenti da parte dei vettori viene certificata tramite la registrazione di data e ora nei log di sistema, senza l'utilizzo di marche temporali a pagamento.
+Inserimento obbligatorio delle scadenze per gli autisti È stato concordato di richiedere obbligatoriamente l'indicazione della data di scadenza contestualmente al caricamento dei certificati e documenti relativi agli autisti.
+Distinzione di targa e tipologia veicolare Il sistema prevederà campi distinti per la targa del trattore e del semirimorchio e una selezione a tendina chiusa per il tipo di veicolo.
+Carattere facoltativo dell'assegnazione autista-veicolo L'associazione tra un autista e un veicolo in fase di inserimento anagrafico dei mezzi è stata resa facoltativa.
+Flusso di compilazione per l'allegato F È stata stabilita l'implementazione di un flusso di compilazione specifico per l'allegato F, sottoposto a rinnovo con validità annuale.
+Obbligatorietà del documento di trasporto rifiuti I partecipanti hanno stabilito che, se viene indicata l'autorizzazione al trasporto rifiuti nella schermata precedente, il relativo documento di autorizzazione deve diventare obbligatorio da caricare.
+Pulizia e unificazione dei documenti Rentri e ANGA È stato deciso di eliminare i documenti duplicati relativi al Rentri e all'Albo ANGA, mantenendo un unico documento valido ed eliminando i doppioni nell'anagrafica.
+Creazione di allegati distinti per categoria I partecipanti hanno concordato di creare specifici allegati separati per le categorie 1, 4 e 5 relativi al trasporto rifiuti e all'Albo ANGA per ciascun mezzo.
+Spostamento dei controlli ANGA sugli autisti ai mezzi È stato deciso di spostare i campi e le verifiche relative all'ANGA e alle relative scadenze dall'anagrafica dell'autista a quella del mezzo.
+Implementazione di un flusso separato per i documenti annuali I partecipanti hanno stabilito di sviluppare un flusso e un form separato e precompilato dal sistema per la gestione e la firma annuale dei documenti verdi.
+Rimozione della scadenza carta circolazione per gli autisti È stato deciso di rimuovere il campo relativo alla scadenza della carta di circolazione dall'anagrafica degli autisti.
+Azzeramento del database per i test I partecipanti hanno concordato di fornire il database completamente vuoto, senza subvettori precaricati, in modo da consentire l'inserimento di quelli nuovi.
+Passaggi successivi
+[Flavia Pigliacelli] Testare flusso onboarding: Eseguire test sul flusso di accreditamento dei subvettori sulla piattaforma. Verificare la correttezza del processo definito.
+[Flavia Pigliacelli] Fornire testi email: Inviare i contenuti per le email di sistema da inviare ai subvettori. Specificare l'oggetto e il corpo del testo.
+[Davide Chieli] Aggiornare form documenti: Implementare il campo obbligatorio per la data di scadenza nei documenti degli autisti. Assicurare che l'inserimento sia integrato nel caricamento.
+[Davide Chieli] Modificare selezione veicoli: Inserire un menu a tendina per distinguere tra trattore e semirimorchio. Assicurare la corretta catalogazione dei mezzi.
+[Davide Chieli] Ampliare anagrafica vettore: Aggiungere i campi per residenza del legale rappresentante, dati albi, informazioni bancarie e capitale sociale. Aggiornare il modulo iniziale di registrazione.
+[Flavia Pigliacelli] Fornire Documenti Finali: Consegnare le versioni definitive del modello 231, codice etico, manuale del vettore e informativa privacy. Tali integrazioni permetteranno di ultimare la configurazione dei posizionamenti nel sistema.
+[Erik Capoccetta, Davide Chieli] Pulire Database Test: Eliminare tutti i dati inseriti durante le sessioni di test precedenti. Questa operazione permetterà di ripristinare un ambiente operativo pulito per nuove verifiche.
+[Erik Capoccetta, Davide Chieli] Implementare Flusso Annuale: Sviluppare un flusso di compilazione dedicato per l'allegato F che gestisca le scadenze annuali e il salvataggio dei dati storici. Assicurare che la procedura preveda un modulo specifico prima della firma dei documenti.
+[Erik Capoccetta, Davide Chieli] Spostare Campi Anagrafici: Trasferire i campi relativi alla scadenza della carta di circolazione e alle autorizzazioni dalla scheda autista a quella dei mezzi. Configurare la logica di sistema per rendere obbligatori i documenti in base alle categorie selezionate per ciascun mezzo.
+[Flavia Pigliacelli] Testare Onboarding: Verificare il corretto funzionamento del processo di accreditamento e la compilazione dei dati sul portale. Inviare le segnalazioni raccolte per permettere ulteriori affinamenti tecnici.
+[Davide Chieli] Pulisci database: Rimuovi i subvettori dal database per consegnarlo completamente vuoto.
+[Davide Chieli] Correggi fix: Implementa le correzioni minori, inclusi i campi degli autisti e la carta di circolazione, entro venerdì.
+[Davide Chieli] Gestisci lista modifiche: Applica gli aggiornamenti specificati nel documento condiviso.
+[Davide Chieli] Rimuovi pulsante: Elimina il comando di chiusura dall'interfaccia dove non risulta necessario.
+Dettagli
+Completamento del flusso di onboarding e configurazione dei test: Erik Capoccetta spiega che la creazione e la revisione del flusso di onboarding per i subvettori sono state completate, consentendo l'accesso alla piattaforma solo dopo l'accreditamento e il caricamento della documentazione verificabile. Per permettere i test richiesti da Flavia Pigliacelli, Erik Capoccetta indica che il sistema bypassa temporaneamente il sistema SGA creando un subvettore di prova direttamente sulla piattaforma, e che il database è stato ripulito per essere risynchronizzato al completamento del rework.
+Gestione della presa visione dei documenti di sicurezza e tempistiche del Modello 231: Flavia Pigliacelli solleva la necessità di certificare la presa visione e il download dei documenti di sicurezza da parte dei subvettori registrando data e ora nel log di sistema senza richiedere marche temporali. Erik Capoccetta conferma che tale funzionalità è in lavorazione. In merito al Modello 231, all'informativa e al codice etico, Flavia Pigliacelli avvisa che la revisione richiederà più tempo, spostando la disponibilità a ottobre o novembre, mentre Erik Capoccetta specifica che nei test attuali viene utilizzato temporaneamente un documento bianco.
+Dimostrazione pratica della piattaforma e creazione di un subvettore di prova: Davide Chieli e Erik Capoccetta conducono una dimostrazione pratica della piattaforma dopo aver eliminato i vecchi record importati da SGA. Erik Capoccetta utilizza le credenziali admin fornite da Davide Chieli (`admin` / `admin2026`) per accedere all'area riservata e mostrare la creazione di un nuovo subvettore di prova inserendo e-mail, ragione sociale, codice fiscale o partita IVA e codice SGA, mantenendo il controllo sul momento in cui inviare le credenziali.
+Invio delle credenziali e test di accesso tramite email temporanee: Erik Capoccetta mostra l'invio automatizzato delle credenziali di accesso al subvettore tramite la piattaforma e suggerisce l'utilizzo del servizio di posta temporanea `Tempmail` (tramite link condiviso in chat) per simulare l'accesso senza impiegare indirizzi e-mail reali. Flavia Pigliacelli richiama i test eseguiti prima della pausa estiva ed Erik Capoccetta conferma che la comunicazione fa parte del nuovo processo di onboarding, invitando a fornire i testi desiderati per personalizzare l'oggetto e il contenuto dei messaggi.
+Compilazione dell'anagrafica aziendale nel flusso di onboarding: Erik Capoccetta illustra il flusso di onboarding obbligatorio per i subvettori, evidenziando che il sistema salva automaticamente i dati inseriti consentendo di riprendere la compilazione in sessioni successive in caso di interruzione. Flavia Pigliacelli e Erik Capoccetta esaminano i campi obbligatori dell'anagrafica aziendale (partita IVA, sede, numero di registro imprese, PEC e dati del legale rappresentante autorizzato alla firma), i quali saranno precompilati automaticamente non appena i dati saranno importati da SGA.
+Inserimento e gestione degli autisti e dei relativi documenti: Erik Capoccetta presenta la sezione dedicata all'inserimento obbligatorio di almeno un autista, raccogliendo dati quali patente, scadenza CQC, e documenti sanitari o di formazione sulla sicurezza. Su richiesta di Flavia Pigliacelli, viene concordata l'introduzione delle scadenze direttamente all'interno dello stesso modulo per una maggiore gestibilità. Erik Capoccetta mostra inoltre la gestione dei campi condizionali per i permessi di soggiorno e la possibilità di chiudere la finestra per inserire più autisti in serie.
+Inserimento e classificazione dei mezzi di trasporto: Erik Capoccetta guida la sezione relativa all'inserimento dei veicoli aziendali (targa, anno di immatricolazione, numero di telaio, marca, tipo e scadenze di carta di circolazione e assicurazioni). Su indicazione di Flavia Pigliacelli, viene aggiunto un menu a tendina per identificare il tipo di veicolo (trattore o semirimorchio) e la gestione delle targhe specifiche. Davide Chieli e Erik Capoccetta discutono l'obbligatorietà dell'associazione dell'autista al veicolo, decidendo di renderla non obbligatoria su suggerimento di Flavia Pigliacelli poiché gli autisti possono cambiare mezzo frequentemente.
+Caricamento dei documenti obbligatori e non obbligatori del subvettore: Erik Capoccetta spiega la procedura per il caricamento dei documenti obbligatori del subvettore, tra cui copia del documento del legale rappresentante, certificato Ren, iscrizione albo conto terzi, visura camerale, ricevuta annuale e polizza RCA, specificando la necessità di indicare la scadenza per ciascuno. Erik Capoccetta e Davide Chieli concordano con Flavia Pigliacelli di inserire un controllo per rendere obbligatorio il caricamento dell'autorizzazione Albo nel caso in cui vengano selezionate le categorie speciali 1, 4 o 5 nell'anagrafica.
+Analisi e integrazione dei campi per il Modello 231 e le dichiarazioni: Davide Chieli mostra i documenti che il subvettore deve firmare prima dell'invio, evidenziando che i file come il Modello 231 sono in fase di sviluppo e richiedono di specificare la provenienza di vari campi mancanti (residenza del legale rappresentante, numero di iscrizione all'albo trasportatori, capitale sociale, dati di fatturato degli ultimi tre anni). Flavia Pigliacelli e Erik Capoccetta valutano le modalità di compilazione e aggiornamento annuale di tali dichiarazioni (in particolare l'allegato F), concordando di definire una struttura idonea per alleggerire la prima sezione anagrafica.
+Processo di firma digitale tramite OTP e gestione degli aggiornamenti futuri dei documenti: Erik Capoccetta dimostra la firma dei documenti finali tramite codice OTP ricevuto dal subvettore, completando il quale la pratica viene inviata per l'attivazione e notificata agli operatori. Flavia Pigliacelli chiede chiarimenti su come procedere per futuri aggiornamenti normativi o periodici del Modello 231 o del codice etico, ed Erik Capoccetta spiega che la semplice sostituzione del PDF richiede pochi minuti se il layout delle firme rimane invariato, mentre modifiche strutturali che alterano la posizione dei campi richiedono un intervento tecnico di sviluppo.
+Notifiche di attivazione, revisione dei documenti e pianificazione dei test: Erik Capoccetta descrive la schermata visibile dopo l'accreditamento, dove gli operatori possono consultare i dati compilati, esaminare i documenti caricati e richiedere revisioni in caso di file non validi, mentre il sistema gestisce gli alert di scadenza dei documenti sia per l'azienda che per i subvettori. Erik Capoccetta conclude confermando che il database verrà ripulito nel pomeriggio per consentire a Flavia Pigliacelli e ai colleghi di iniziare i test sul flusso di onboarding a partire dal giorno successivo e condividere le relative segnalazioni.
+Gestione dei documenti obbligatori per il trasporto rifiuti e ANGA: Flavia Pigliacelli evidenzia che l'indicazione dell'autorizzazione al trasporto rifiuti deve rendere obbligatorio il caricamento di documenti specifici, tra cui l'iscrizione al registro Rentry, il relativo pagamento annuale e l'iscrizione all'ANGA (00:56:48). Erik Capoccetta e Davide Chieli analizzano la gestione di tali documenti per le categorie 1, 4 e 5, rilevando la presenza di duplicati nei codici numerici dei file nel sistema (come i documenti 12, 24 e 25 per l'ANGA e 14, 26 e 27 per il Rentry) (00:59:02). Viene stabilito di eliminare i duplicati e di configurare richieste separate per ciascuna categoria posseduta dal sub-vettore (01:00:00). Erik Capoccetta si impegna ad aggiornare il sistema con tali modifiche per permettere a loro di testare il flusso definitivo (01:02:03).
+Spostamento dei campi anagrafici dai conducenti ai mezzi: Erik Capoccetta e Davide Chieli constatano che diversi campi e documenti precedentemente associati agli autisti, inclusi i dati legati all'ANGA e la scadenza della carta di circolazione, devono essere ricondotti ai mezzi di trasporto. Viene specificato che il controllo delle categorie e dei relativi certificati deve avvenire per singolo veicolo e non a livello aziendale o di conducente (01:02:58) (01:13:01). Davide Chieli si occuperà di modificare le interrogazioni e i campi nell'anagrafica per spostare correttamente queste informazioni (01:09:55) (01:13:01).
+Implementazione del modulo annuale per i documenti dichiarativi complessi: L'incontro affronta la gestione dei documenti verdi, corrispondenti a moduli dichiarativi estesi come l'allegato F, che richiedono la compilazione annuale di numerosi dati, inclusi quelli relativi al fatturato. Erik Capoccetta spiega che questi documenti non vengono semplicemente caricati come file statici, ma richiedono un passaggio e un modulo dedicati in cui il sistema pre-compila i dati e i sub-vettori li completano e firmano annualmente (01:06:40) (01:09:02). Davide Chieli sottolinea l'elevato carico di lavoro richiesto per sviluppare questo flusso specifico e per preservare lo storico dei dati negli anni successivi. Erik Capoccetta informerà inoltre Filippo e Francesca riguardo a questa rilevante modifica (01:06:40) (01:09:55).
+Revisione dell'interfaccia amministrativa e dei dati dei sub-vettori: Erik Capoccetta nota che accedendo alla scheda di un sub-vettore con l'account amministrativo vengono visualizzate unicamente le tratte, senza evidenziare l'anagrafica dei mezzi e degli autisti collegati (01:04:08). Davide Chieli spiega che la sezione dedicata richiede integrazioni e che provvederà a inserire tali informazioni (01:05:32). Inoltre, Davide Chieli esamina alcune difformità riscontrate da loro relative alla presenza dei pulsanti di chiusura nelle interfacce modali per correggere il comportamento anomalo (01:11:55).
+Pianificazione delle scadenze e pulizia del database per i test: Erik Capoccetta richiede che i correttivi minori vengano completati entro la fine della settimana, fissando una scadenza per venerdì, mentre il modulo dichiarativo complesso richiederà tempistiche separate. Per facilitare le verifiche, viene concordato di ripulire il database eliminando i sub-vettori caricati in precedenza, lasciando l'ambiente vuoto per permettere a loro di inserire nuovi dati di prova. Davide Chieli conferma l'intenzione di finalizzare le piccole correzioni per venerdì, data in cui programmeranno un nuovo controllo congiunto (01:14:09).
+Dovresti rivedere le note di Gemini per assicurarti che siano accurate. Ricevi suggerimenti e scopri come Gemini prende appunti
+Qual è la qualità di queste note specifiche? Rispondi a un breve sondaggio? Facci sapere cosa ne pensi e quanto le note siano state utili per le tue esigenze.
+📖 Trascrizione
+set 16, 2026
+Pigliacelli Workspace - Briefing e SAL - Trascrizione
+00:00:13
+Erik Capoccetta: Buongiorno. Ciao.
+Flavia Pigliacelli: Ciao ciao.
+Erik Capoccetta: Scusate il piccolo ritardo e la riprogrammazione, ma abbiamo avuto un imprevisto dell'ultima ora,
+Flavia Pigliacelli: Sono anche dei problemi.
+Erik Capoccetta: come l'ho scritto, ci serviva una un'ora per fare delle cose. Ehm, allora aspettiamo intanto che arrivi Davide, eh, che insomma si sta occupando prevalentemente dello sviluppo della della piattaforma. Eh,
+Flavia Pigliacelli: Ok.
+Erik Capoccetta: intanto eh io vi faccio una una breve panoramica di di dove siamo arrivati, a che punto siamo e quello che poi magari andiamo andiamo a vedere. Allora, noi abbiamo completato tutta la parte di revisione, anzi diciamo creazione del flusso di onboarding che ci avete chiesto. Quindi il vettore prima di accedere alla piattaforma deve completare tutta una serie
+Flavia Pigliacelli: Sì.
+Erik Capoccetta: di passaggi per l'accreditamento, tutti quei passaggi che abbiamo visto e solo dopo che ha completato quella fase accede a alla piattaforma. Ovviamente a voi arriva poi tutta la documentazione che il vettore ha caricato, tutti i dati che ha inserito, le andate a rivedere. Qualora serve che di correggere un documento, di integrare qualcosa, lo potete fare sempre tramite richiesta e su operando sull'interfaccia della della piattaforma.
+00:01:36
+Erik Capoccetta: Quindi questa parte è è completa e vi chiederemo quindi di fare dei
+Flavia Pigliacelli: Ok.
+Erik Capoccetta: test validare se effettivamente eh il flusso è come poi abbiamo abbiamo definito e rivisto rivisto insieme. Al momento vi si chiede di ins vi abbiamo insomma abbiamo bypassato SGA perché al momento per fare quel flusso di onboarding non serve. Possiamo creare un vettore di prova direttamente sulla piattaforma in modo che potete usare qualsiasi email vi pare e cercare, insomma, di e testare direttamente il flusso in modo rapido, senza interrogare ogni volta SGA. Eh, quindi noi abbiamo ripulito completamente il database, poi eh riusciamo a diciamo a lo facciamo riallineare una volta che abbiamo completato tutta la fase tutta questa fase di rework. Eh,
+Flavia Pigliacelli: Ok.
+Erik Capoccetta: perché comunque sono state cambiate è cambiata proprio molto anche l'infrastruttura del database, eh, e quindi lavorare con dati vecchi non ha senso, quindi gli rimportiamo poi una volta che tutto è è completato. Eh, vediamo. Provo a sentire Davide se arriva. Allora,
+Flavia Pigliacelli: E senti Erik, invece una cosa, l'altro ambito che riguardava tutto il flusso documentale successivo,
+00:03:14
+Erik Capoccetta: sì.
+Flavia Pigliacelli: no, di cui noi dobbiamo Dobbiamo aver contezza che sul vettore ha preso visione, scaricato, ti ricordi tutto quel discorso al netto dei tre documenti che restano, insomma, Carmine, che sono il modello 231, l'informativa e il codice etico, ci sono tutti gli altri documenti anche di sicurezza che noi dobbiamo comunicare ai pettori lì, come avete impostato, insomma, il fatto che non possiamo necessariamente passare tramite voi per la firma digitale, vi ricordi avevamo fatto tutto questo discorso?
+Erik Capoccetta: Sì, lì avevamo visto Avevamo poi convenuto sul fatto che voi caricate questo documento in PDF sulla piattaforma e tramite un trusso il vettore ne prende visione senza che lo firmi.
+Flavia Pigliacelli: Sì, però a noi deve essere certificata la presa visione, capito? Cioè nel portale si deve vedere o la data e l'ora in cui è stato scaricato.
+Erik Capoccetta: Certo.
+Flavia Pigliacelli: Ah, ok, perfetto. Quindi questo concluso così.
+Erik Capoccetta: Cioè c'è un viene proprio registrato nel log di sistema data e ora eh in cui viene visualizzato questo documento. Non non penso che vi occorra una marca temporale perché poi quelli sono servizi anche a
+Flavia Pigliacelli: No, no, no.
+00:04:24
+Erik Capoccetta: pagamento.
+Flavia Pigliacelli: solo insomma una presa visione che effettivamente sia stato scaricato.
+Erik Capoccetta: Ok. No, sì, ma quella parte ancora, insomma, è in lavorazione, quindi eh la la vedremo e la proveremo poi dopo quando sarà sarà pronta. Mentre per quanto riguarda quei documenti che ci dovete inviare, di cui abbiamo bisogno che servono appunto nell'onboarding iniziale, li avete per caso preparati già oppure
+Flavia Pigliacelli: No, c le tempistiche, soprattutto per la revisione del modello 231, ti ho detto si spostano molto in avanti. Ce l'avremo per ottobre novembre, non prima.
+Erik Capoccetta: Ok. Ok. E nel frattempo per fare i test noi abbiamo messo un documento bianco generato
+Flavia Pigliacelli: Sì, anche questo,
+Erik Capoccetta: così.
+Flavia Pigliacelli: nel senso, io penso che non so come è stata improntata adesso tecnicamente la la sezione relativa a questi tre documenti, però anche lì, insomma, noi dobbiamo ricevere solamente una presa visione anche in quel caso, cioè del modello 231. Noi già facciamo riferimento nel contratto, eh, non penso che abbiamo bisogno.
+Erik Capoccetta: No, però lì mi avete richiesto la firma voi che il vettore doveva firmare quei documenti.
+00:05:29
+Flavia Pigliacelli: Quello va benissimo, soprattutto l'informativa, il codice etico. Infatti ti volevo chiedere lì come l'avete strutturata, se già è stata strutturata la
+Erik Capoccetta: È strutturata nell'onboarding, adesso la vediamo e il vettore non può completare l'onboarding fin quando non firma tutti quei documenti lì.
+Flavia Pigliacelli: Ok, ok, perfetto.
+Erik Capoccetta: Allora, intanto ecco che arriva Davide, così andiamo a farlo insieme. Ciao Davide, eccoci.
+Flavia Pigliacelli: Buongiorno. Buongiorno.
+Davide Chieli: Ciao a tutti, buondi
+Erik Capoccetta: А Allora, stavo facendo una piccola introduzione su quello che andremo a vedere oggi, a che punto siamo,
+Davide Chieli: Sì.
+Erik Capoccetta: così delimitiamo anche un attimo poi il perimetro di quello che saranno i test che vanno a a condurre a condurre loro. Eh, gli ho detto che abbiamo pulito il database, quindi ripartirà da zero.
+Davide Chieli: Sì, sì,
+Erik Capoccetta: Eh,
+Davide Chieli: diciamo che abbiamo pulito, vabbè, i contratti, viaggi, tratte, ovviamente ci saranno solo i documenti iniziali per i subettori che abbiamo appena importato.
+Erik Capoccetta: sì, quelli diciamo su quelli su cui facciamo il test.
+00:06:33
+Erik Capoccetta: gli altri vecchi li abbiamo cancellati,
+Davide Chieli: Sì, sì, sì, sì.
+Erik Capoccetta: tutti quelli che sono stati importati da SGI, in modo che avete subito contezza di quelli che sono i vettori su quale state facendo le prove, quali sono i loro documenti, eh, e eccetera. Quindi io a questo punto eh procederei a condividervi lo schermo, così facciamo un piccolo un piccolo test, eh, e se avete domande, intanto nel frattempo vediamo insieme eh le cose. Allora, prendo quelle che sono le credenziali per accedere, ok? e condivido poi lo schermo. Allora, condividi questa qui. Ok, questa è la schermata di accesso. Vabbè, ormai la ce l'avete presente. Inserite username e password relativo al vostro utente e entrate nella piattaforma.
+Davide Chieli: E c'è anche un'altra utenza admin se la vuoi usare. Questa è super admin ci sta adminadmin.it se la vuoi
+Erik Capoccetta: Ah,
+Davide Chieli: usare.
+Erik Capoccetta: ok. Se me dai utilizzo quello. Admin.
+Davide Chieli: Eh sempre admin 2026.
+Erik Capoccetta: Sì. Ok, perfetto. Così è anche è anche meglio.
+00:08:10
+Erik Capoccetta: Quindi eh per fare i test dovete ovviamente iniziare dall'anagrafica subvettori. Questa qui adesso la la puliremo. Qui ancora vedete tutti i vecchi, ma adesso li andiamo eh li andiamo a cancellare così.
+Davide Chieli: Questi sono i subvettori importati, diciamo, a tempo zero,
+Erik Capoccetta: Sì.
+Davide Chieli: quindi adesso per facilitare le cose.
+Erik Capoccetta: Eh questi Sì, sì. Io questi li li pulirei, Davide, come ti dicevo,
+Davide Chieli: Ok.
+Erik Capoccetta: così lavorano solo sui nuovi che stanno su cui stanno facendo su cui stanno facendo i
+Davide Chieli: Ok.
+Erik Capoccetta: test. Eh, poi quelli di da SGA li rimporteremo tutti quanti,
+Davide Chieli: Ok.
+Erik Capoccetta: quindi andrete ad azzerare. Quindi per fare il test che cosa vi occorre? Eh, andate qui nel nella schermata anagrafica subvettori, abbiamo detto, andate a cliccare qui su nuovo e vi basta Yeah.
+Flavia Pigliacelli: No.
+Erik Capoccetta: una mail, una ragione sociale e un codice fiscale o partita IVA. Adesso io vado a inserire una mail di pro
+Davide Chieli: Neche sgro.
+00:09:06
+Davide Chieli: Neanche qu di sga.
+Erik Capoccetta: eh anche una mail, una ragione sociale, quindi sub vettore prova 1 un codice fiscale verso lo inventiamo e il codice SGA che è richiesto che magari andiamo a mettere se 999. Quindi in questo momento se io clicco salva arriverà a questa mail. Eh si insomma siverà un record.
+Davide Chieli: Metti un po' Ok.
+Erik Capoccetta: Ok, vado ad inserire questo record. Ovviamente lo troverò alla fine adesso che poi vi diamo una pulita, non dovrete navigare cinque o sei pagine, ma lo troverete direttamente lì. Eccolo qua. Allora, subvettore prova. Eh, quindi in questo momento il supervettore è soltanto censito sulla piattaforma con questi tre dati.
+Flavia Pigliacelli: M.
+Erik Capoccetta: Se io voglio avviare la procedura di onboarding, devo cliccare eh cliccare qui. Eh cliccando qui arriverà una mail al subvettore con la quale lui si loggherà sulla piattaforma e darà avvio alla procedura di onboarding per come non abbiamo stabilita. In base quindi a quella che sarà la nuova revisione, ovviamente cosa succederà? Noi ogni volta che voi cliccate sul pulsante sincronizza SGA importeremo i nuovi vettori eh da SGA.
+00:10:29
+Erik Capoccetta: Eh, e però dov è sempre vostra eh diciamo affidato alle a vostro input di inviargli le credenziali perché magari voi potete decidere che importate il vettore, che ne so, oggi a tempo zero, ma ad inviargli le credenziali fra una settimana, fra due giorni, fra un mese, quindi quando siete pronti a fargli effettivamente fare la procedura di accreditamento. Quindi abbiamo rimesso a voi questa questa cosa come ci avete chiesto, così avete il pieno controllo di quello che succede sulla sulla piattaforma. Io in questo momento clicco qui, invio le credenziali al subvettore in sistema. Poi avete un feedback che vi dice credenziale inviate a questo indirizzo eh email. A questo punto mi sposto eh sul diciamo la casella mail
+Flavia Pigliacelli: Ok.
+Erik Capoccetta: del eh del subvettore. Io qua ho usato questo strumento che permette di creare delle mail temporanee gratuite. Le potete creare quante volete, eh come volete, senza magari utilizzare indirizzi eh reali per fare le prove, così potete fare quante prove vi pare e non avete nessun problema di mail che sono uguali. Il servizio si chiama Tempomil. Eh, magari vi metto il il link anche qua nella chat in modo che vi
+Flavia Pigliacelli: Sì.
+00:11:44
+Erik Capoccetta: può agevolare per fare i test. Se non c'è questo, ce ne sono tanti altri, eh, noi usiamo questo perché è abbastanza comodo. Eh, quindi io ricevo questa mail. Eh, ovviamente i testi poi ce li dovete fornire voi.
+Flavia Pigliacelli: Sì.
+Erik Capoccetta: messo dei test di base, eh, quindi diteci voi quello che volete comunicare al subvettore, l'oggetto della mail, il contenuto, eh, eccetera. Quindi una volta che poi ce li fornite, noi li implementiamo e il subettore vedrà vedrà.
+Flavia Pigliacelli: che facevamo prima cosa era scritto, perché anche altre volte, insomma, prima della pausa estiva avevamo fatto un test del genere e arrivava già unemail, lì era automatico, se non sbaglio, con le credenziali e c'era il logino, insomma, il portale e quant'altro. Adesso non mi ricordo il testo, magari poi noi lo personalizziamo sicuramente, però non so se è lo stesso che stiamo vedendo adesso o avete già cambiato qualcosina. Cioè,
+Erik Capoccetta: No,
+Flavia Pigliacelli: dovrei andarmi a
+Erik Capoccetta: questa diciamo che è una mail nuova perché qui il vettore accede a un nuovo processo che è appunto quello di di onboarding.
+00:12:46
+Erik Capoccetta: Eh, magari potete usare la mail per anticipargli quello che troverà. Eh, quindi, ad esempio, vi stiamo inviando questo accesso, eh devi prima completare la procedura di onboarding per poterti definitivamente eh accreditare. Adesso magari che vediamo meglio la procedura, mi viene in mente anche quello che poi è il testo che può eh accompagnare questa questa mail che arriva. Quindi io eh accedo all'area riservata, adesso apro in una nuova scheda, eh inserisco queste carichi che mi vengono fornite.
+Davide Chieli: il tool di Terminate Mail che non visualizza l'HTML, ma dovrebbe essere già presente con il logo. Io la vedo già su Gmail, per esempio.
+Erik Capoccetta: Ok, inserisco mail e password e avvio la procedura di onboarding.
+Flavia Pigliacelli: No, ehm
+Erik Capoccetta: Quindi qua anche abbiamo inserito noi dei testi, eh, se li volete personalizzare fateci pure avere i testi che volete mettere, eh, non c'è problema. Quindi, che cosa succede? il vettore fin quando non completerà questa procedura, ogni volta che accede si troverà a dover passare per questo flusso di lavoro.
+Flavia Pigliacelli: M.
+Erik Capoccetta: Ovviamente se lui ha completato tre passaggi e poi gli si chiude, gli cade la connessione eccetera, non non vengono persi i dati, ma i tre passaggi vengono salvati, lui ripartiràamente dal passaggio dove si è fermato.
+00:14:15
+Erik Capoccetta: Quindi non è detto che debba completarla tutta in un'unica soluzione questa ehm questo flusso, ma lo può completare comodamente anche in più in più sessioni, perché magari non so, deve recuperare i documenti che gli servono, eh non c'ha i dati, eccetera, quindi ogni volta può salvare i dati e riprendere da dove aveva da dove aveva lasciato. Quindi c'è un sistema appunto di di controllo che dice che fin quando non è stata completata questa procedura il vettore ogni volta che accederà deve passare per questo per questo flusso. Quindi io magari inizio a completare i dati.
+Flavia Pigliacelli: Mhm.
+Erik Capoccetta: Partiamo da quella che è l'anagrafica aziendale,
+Flavia Pigliacelli: Ja.
+Erik Capoccetta: quindi mi viene proposta questa maschera che eh a tutti i dati a questo punto che ci servono per poter poi andare a compilare gli allegati, gestire l'anagrafica, i contratti eccetera. Anche qui, fin quando non compilo tutti i campi richiesti, non posso andare eh non posso andare avanti.
+Flavia Pigliacelli: Quindi sono tutti obbligatori questi campi.
+Erik Capoccetta: Sono tutti obbligatori,
+Davide Chieli: Sì.
+Erik Capoccetta: sì, perché sono ovviamente dei dati che servono per uno per il contratto, uno per l'allegato, uno per la privacy, quindi sono tutti obbligatori da dover compilare.
+00:15:28
+Erik Capoccetta: Ovviamente adesso li vediamo vuoti perché noi ne abbiamo inseriti solo tre. Quando li prendiamo da SGA, più dati ci sono su SGA, più dati si troverà il vettore già precompilati, quindi magari, che ne so, partita IVA, sede, eh eh il registro delle imprese,
+Davide Chieli: Esatto.
+Erik Capoccetta: eccetera, se sono dati che stanno su SGA, lui se li troverà già precompilati li può modificare ovviamente se se sono sbagliati, ma ovviamente li può basta che poi li può confermare, già li già li trova. Quindi io vado avanti a compilare questi dati, magari la partita io la facciamo uguale al codice fiscale. Il telefono mettiamo uguale a questo cellulare. Qui mettiamo il formato col prefisso internazionale. Qua vado a aggiungere un po' dei dati che ho giàilati.
+Flavia Pigliacelli: M.
+Erik Capoccetta: Sede provincia Frosinone, numero registrazione di imprese, ne metto un paio. Frosinone, numero rea c qua. Anche qua vado a inserire una PEC, eh, che poi è la PEC di riferimento. Qua metto i dati. Qui faccio qui sono importanti i dati perché sono quelli che della persona che andrà a firmare poi tutti i documenti.
+00:16:48
+Davide Chieli: Esatto.
+Erik Capoccetta: Quindi questi dati devono qua se là potete mettere un indirizzo mail temporaneo, qua è necessario mettere un indirizzo mail e un numero di telefono cellulare che siano raggiungibili con i quali poi potete fare le firme perché dovete poi firmare quelli che sono i documenti. Quindi qua vado a mettere il mio telefono, luogo di nascita. Vado a provare a mettere delle nascite dei dati. Provincia di nascita sfr. Qua mettiamo una data. Mettiamo una data. Ok.
+Davide Chieli: Salvato.
+Erik Capoccetta: A questo punto clicco su salva o salverà vengano salvati i dati e vado avanti nella prossima schermata che è quella relativa a all'inserimento dell'anagrafica degli autisti.
+Flavia Pigliacelli: Sì.
+Erik Capoccetta: Quindi anche qui non posso andare avanti fin quando non ho inserito almeno un autista rispetto a quelli a quelli che ho. Quindi clicco qua su nuovo e mi vado a inserire tutti i dati del dell'autista.
+Davide Chieli: M.
+Erik Capoccetta: quindi autista prova 1 scadenza patente 0113 scadenza CQC io mi metto sempre delle date 2027 ma qui carta di circolazione e assicurazioni sono dati relativi all'autista o al mezzo?
+00:18:16
+Erik Capoccetta: Perché avevamo al mezzo, quindi questi campi non ci devono essere.
+Davide Chieli: a mezzi spostarsi in mezzi,
+Erik Capoccetta: Davide, devi non spostarsi in mezzo
+Davide Chieli: quindi ok.
+Flavia Pigliacelli: anche le categorie.
+Erik Capoccetta: e anche le categorie.
+Davide Chieli: Ah, ok.
+Erik Capoccetta: Ok.
+Flavia Pigliacelli: Sì.
+Erik Capoccetta: Ok, adesso andiamo avanti, magari eh categorie qui eh se ce l'hanno o non ce l'hanno che feggano sì o no. Di default sono su no. Magari ne mettiamo solo un paio. 1 e 4 e 5. Poi qui ovviamente devo allegare i dati, i documenti, senò non posso andare avanti. Vedete che mi mi vengono proposti degli errori. Quindi,
+Davide Chieli: Yes.
+Flavia Pigliacelli: Sì.
+Erik Capoccetta: fin quando non compilo tutto il profilo dell'autista completo con patente, documenti diità sanitaria, eccetera, non posso proseguire nell'inserimento dell'autista. Quindi, come vedete, è tutto guidato e controllato, non c'è possibilità di errore, è ridotta. al minimo, eh, veramente al al minimo. Quindi qui patente vado a selezionare.
+00:19:21
+Flavia Pigliacelli: Quando andranno a caricare i documenti, no, degli autisti, ad esempio, vedo attestato formazione sicurezza,
+Erik Capoccetta: Sì.
+Flavia Pigliacelli: ma devono inserire anche la scadenza oppure c'è un altro step per inserire la scadenza? del documento.
+Davide Chieli: possono inserirla nei documenti successivamente possono possono inserirla
+Flavia Pigliacelli: Come? Scusa, non ho capito.
+Davide Chieli: successivamente. Adesso in questo form qui non era prevista la scadenza, però potenzialmente si può aggiungere comunque.
+Flavia Pigliacelli: No, no,
+Erik Capoccetta: Si può aggiungere?
+Flavia Pigliacelli: se c'è un altro posto dove la la devono mettere obbligatoriamente va bene
+Davide Chieli: Sì.
+Flavia Pigliacelli: così.
+Erik Capoccetta: Cioè qui sono Allora,
+Davide Chieli: Ok.
+Erik Capoccetta: sarebbe ideale aggiungerla qui perché così lo fanno tutti in un'unica soluzione, cioè io carico il certificato e ti indico la scadenza perché altrimenti poi dovrebbero andare ad aggiungerla dopo, ma se devono ricordare di Sì,
+Flavia Pigliacelli: è più gestibile, insomma.
+Erik Capoccetta: sì. Tanto a noi non cambia nulla. Qua si è richiesto che inseriscano anche la scadenza, va va messa decisamente qui.
+00:20:17
+Erik Capoccetta: Tra l'altro la scadenza della patente ce l'abbiamo qui. La scadenza del Circabo.
+Flavia Pigliacelli: M.
+Davide Chieli: Da qua in realtà forse aggiun No, qui no. Ok.
+Erik Capoccetta: E qua forse non abbiamo attestato formazione sicurezza idoneità sanità. Questi altri non abbiamo in realtà, però si possono mettere. Però vabbè, io intanto vado a inserire gli altri gli altri documenti. Metto sempre un file vuoto. Adesso così possiamo andare avanti senza problemi. Eh, unità sanitaria attestato formazione di PAI terza categoria. Oh, ok. è qui.
+Davide Chieli: M.
+Erik Capoccetta: Permesso di Possiedo i permessi di soggiorno, sì o no? Se io metto sì, devo andare a a caricare anche il di soggiorno.
+Davide Chieli: Obbligatoriamento.
+Erik Capoccetta: Se io metto no, non lo devo caricare. Quindi c'è questa ulteriore condizione. Adesso clicco su salva e mi viene inserito il record. Qui potrei inserirne un altro fino a a quelli che sono tutti gli autisti che che ho, diciamo, a disposizione nella mia azienda.
+00:21:24
+Erik Capoccetta: Qui vedo il riepilogo di quello che è stato inserito, quindi questi campi poi li spostiamo a al mezzo.
+Flavia Pigliacelli: Scusa. Eh, rientra un attimo rientrare dentro questo diciamo che abbiamo inserito.
+Erik Capoccetta: Sì,
+Flavia Pigliacelli: Quando hai salvato, no? Eh, se salvi si apre automaticamente un'altra finestra per nuovo
+Davide Chieli: Ма.
+Flavia Pigliacelli: lista.
+Erik Capoccetta: sì, mi propone per inserire automaticamente un altro autista. Se io non lo voglio inserire più,
+Flavia Pigliacelli: Perfetto.
+Erik Capoccetta: clicco chiudi e si chiude.
+Flavia Pigliacelli: Ok.
+Erik Capoccetta: Così se ne devono inserire in serie, che sono tre 4, 5, 10, lo possono fare eh tutti insieme. Poi cliccano chiudi e si ritrovano e si ritrovano lui. Ovviamente se devono modificare qualcosa lo possono lo possono fare.
+Flavia Pigliacelli: Okay.
+Erik Capoccetta: Poi vanno qua cliccano su salva o su chiudi.
+Davide Chieli: Dovrebbe essere casata perché già l'ho fixata il doppio chiudi,
+Erik Capoccetta: Lo vanno è
+Davide Chieli: però forse c'è qualcosa in cash.
+Erik Capoccetta: incognito.
+00:22:21
+Erik Capoccetta: l'ho aperta adesso nuova,
+Davide Chieli: Ok, la vediamo dopo.
+Erik Capoccetta: quindi adesso vado avanti e in questo momento devo inserire i quelli che sono invece i mezzi eh della della società. Quindi qua troveremo poi i nuovi campi. Anche qua stessa logica, clicco su nuovo, vado a mettere la targa danno inmatricolazione telaio, marca veicolo, tipo veicolo, eccetera. Anche qua, se non carico i campi, mi dice quali sono i dati obbligatori da dover da dover caricare, quindi fin quando non li metto non posso non posso andare avanti. Quindi la tarca la targa hanno data di immatricolazione 011 telaio vabbèamo il numero di telaio marca di veicolo e tipo veicolo X no scadenza di carta di circolazione. Abbiamo detto 0102 01 02 senza assicurazioni 312 26. Anche qua se vado continuo a salvare lui mi chiede documento carta di quindi devo caricare la carta di circolazione. Ovviamente ho indicato la la scono
+Flavia Pigliacelli: Si potrebbe, scusa, si potrebbe specificare qua targa trattore, targa rimorchio. Oh! Ok,
+Davide Chieli: È la è una label o è una Sono due campi,
+00:23:47
+Erik Capoccetta: due campi diversi,
+Davide Chieli: non ho capito. M.
+Erik Capoccetta: quindi targa trattore e targa rimorchio. No.
+Flavia Pigliacelli: senò eh un po' che identifica tanto. Yeah. Ci dovrebbe essere un campo che dove mi dici se è un trattore o insieme rimorchio.
+Erik Capoccetta: Eh, questo allora dalle indicazioni che ci avete dato voi prima non era emersa questa cosa,
+Flavia Pigliacelli: No,
+Erik Capoccetta: quindi noi
+Flavia Pigliacelli: nel senso a lui il vettore dovrà caricare sia tutti i trattori sia tutti i segui rimorti. Ok?
+Erik Capoccetta: Ok.
+Flavia Pigliacelli: Quindi lui può caricare adesso la targa del trattore e poi successivamente la targa del rimorchio,
+Erik Capoccetta: Ok.
+Flavia Pigliacelli: non è che la deve caricare qua dentro, quindi ch salva, si apre una nuova finestra e carica tutti i documenti del semi rimorchio.
+Davide Chieli: Sì.
+Flavia Pigliacelli: Però qua dove c'è targa si può aggiungere targa trattore a fianco c'è solo la specifica del nominativo. Invece di lasciare scritto solo targa, mettere targa trattore oppure vicino, non so, alla targa o aggiungere qualcosa che specifica che è un trattore o un segino.
+00:24:50
+Erik Capoccetta: Eh, ok. Questo allora un conto se io quindi voi volete sapere se questo veicolo, questo questa targa che viene inserita è un trattore o un semirimorchio, quindi è un ulteriore campo che definisce e il tipo di di
+Flavia Pigliacelli: Tipo veicolo.
+Erik Capoccetta: tag,
+Flavia Pigliacelli: Io vedo tipo veicolo, no?
+Erik Capoccetta: eh. Ah, poi quindi qui ci va o trattore o seminimo. Non è un campo libero, ma è un campo a selezione.
+Flavia Pigliacelli: Se c'è seè possibilità di mettere nella tendina dove puòare
+Erik Capoccetta: Sì. Sì,
+Flavia Pigliacelli: trattore
+Erik Capoccetta: va bene. Sì, questo si può fare. Quindi tipo veicolo deve essere una selezione chiusa tra trattore o semiorchio. Deve esserci in
+Flavia Pigliacelli: Sì.
+Davide Chieli: Eh,
+Flavia Pigliacelli: Sì.
+Davide Chieli: ma vi serve sempre, diciamo, il tipo veicolo nel senso di della del tipo de di veicolo nel senso appunto Ford Transporter oppure cioè vi serve saperlo questo dato per X89 in questo caso?
+Erik Capoccetta: No, c'è la marca,
+Flavia Pigliacelli: No,
+Davide Chieli: Eh no,
+Erik Capoccetta: eh il modello no,
+00:25:52
+Davide Chieli: la marca appunto è di Veco. Serve anche penso la tipologia di veicolo il modè.
+Flavia Pigliacelli: no,
+Erik Capoccetta: non vi serve.
+Flavia Pigliacelli: poi lo eventualmente si vede dalla carta di circolazione. Ok.
+Erik Capoccetta: Ok, quindi va bene. Quindi qua mettiamo trattore per ora, quindi selezionano tutti i campi e qua possono assegnare o meno un autista a questo veicolo. Ovviamente non è obbligatorio, possono, quindi io lo assegno, non lo non lo assegno. Vado su salva e come prima posso inserire un altro veicolo nuovo che mi serve, altrimenti clicco su annulla e me lo ritrovo e me lo ritroverò qua. Quindi con tutti con tutti i documenti. Adesso vado avanti.
+Flavia Pigliacelli: Mhm.
+Erik Capoccetta: Eh, conf.
+Davide Chieli: Penso che l'autista sia obbligatorio, lo sai? O per adesso è obbligatorio, se non sbaglio.
+Flavia Pigliacelli: Eh,
+Erik Capoccetta: Ah, è obbligatorio. Ok.
+Davide Chieli: Trolla un attimo.
+Erik Capoccetta: Eh sì, perché non carta di circolazione.
+Davide Chieli: Sì, l'autista è obbligatorio, mi sa.
+00:26:54
+Davide Chieli: Bisogna assegnare per forza un veicolo. No.
+Erik Capoccetta: Ok, è così. E ogni a ogni targa va assegnato per forza un autista.
+Flavia Pigliacelli: no, perché comunque eh gli avisti possono cambiare il trattore, possono cambiare il rimorchio, quindi non credo che sia necessario indicare la pista allegato alleando, cioè legandola a un tratto un mezzo.
+Erik Capoccetta: Ok. Perché sul vostro allegato c'era la colonna autista,
+Flavia Pigliacelli: quella B, cioè autista perché era tutto uno, diciamo, autista con la col trattore, però
+Davide Chieli: Perciò io l'ho messo obbligatorio per solo per questo, però se non è necessario
+Erik Capoccetta: quindi in questo caso lo mettiamo non obbligatorio.
+Flavia Pigliacelli: no.
+Erik Capoccetta: Vabbè,
+Flavia Pigliacelli: No.
+Davide Chieli: No.
+Erik Capoccetta: adesso io lo indico perché sennò non mi manda avanti. Ok, vado avanti sul prossimo e adesso devo andare a caricare tutti questi documenti che mi vengono richiesti. Ovviamente qui vedo se sono obbligatori o no. Se ce li ho li carico, se non ce li ho non li carico.
+Flavia Pigliacelli: Угу.
+00:27:50
+Erik Capoccetta: Quelli non obbligatori, invece quelli obbligatori devo caricarli per forza perché se io vado avanti lui mi chiede che devo andare a compilare tutti questi documenti, tutti questi documenti qua, quindi certificato conto albo terzi,
+Flavia Pigliacelli: Ok.
+Erik Capoccetta: certificato Ren, certificato WH list eccetera. Quindi devo compilare tutti questi campi. Iniziamo con copia documento delle gare rappresentante. Vado qua, seleziono il file e indico la scadenza e salvo. Quindi carico il file anche qua certificato Ren, seleziono il file e metto la scadenza. Ora sono un po'erà un po' poi l'ultimo corso di validità e indico la scadenza. Salvo certificato albo terzi.
+Davide Chieli: M.
+Erik Capoccetta: Vado a caricare sempre sto file e indico la scadenza.
+Davide Chieli: per questi tutti questi file obbligatori hanno tutti la scadenza obbligatoria e il file chiaramente
+Erik Capoccetta: Sì, sì, sì, sì, è ovvio. Eh, ricevuta annuale anche questa. Vado qua. Perfetto. Ovviamente poi tutti questi documenti voi ve li ritroverete nella scheda del vettore già caricati, quindi non dovete soltanto controllarli se sono ok.
+00:29:25
+Erik Capoccetta: Eh,
+Flavia Pigliacelli: Ok.
+Erik Capoccetta: se non sono ok, gli mandate una nota per ricaricarli, eccetera. Visura camerade, anche questo carichiamo la sal. Quindi man mano che vado avanti, se io clicco prossimo, lui mi mostra solo quelli che mancano.
+Flavia Pigliacelli: M.
+Erik Capoccetta: A questo punto certificato white list e polizza RCA. Manca solo la vo. Questi qui se io ce li ho, li carico, altrimenti non li carico. Corretto? Sono non obbligatori.
+Flavia Pigliacelli: Sì,
+Erik Capoccetta: Ma questo qui se io ho selezionato però una delle due delle categorie qui lo devo caricare, vero?
+Flavia Pigliacelli: sì.
+Erik Capoccetta: Ok. Magari qui inseriamo un controllo. Capito Davide? Se io ho inserito categoria 1 o 4 o cinque, devo caricare un un documento
+Davide Chieli: Quindi categoria 1 4 5 bisogna allegare. il l'autorizzazione anga per quel tipo di cat.
+Flavia Pigliacelli: E la scadenza.
+Erik Capoccetta: e per questo tipo di categoria. Eh,
+Flavia Pigliacelli: E la scadenza.
+00:30:36
+Erik Capoccetta: e la scadenza.
+Davide Chieli: Sì,
+Erik Capoccetta: Sì,
+Davide Chieli: sì.
+Erik Capoccetta: sì, ovviamente per ogni documento poi c'è la scadenza che devo caricare, no?
+Davide Chieli: Ok.
+Erik Capoccetta: Manca la poliz RCA. Ah,
+Davide Chieli: Ma devi Ok.
+Erik Capoccetta: scale e salvo. Ok, adesso posso proseguire. manca l'ultima sezione che è ovviamente quella relativa, come dicevamo, ai documenti che io devo firmare,
+Flavia Pigliacelli: Sì.
+Erik Capoccetta: che il vettore deve obbligatoriamente firmare prima di inviare la,
+Flavia Pigliacelli: Ja.
+Erik Capoccetta: diciamo, tutti i dati per la l'approvazione, per l'accreditamento. Quindi modello 231, dicevamo, e questo ce lo dovete ce lo dovete far
+Davide Chieli: Sono tutti placeholder, tranne il secondo che ho cominciato. sviluppare non è completo, però soprattutto mancano tanti campi che ci dovreste dire eh dove prenderti.
+Erik Capoccetta: Esatto.
+Flavia Pigliacelli: Campi, perdonami che non abbiamo sentito bene.
+Davide Chieli: Eh, dicevo, questi tutti tra questi quattro file solo le dichiarazioni sono ho incominciato a generare il documento sulla base di quello che ci avete condiviso,
+00:31:48
+Flavia Pigliacelli: Ok.
+Davide Chieli: ma mancano molti molti campi che ci dovreste specificare dove prendere i dati.
+Flavia Pigliacelli: E campi, però facciamo magari perché esatto così capiamo.
+Davide Chieli: Eh, magari se vediamo l'allegato è più chiaro.
+Flavia Pigliacelli: อ
+Erik Capoccetta: Adesso magari lo vediamo. Allora, ad esempio, la residenza eh del del legale rappresentante, questi magari sono dati che possiamo mettere nel form del legale rappresentante.
+Davide Chieli: No, questi vengono già presi quando infatti quando si firma il documento già vengono. Questa è solo l'anteprima.
+Erik Capoccetta: Eh, però il nome l'ha preso, manca la residenza. Questi qui manca
+Davide Chieli: Sì, alcuni dati.
+Flavia Pigliacelli: perché la resilienza di là non c'è.
+Erik Capoccetta: no.
+Flavia Pigliacelli: C'è il luogo di nascita. data e provincia mi sembra però
+Erik Capoccetta: Quindi anche qua per illegale il rappresentante dobbiamo mettere città di residenza, indirizzo di residenza e numero.
+Flavia Pigliacelli: cambiare le dichiarazioni.
+Erik Capoccetta: Ok. Poi abbiamo is numero del iscrizione all'albo trasportatori.
+Davide Chieli: Ok,
+Erik Capoccetta: Abbiamo il qual è l'albo, immagino e il numero.
+00:32:53
+Erik Capoccetta: Anche questi forse sono campi che dobbiamo chiedere.
+Flavia Pigliacelli: No, quello dovrebbe prendere quando L'albo contro terzio. No,
+Davide Chieli: quindi l'albo è quel campo lì. Ce l'abbiamo. Allora, va bene.
+Flavia Pigliacelli: compila come prima cosa. Mi sembra che è la proprio la prima schermata.
+Davide Chieli: No, ma infatti questi dati qui ce l'abbiamo quasi sicuramente ce li abbiamo. Sono i miliardi di dati che sono sotto che non abbiamo. No.
+Erik Capoccetta: Quindi dobbiamo mettere qual è l'albo a cui sono iscritti e il numero di iscrizione.
+Flavia Pigliacelli: No,
+Erik Capoccetta: Ok,
+Flavia Pigliacelli: controversi. Eh, già credo che nella parte una prima propria schermata, una grafica, devi inserirlo. La provincia e il numero. Adesso non ricordo se c'è la provincia. Il numero cà sicuramente il numero.
+Erik Capoccetta: il numero c'è. La provincia no, mi sembra che dobbiamo chiederla perché non c'è, dobbiamo inserirlo. Quindi questi sono ulteriori campi della scheda anagrafica del vettore, capito Davide?
+00:33:47
+Davide Chieli: Sì, sì, è chiaro. Però ripeto, la cosa che mi perplima è quella sotto.
+Erik Capoccetta: Sì, sì. No, adesso andiamo avanti, mano li stiamo vedendo insieme. Allora, di Chiara eh deve essere Ok, vediamo un po'. Quindi qua ci va la prima firma, poi abbiamo quindi anche qui il sottoscritto residente e quindi paese di
+Flavia Pigliacelli: Sentr la residenza. Mh mh.
+Erik Capoccetta: residenza, provincia di residenza, indirizzo e numero.
+Flavia Pigliacelli: Questo questo albo sportatori comata provinciale è scritto in maniera
+Erik Capoccetta: Ok,
+Flavia Pigliacelli: diversa, ma è sempre albo controversi.
+Erik Capoccetta: è sempre l'albo conto terzi.
+Davide Chieli: Cosa?
+Erik Capoccetta: Ok. Consapevole, consapevole. eccetera, film e timbro. Ok. Oh, qui abbiamo Ok, ragione. Quindi capitale sociale è un campo che va inserito perché non
+Davide Chieli: Sì,
+Erik Capoccetta: c'è,
+Davide Chieli: non c'è.
+Erik Capoccetta: quindi anche lì deve indicare il capitale sociale il vettore.
+Flavia Pigliacelli: Forse possiamo questa la valutiamo un attimo, poi sign per favore vero?
+00:34:43
+Flavia Pigliacelli: Sì, certo. Allora, che è legato alleatore? Allora, numero iscrizione albo trasportatore è sempre lo stesso.
+Erik Capoccetta: Sì.
+Flavia Pigliacelli: Albo conto terzo eliminare togliere.
+Erik Capoccetta: Fax lo dobbiamo chiedere o poi responsabile commerciale,
+Flavia Pigliacelli: Sì, sì,
+Erik Capoccetta: responsabile amministrativo.
+Flavia Pigliacelli: io li toglierei sinceramente
+Erik Capoccetta: Ok, li lasciamo in bianco, quindi poi banca, IBAN, codice destinatari,
+Flavia Pigliacelli: loro, cioè come facciamo noi?
+Erik Capoccetta: però vi servono, cioè sono dati che vi servono per riscuotere,
+Flavia Pigliacelli: Servono più a loro per le scuole.
+Erik Capoccetta: quindi no, vabbè, quindi ovvio.
+Davide Chieli: St.
+Flavia Pigliacelli: Cioè, se non ce li vogliono dare, se non ce li danno va bene, pagamo.
+Erik Capoccetta: Ok, quindi devono essere inseriti banca, codice IBAN e codice destinatario come altri campi da prevedere. Poi legale rappresentante, nome e cognome ce l'abbiamo, data il luogo di nascita ce l'abbiamo.
+Davide Chieli: Eh
+Erik Capoccetta: Manca il codice fiscale.
+Flavia Pigliacelli: Possiamo inserire, sinceramente, possiamo inserire.
+00:35:52
+Erik Capoccetta: Ok, manca il codice fiscale. Quindi di questa schermata lasciamo in bianco. Responsabile commerciale, responsabile amministrativo e capitale sociale. Ci dovete dire voi.
+Davide Chieli: I è codice fiscale del rappresentante domanda, immagino.
+Erik Capoccetta: Sì,
+Flavia Pigliacelli: Sì, sì, sì, sì.
+Davide Chieli: Ok. Ok.
+Flavia Pigliacelli: Perché se ho ben capito tutti i dati li va a prendere dalla prima schermata, giusto?
+Davide Chieli: Sì.
+Erik Capoccetta: esatto.
+Flavia Pigliacelli: una
+Davide Chieli: Quindi la prima schermata sarà molto più stesa.
+Flavia Pigliacelli: eh qua, ma di tutte le dichiarazioni, quindi va prendere i dati della prima schermata. Ecco,
+Erik Capoccetta: Sì.
+Flavia Pigliacelli: sì,
+Davide Chieli: Sì.
+Flavia Pigliacelli: sarà impossibile. Allora,
+Erik Capoccetta: Eh,
+Flavia Pigliacelli: senò se la devonoare compilare loro,
+Erik Capoccetta: perché qua c'abbiamo anno di Allora, abbiamo anno di inizio attività.
+Flavia Pigliacelli: ma loro non possono in qualche modo compilarla, no? se scaricarsi questo documento, compilarlo e non lo so perché se
+Erik Capoccetta: Beh, allora diciamo che eh la logica, anzi il principio di univocità e integrità del dato impone, anzi suggerisce che è meglio che i dati vengano inseriti direttamente sul sistema piuttosto che scritti a mano e poi ricaricati.
+00:37:09
+Flavia Pigliacelli: allora questo deve essere editabile se li vuoi scrivere digitalmente perché sono veramente tanti.
+Davide Chieli: Ja.
+Flavia Pigliacelli: dati che se richiediamo sulla prima schermata penso verrà un papiero lunghissimo. Non so.
+Erik Capoccetta: Eh,
+Flavia Pigliacelli: Cioè
+Erik Capoccetta: però da qualche parte gli dobbiamo chiedere, quindi o gli gli facciamo un formivo per compilare questo PDF e oppure gli chiediamo già nella prima schermata perché tanto poi sono dati che loro devono inserire
+Flavia Pigliacelli: eh ma forse la soluzione migliore è farglielo compilare, no? Cioè questo documento proprio invece adesso è non lo so in formato PDF. Se questo
+Erik Capoccetta: Però noi allora noi dobbiamo salvarli da qualche parte questi dati, non possiamo far compilare semplicemente il PDF e e poi lasciarli lì i dati. Noi li dobbiamo salvare perché poi magari possono servire successivamente, magari li dovete validare.
+Flavia Pigliacelli: scusa Erick, io adesso vediamo questa dichiarazione qua, no? Fatturato gli ultimi 3 anni. Questa dichiarazione andrà compilata ogni volta all'anno, ogni 6 mesi. Adesso poi vediamo, no? A scaden giusto?
+00:38:10
+Erik Capoccetta: Mh mh. E questo ce lo dovete dire voi.
+Flavia Pigliacelli: E ogni ogni anno poi devono,
+Erik Capoccetta: Sì.
+Flavia Pigliacelli: cioè bisogna inserire nell'anagrafica ad esempio il fatturato di un anno.
+Erik Capoccetta: No, se noi lo salviamo se lo ritrovano, però lo devono o modif
+Flavia Pigliacelli: Guarda il fatturato. Se scendi un po' per favore con l'allegato. No, fatturato negli ultimi 3 anni.
+Erik Capoccetta: Ah,
+Flavia Pigliacelli: Oggi chiedo 23, 24 e 25. Nel 2027 chiederò 24, 25 e 26.
+Erik Capoccetta: esatto.
+Flavia Pigliacelli: 28 che 25 26 27 e devo ogni volta andare nella schermata iniziale e cambiarlo da lì.
+Erik Capoccetta: No, no, poi quando Allora, se se per voi è necessario poi eh noi immaginiamo che questo documento venisse compilato una volta soltanto adesso nell'onboarding e basta. Ча.
+Davide Chieli: الله
+Erik Capoccetta: Non c'era chiaro che, anzi,
+Flavia Pigliacelli: Ah,
+Erik Capoccetta: non era stato esplicitato che dovesse essere rinnovato ogni anno, ma
+00:39:03
+Flavia Pigliacelli: tutte le dichiarazioni vanno aggiornate con la scadenza almeno annuale?
+Erik Capoccetta: eh questo ce lo dovete dire voi perché non ce l'avete non ce l'avete esplicitato,
+Flavia Pigliacelli: Beh, la durata del contratto è annuale o sbaglio? Quindi poi annualmente devono ricompilare tutti i documenti.
+Erik Capoccetta: quindi anche la lista degli autisti
+Flavia Pigliacelli: Quella deve essere aggiornata comunque. Se cioè se assumono un nuovo autista oppure se uno va via la devono aggiornare almeno una volta all'anno.
+Erik Capoccetta: Sì, sì, quella la possono aggiorn autisti e l'IS automezzi possono aggiornarla in piattaforma,
+Flavia Pigliacelli: Le dichiarazioni,
+Erik Capoccetta: hanno proprio i controlli tutte le
+Flavia Pigliacelli: ti ripeto, le dichiarazioni una volta all'anno dev essere ricompilate.
+Erik Capoccetta: dichiarazioni, queste dichiarazioni qua che vediamo nella in questa lista qua.
+Flavia Pigliacelli: Ecco perché è preferibile che le compilano loro in qualche modo.
+Erik Capoccetta: Sì, sì, ma gliele possiamo far compilare su sul su Quindi tutte queste qui vanno ricompilate ogni anno.
+Flavia Pigliacelli: No, no, informativa privacy,
+Davide Chieli: Ja.
+00:40:03
+Flavia Pigliacelli: no. Manuale dichiarazioni. Questo è qua. Dove sei adesso? Il secondo file che stai il secondo dichiarazioni allegate. I primi sono dei documenti che noi mandiamo.
+Erik Capoccetta: Ok.
+Flavia Pigliacelli: Loro dovranno solo compilare l'informativa privacy che hanno preso
+Erik Capoccetta: Ok,
+Flavia Pigliacelli: preso informativa e bassa. Firmarle però le dichiarazioni. il secondo punto là dove ci sono tutte le dichiarazioni allegate e quello vedi, cioè con validità annuale
+Erik Capoccetta: quindi va previsto un flusso di compilazione di questa dichiarazione qua per quando scadrà ogni Sì,
+Flavia Pigliacelli: questo alle cioè è più di una dichiarazione, vedi?
+Erik Capoccetta: sì, sì. di tutto questo documento qui e questo si può prevedere magari se appunto dicevo se noi ci salviamo i dati adesso prendo 24 25 23 24 e 25 l'anno dopo io già avrò due anni compilati, dovrò aggiungerne soltanto uno a livello di fatturato.
+Flavia Pigliacelli: E questo sì, dal punto di vista tecnico, insomma, noi ci rimettiamo a voi quello che è più gestante, per non incolpare troppo l'anagrafica forse,
+00:41:10
+Davide Chieli: Eh,
+Flavia Pigliacelli: non lo so.
+Davide Chieli: purtroppo dobbiamo i dati che dobbiamo mettere senò.
+Erik Capoccetta: Sì, ma diciamo tanto da qualche parte va salvata. Magari facciamo una sezione separata, però comunque bene o male magari facciamo
+Flavia Pigliacelli: Sì, sì, devono comunque fornire è solo per magari alleggerire la prima sezione che già è bella corposa e per vedere l'inserimento quando arrivano a questa parte qui relativa a a tutte queste 10 dichiarazioni.
+Erik Capoccetta: Ok,
+Flavia Pigliacelli: Non lo so,
+Erik Capoccetta: quindi
+Flavia Pigliacelli: valutatelo anche voi come più gestibile e anche più organico, perché noi possiamo dirvi quello che ci serve,
+Erik Capoccetta: sì,
+Flavia Pigliacelli: poi come strutturarlo in maniera preliminare ci rimettiamo a voi.
+Erik Capoccetta: sì. Sì, sì. No, adesso, ok, adesso intanto stabiliamo se tutti questi dati sono obbligatori.
+Flavia Pigliacelli: Perché in questa dichiarazione, in generale, negli altri nelle altre dichiarazioni sono tali anagrafici, ma qua Si entra poi nello specifico, ci sono anche le certificazioni, se non sbaglio, più sotto le scadenze delle certificazioni sono 9001 eccetera
+Davide Chieli: No.
+00:42:06
+Flavia Pigliacelli: eccetera.
+Erik Capoccetta: Eh sì, questi qua sì.
+Flavia Pigliacelli: Quindi almeno questo se è possibile sganciarlo e farlo continuare. Almeno questa dichiarazione qua nello specifico che dovrebbe essere allegato
+Erik Capoccetta: Sì, quindi dobbiamo prevedere un flusso di compilazione di questo allegato qua, mentre questi altri solo per l'allegato F direi,
+Flavia Pigliacelli: Beh, i dati perché poi altri ce l'abbiamo
+Erik Capoccetta: perché gli altri bene o male.
+Flavia Pigliacelli: già.
+Erik Capoccetta: Ok, quindi questi campi mi confermate che sono tutti obbligatori, no? Devo compilarli tutti.
+Flavia Pigliacelli: E sì, o con sì o con no. Certo, cioè non è che devono averli tutti, devono rispondere alle ai Sì,
+Erik Capoccetta: Sì, sì, sono tutti da rispondere, insomma.
+Flavia Pigliacelli: sì, sì,
+Erik Capoccetta: Ok, quindi qua previsto un flusso per questo allegato, mentre qui abbiamo sempre residenza via.
+Flavia Pigliacelli: sì, grazie.
+Erik Capoccetta: Eh,
+Flavia Pigliacelli: E basta. Allora, la residenza la possiamo aggiungere nell'alagrafica. la residenza delegare rappresentante.
+00:43:08
+Erik Capoccetta: sì, sì, questi abbiamo capito di aggiun codice fiscale, partita IVA. Ce li abbiamo. Manuale del vettore, anche qui la residenza eccetera, iscrizione, larbotrasportatori, dobbiamo inserire solo la provincia, il numero ce l'abbiamo anche qui. Eh, quindi dichiara di possedere le frequenti polizie assicurative e quale le devono indicare, immagino.
+Flavia Pigliacelli: Sì.
+Erik Capoccetta: Beh, questi magari sono campi che si possono mettere nella grafica, però tre campi.
+Flavia Pigliacelli: Tanto la poliz RCA è un documento obbligatorio.
+Erik Capoccetta: Ok, esatto. Che lo devono caricare.
+Flavia Pigliacelli: Gli altri due non sono obbligatori e a quel punto se ce l'hanno, cioè lo mettono,
+Davide Chieli: L'allegato
+Flavia Pigliacelli: altrimenti no.
+Erik Capoccetta: Ok,
+Flavia Pigliacelli: Угуm.
+Erik Capoccetta: quindi va previsto un flusso soltanto di compilazione preparato per questo allegato F che è bello corposo. Alcuni dati ce li abbiamo, altri li dobbiamo poi andare a integrare. Ok.
+Davide Chieli: F. Me lo fai vedere un attimo qual è? Giusto per capire.
+Flavia Pigliacelli: Ecco qui.
+00:44:23
+Flavia Pigliacelli: Questionario.
+Erik Capoccetta: Questo qua.
+Davide Chieli: Ok.
+Flavia Pigliacelli: No, questa questo è l'allegato quello subito sotto questo che sono tre quattro pagine se non
+Davide Chieli: Questo qua.
+Erik Capoccetta: Questo sì,
+Davide Chieli: Ok.
+Flavia Pigliacelli: sbaglio.
+Davide Chieli: Sì, sì.
+Erik Capoccetta: quattro.
+Davide Chieli: una decina di margine
+Flavia Pigliacelli: È il questionario di qualificazione.
+Davide Chieli: M.
+Erik Capoccetta: Sono quattro pagine e e quattro. Ok. E questo qua ha scadenza annuale, solo questo allegato F.
+Davide Chieli: Ok.
+Flavia Pigliacelli: No, tutte le dichiarazioni.
+Erik Capoccetta: Tutte le dichiarazioni hanno scadenza. manuale, quindi le devono riconfermare o rifirmare.
+Flavia Pigliacelli: Già l'avete previsto fuori, cioè valid Fra parentesi, se torni nella schermata del portale,
+Erik Capoccetta: Sì, sì, ma diciamo questo è soltanto un un titolo,
+Flavia Pigliacelli: vediamo specificato dichiarazioni con validità annuale.
+Davide Chieli: Questa era una label che abbiamo preso da voi.
+Flavia Pigliacelli: Eh,
+Davide Chieli: Semplicemente non Sì.
+Flavia Pigliacelli: sì, sì, sì,
+00:45:15
+Erik Capoccetta: non è previsto. Ok, comunque continuiamo adesso sul flusso. Io adesso, quindi qui io non posso andare avanti finché non li firmo tutti questi documenti.
+Flavia Pigliacelli: ok.
+Erik Capoccetta: il vettore non può concludere fin quando non non firma tutti i documenti. Quindi adesso io procedo alla firma del primo con la solita. Ok.
+Flavia Pigliacelli: Erik, per allinearci e noi riusciamo magari a ottenere questi documenti con delle tempistiche un pochino più chiare. Se voi ci fornite un orizzonte temporale in cui il portale è concluso e vi mancano questi documenti, noi velocizziamo magari qualcosina lato nostro per la 231, per il codice etico, cioè cerchiamo di allinearci con le tempistiche, capito? Perché se l'unica cosa che ci manca per il rilascio del portale è la 231, allora ci mettiamo tutti i giorni in maniera tassativa avere la 231. Se invece tu mi dici comunque il portale ve lo possiamo rilasciare a novembre, allora noi ci parametriamo di conseguenza, cioè cerchiamo di andare di pari passo, magari
+Erik Capoccetta: Certo. No, no, va bene.
+00:46:18
+Erik Capoccetta: Sì, sì. Comunque prima riuscite a darceli, meglio meglio è chiaramente così perché noi eh
+Flavia Pigliacelli: e ma sempre non cose che gestiamo noi internamente, ma sono sempre società esterne che ci seguono per queste procedure. Io devo dare anche io a loro delle tempistiche, capito?
+Erik Capoccetta: Sì, sì.
+Flavia Pigliacelli: la praticamente Eh,
+Erik Capoccetta: Ma ti dico prima le abbiamo meglio è perché noi dobbiamo poi configurare tutti i
+Flavia Pigliacelli: Okist
+Erik Capoccetta: posizionamenti delle firme, dei campi e delle cose. Quindi se puoi darci se puoi avere puoi accelerare in qualsiasi modo la preparazione puoi puoi farlo assolutamente. Quindi vabbè, adesso io vado a firmare i documenti, mi scorro.
+Davide Chieli: Questi sono dei playholder per adesso. time.
+Erik Capoccetta: Sì, sì, sono, diciamo, adesso mi arriva l'OTP. Firmo il primo. Ok, firma completata. Buongiorno la pagina e vedo che si è Ah,
+Flavia Pigliacelli: Sì, si è tolta la schermata.
+Erik Capoccetta: si è tolta la condivisione. Sì, perché ho chiuso. Ok, ci risiamo.
+00:47:28
+Erik Capoccetta: Ok, vedo che è stato firmato, quindi sparisce il pulsante per fare la firma.
+Flavia Pigliacelli: Ok.
+Erik Capoccetta: Qua vado ovviamente a firmare tutte le dichiarazioni, come abbiamo detto, che poi devono essere compilate.
+Flavia Pigliacelli: E senti, invece, un'altra domanda, se è stato già previsto ehm in futuro, nel senso, se noi dovessimo modificare questi documenti, quali da 231, codice etico e manuale del vettore, come procediamo per aggiornarli? Yeah.
+Erik Capoccetta: e li dovete prima sottomettere a noi, noi riconfiguriamo tutto il il prof.
+Flavia Pigliacelli: c'è una possibilità in cui possiamo operare perché ti dico il modello 231 le variabili con cui può essere aggiornato o esulano da noi, no? È un intervento legislativo, prevedono nuovi fattispecie di reato, magari una volta l'anno, magari una volta un 10. M cioè è strano legarci così tanto, nel senso e dovevo passare necessariamente tramite voi, non c'è veramente nessun'altra accorgimento alternativo per cui si possa caricare in
+Davide Chieli: M.
+Flavia Pigliacelli: autonomia.
+Erik Capoccetta: se non cambia nulla rispetto, ad esempio, se se non cambiano le pagine, ma che ne so una scritta si aggiunge soltanto qui sotto, potete va ricaricato soltanto il PDF di base e non cambia nulla, però se si vede aggiungere un campo o se si aggiunge una pagina, quindi le firme sfasano, che ne so, da pagina 4, vanno finire a pagina 5, lì va riconfigurato il posizionamento.
+00:49:02
+Flavia Pigliacelli: anche se cambiano una parola deve essere comunque rifirmato il documento. non cioè ogni volta soprattutto per la 231 ci sono documenti revisionati per cui il successivo va a sostituire il precedente anche cambiando semplicemente una pagina.
+Erik Capoccetta: Sì, sì. No,
+Flavia Pigliacelli: Quindi
+Erik Capoccetta: quello vi dicevo, se cambia soltanto una parola, quindi non è necessario un intervento da parte nostra, basta che ricarichiate il PDF, eh, cioè basta che ci dividiate il PDF, noi lo ricarichiamo a sistema. Voi inviate una nuova richiesta di firma al vettore per rifirmare il documento e lui lo rifirma. Il problema succede quando magari cambiano il posizionamento delle firme dei campi, si aggiunge un campo, si toglie un campo, lì dobbiamo riconfigurare la struttura che va a posizion a incasellare le informazioni nel
+Flavia Pigliacelli: He.
+Davide Chieli: M.
+Erik Capoccetta: punto giusto del documento. Quindi se magari nel primo caso bastano 5 minuti, noi sostituiamo il PDF e basta. nel secondo magari ci può volere un paio d'ore per rifare la struttura, no, del PDF,
+Flavia Pigliacelli: Ok.
+Erik Capoccetta: quindi è solo una questione di tempistiche.
+Flavia Pigliacelli: Vabbè, guarda, io questo naturalmente passo poi tramite papà e tutto glielo faccio presente.
+00:50:11
+Flavia Pigliacelli: Poi se lui ha qualche osservazione, magari dal punto di vista poi tecnico glielo spiegate meglio voi di me come come si può gestire questa
+Erik Capoccetta: Sì,
+Flavia Pigliacelli: Ah.
+Davide Chieli: Ja.
+Erik Capoccetta: perché per rendervi indipendenti nella parte che magari è una materia molto tecnica, sarebbe anche complicato farlo per voi, posizionare i campi esattamente nelle nelle pagine PDF, però poi per fornirvi una struttura che vi permette di rendervi indipendenti in questo sono ore di sviluppo che eh sono abbastanza abastanza corpose, quindi andrebbe fatto una band.
+Flavia Pigliacelli: Nel senso, poi insomma se dobbiamo necessariamente passare tramite voi, insomma, ci deve essere la disponibilità a dover caricare poi questi documenti da qui a negli anni successivi, capito?
+Erik Capoccetta: Sì, sì,
+Flavia Pigliacelli: Quindi no,
+Erik Capoccetta: capiamo magari se non è una cosa frequente che deve essere fatta a Migo.
+Flavia Pigliacelli: non è frequente, però insomma magari ecco il modello l'abbiamo rivisto adesso, se non cambia nulla lo possiamo rivedere tra 3 anni, però poi deve esserci insomma la possibilità di poterlo aggiornare e quindi se dobbiamo passare tramite voi, la disponibilità poi a cambiare tutto il documento
+Erik Capoccetta: Sì, sì, quello assolutamente te lo te lo confermo, più non c'è il problema.
+00:51:28
+Erik Capoccetta: Ok. Iamo anche questo. Informativa privacy. Anche questa ci dovete fornire poi il testo definitivo.
+Flavia Pigliacelli: Okej.
+Erik Capoccetta: 2 48 92. Ok, firma completata anche qua. Qua abbiamo la firma, manca l'ultimo manuale del lettore.
+Flavia Pigliacelli: Ok.
+Erik Capoccetta: Lo vado a firmare sempre con l'OTP. 6 8 7 9. Quindi firmo. Firma completata. A questo punto non devo andare più a a firmare nessun documento, posso fare invia per l'attivazione. Invio la pratica per l'attivazione. Ovviamente arriva una notifica al vostro operatore via mail che il vettore ha completato la procedura di accreditamento, il vettore accede al portale e voi dall'altra parte avete invece eh la la notifica che il vettore sta si è accreditato e potete andare a vedere poi dentro la sua anagrafica. Adesso passo quest'altra scheda. Quindi se io entro adesso nella scheda del vettore, mi vedo che eh praticamente ha compilato tutti i dati.
+Flavia Pigliacelli: อึ
+Erik Capoccetta: Non gli posso. È sparito ovviamente il pulsante per inviare eh le credenziali perché ovviamente già è
+00:53:30
+Davide Chieli: Non si era aggiornato. Ok.
+Erik Capoccetta: già accreditato. Vedo tutti i suoi i suoi dati dentro. Poi c'è la sezione documentazione dove vedrò tutti i documenti che ha che ha caricato.
+Flavia Pigliacelli: Mhm.
+Erik Capoccetta: Vedete i documenti caricati li posso analizzare, li posso li posso andare a vedere e ovviamente li posso anche andare a diciamo chiedere una revisione.
+Flavia Pigliacelli: No.
+Erik Capoccetta: ad esempio, mi ha caricato una carta di circolazione che non è valida e io
+Flavia Pigliacelli: Ok.
+Erik Capoccetta: posso andare qui da correggere, come abbiamo visto, salva e a lui arriva la notifica che deve correggere il sistema. Ovviamente questa è una una parte che ancora stiamo finendo di risistemare in base alle nuove specifiche che ci avete condiviso. Quindi per ora voi potete testare questa parte qui di onboarding. Dimmi Davide.
+Flavia Pigliacelli: Quando si avvicina la scadenza di un documento è previsto un
+Erik Capoccetta: Sì, ci sono gli alert.
+Flavia Pigliacelli: alert sia a noi che a loro.
+Erik Capoccetta: Sì, sì, esatto.
+Flavia Pigliacelli: Perfetto.
+Erik Capoccetta: Quindi al momento, vi dicevo, la parte che potete testare è questa, inserire un nuovo vettore e fargli fare la procedura di onboarding, eh, nel mentre noi continuiamo a lavorare a al resto delle cose che manca.
+00:54:52
+Erik Capoccetta: su quei modelli se ce li fate avere quanto prima, vi dicevo, è meglio perché richiedono appunto la configurazione dei campi, eh possono accedere con le loro credenziali, vero Davide? Non gliel abbiamo cancellate.
+Davide Chieli: Sì. No, no, le residenziali sono sempre quelle là.
+Erik Capoccetta: Perfetto.
+Flavia Pigliacelli: Ecco.
+Erik Capoccetta: Quindi noi adesso che cosa facciamo? Cancelliamo tutto il database, togliamo questi test che abbiamo fatto noi e ve lo diamo pulito a zero in modo tale che potete inserire voi i vettori di prova e fare le vostre le vostre prove.
+Flavia Pigliacelli: Ok. Ti diamo qualche feedback poi in base a quello che testiamo,
+Erik Capoccetta: Sì,
+Flavia Pigliacelli: insomma.
+Erik Capoccetta: sì,
+Flavia Pigliacelli: Eh,
+Erik Capoccetta: penso a partire da domani potete iniziare a fare i test. Noi nel pomeriggio risistemiamo l'area.
+Flavia Pigliacelli: noiamo come facevamo, insomma, prima dell'estate, no? Riprendiamo quel link, è tutto operativo su quello lì. Ok.
+Erik Capoccetta: Esatto. I passaggi da fare li abbiamo visti, li abbiamo visti insieme.
+00:55:45
+Erik Capoccetta: Fate le prove, raccogliete, insomma, quelle che sono le segnalazioni e poi ce le ce le condividete. Eh, come vi dico come vi dicevo, appunto, eh la parte da testare è questa qui dell'onboarding, questa che abbiamo visto. Il resto stiamo finendo ancora di lavorarci,
+Flavia Pigliacelli: vettore,
+Erik Capoccetta: quindi
+Flavia Pigliacelli: diciamo. Adesso stiamo vedendo quello che andremo a testare è quello che vedrà il vettore in realtà.
+Erik Capoccetta: Sì,
+Flavia Pigliacelli: Ok,
+Erik Capoccetta: esatto questa parte qui,
+Davide Chieli: Ok.
+Flavia Pigliacelli: va bene.
+Erik Capoccetta: quindi compilazione delle dei vari passaggi più i flussi, magari adesso ci andiamo ad aggiungere anche quei campi, man mano che lavoriamo, andiamo ad aggiungere quei campi che erano richiesti, li andiamo a posizionare nel PDF e e vi e quindi da domani aspettiamo poi po i vostri feedback su quello che è il processo di unboarding, così se dobbiamo intervenire su qualcosa andiamo ad intervenire.
+Flavia Pigliacelli: Noi, insomma, testiamo subito, anche perché più che altro diamo una ricontrollata generale, essendo poi la parte operativa del vettore, non siamo noi a doverci esercitare sulla compilazione dell'anagrafica, possiamo solo ricontrollare che tutti i dati siano corretti, giusto?
+00:56:48
+Flavia Pigliacelli: è una cosa che deve compilare più l'altra parte
+Erik Capoccetta: No, più che altro che che i documenti richiesti siano quelli, che le i flussi logici siano quelli. Per esempio, se io metto Sì.
+Flavia Pigliacelli: Yeah. Vedendo la parte del vettore, no? Mh mh. Hai visto quando c'è l'elenco dei documenti, una schermata con l'elenco dei documenti obbligatori e quelli non obbligatori, ad esempio, eh l'autorizzazione al trasporto rifiuto che se non ce l'ha non la deve caricare, se ce l'ha invece la la va a caricare.
+Davide Chieli: Ah.
+Erik Capoccetta: Esatto.
+Flavia Pigliacelli: Ok? Se lui indica nella schermana precedente che ha l'autorizzazione trasporto rifiuto, no? in automatico lì diventa obbligatorio il documento da caricare l'autorizzazione.
+Erik Capoccetta: Sì, questo ce lo siamo segnato e lo facciamo come intervento.
+Flavia Pigliacelli: Ok. Però se ha se ha all'iscrizione al trasporto rifiuti deve diventare obbligatorio anche il rentry e il pagamento del rentry
+Davide Chieli: Questo è nuovo.
+Erik Capoccetta: Ok,
+Davide Chieli: Aspetta allora dammi un segment.
+00:57:49
+Flavia Pigliacelli: perché è connesso al trasporto rifiuti,
+Erik Capoccetta: questa ce la sento.
+Flavia Pigliacelli: capito? Quindi l'iscrizione al rentry, pagamento pagamento annuale del rentry e il pagamento annuale della l'iscrizione a Anga.
+Erik Capoccetta: Ok,
+Davide Chieli: Allora,
+Erik Capoccetta: quindi se io fleggo uno di quei almeno uno di quei quattro di quei tre campi che è 1
+Flavia Pigliacelli: No, io trasporto rifiuti mi diventano obbligatori.
+Erik Capoccetta: 4 e 5
+Flavia Pigliacelli: Se io flgo che cioè se io dico che ho eh l'iscrizione al trasporto rifiuti, sono obbligatori tutti quelli.
+Erik Capoccetta: Ok? Quindi, ad esempio, io fleggo che ho autorizzazione a trasporto rifiuti 1 e 5, mi diventa devo caricare due allegati autorizzazioni HKA, uno per la 1 e una per la 5 più rentry e il pagamento annuale del rent. Ok.
+Flavia Pigliacelli: e il pagamento annuale della riscrizione a trasporto richiuso.
+Erik Capoccetta: E ti è chiaro Davide?
+Davide Chieli: Sì, sì, quindi sono due documenti in più praticamente per ogni volta che è fatto obbligatorio quella, cioè se ogni volta che segnalo che ne so categoria 1 aggiungo oltre all'autorizzazione di quella categoria specifica obbligatoria o la scadenza, se non sbaglio, perché avevamo specificato anche la scadenza,
+00:59:02
+Erik Capoccetta: Sì.
+Davide Chieli: anche questi Questi due questi due documenti di rientri o rientri? Non ho capito.
+Flavia Pigliacelli: Rentri. Allora, iscrizione rentri poi eh riapriamolo così ve lo
+Erik Capoccetta: Questo qui,
+Davide Chieli: Ok.
+Erik Capoccetta: guarda Davide.
+Flavia Pigliacelli: facciamo vedere.
+Davide Chieli: Ah,
+Flavia Pigliacelli: Iscrizione ricevuta.
+Davide Chieli: rentri. Ok, ok.
+Flavia Pigliacelli: Pagamento iscrizione.
+Davide Chieli: Ah, ok, ce l'abbiamo già. Perfetto. Quindi questi questi tre praticamente proprio come stanno?
+Flavia Pigliacelli: Scusa. Ehm, quedanze iscrizione rentri ricevuto da pagamento rente. Stessa cosa.
+Erik Capoccetta: Sì, non so perché sono duplicati, forse. Sì.
+Davide Chieli: Non lo so, sono quelli che ci avete dato, quindi non Allora, in realtà la duetanza era un documento che eh quando specificato, perché in alcuni casi eh quei documenti che avete segnalato in giallo nell'elenco documenti,
+Flavia Pigliacelli: Sì.
+Davide Chieli: se si possedevano quei documenti risultava obbligatorio Ah.
+Flavia Pigliacelli: Kom.
+Davide Chieli: allegare la quietanza.
+01:00:00
+Flavia Pigliacelli: Sì, sì, però qui è la stessa cosa, però no ricevuta pagamento. Qui qui sono tre documenti che è lo stesso documento. Ricevuto pagamento rentri, pedanza iscrizione rentri e quedanza ricevuto pagamento annuale rentri. È lo stesso documento.
+Davide Chieli: Ah, pensavo fossero delle cose distinte.
+Erik Capoccetta: Quindi questi due si possono cancellare.
+Davide Chieli: Ok.
+Flavia Pigliacelli: Qua manca la guidanza del pagamento anga.
+Erik Capoccetta: No, Ang forse c'è. Guarda, se cerchiamo anga e c'è.
+Flavia Pigliacelli: Vediamo un po'.
+Davide Chieli: Ang. Eccolo qua.
+Flavia Pigliacelli: È la stessa cosa. Anche qui sono tre documenti, ma in realtà è uno. Il 12, il 24 e il 25. Se vedi il numero 12, 24 e 25 sono un documento.
+Erik Capoccetta: Basta lasciare questo.
+Flavia Pigliacelli: È la ricevuta la annuale anche che scade il 30 aprile.
+Erik Capoccetta: Ok.
+Davide Chieli: Quindi basta caricare il 12, praticamente.
+Flavia Pigliacelli: Sì.
+Davide Chieli: Ok.
+Erik Capoccetta: Mentre questi devono faare uno per la categoria 1, uno per la categoria 4 e uno per la categoria 5.
+01:01:01
+Flavia Pigliacelli: Sì,
+Erik Capoccetta: Quindi vabbè,
+Flavia Pigliacelli: perché esempio un trasportatore può avere la categoria 1,
+Erik Capoccetta: questo si possono
+Flavia Pigliacelli: ma può benissimo non avere la categoria 5, per esempio. sono separate,
+Erik Capoccetta: Ok,
+Flavia Pigliacelli: sganciate, quindi
+Erik Capoccetta: quindi questo lo eliminiamo, guarda. Facciamo così.
+Davide Chieli: Sì, magari l'elimino io. uguale.
+Erik Capoccetta: E questi ne vanno creati altri due, uno per il 4 e uno per il 5.
+Davide Chieli: Ok.
+Erik Capoccetta: Mentre qua avevamo detto rentry, lasciamo solo il 14 26 27, lo eliminiamo. Questa è l'anagrafica. Poi voi potete governarlo in autonomia, eh, successivamente, infatti io sto accedendo con un account vostro,
+Flavia Pigliacelli: Ok.
+Erik Capoccetta: quindi potete governarla voi la l'iscrizione de l'anagrafica dei documenti. Perfetto. Allora, ci aggiorniamo nei prossimi giorni. Preferite che magari facciamo prima queste rettifiche e poi le testate oppure
+Flavia Pigliacelli: Ma sì,
+01:02:03
+Erik Capoccetta: vole.
+Flavia Pigliacelli: allora vediamolo modificato. Insomma, se voi ci dite quando riuscite a fare queste modifiche, noi lo testiamo quando è più o meno definitivo, altrimentiamo
+Erik Capoccetta: Allora, vi aggiorno io non appena abbiamo terminato le modifiche con le rettifiche che abbiamo visto, così potete testare il flusso definitivo.
+Flavia Pigliacelli: va. Perfetto. Grazie.
+Erik Capoccetta: Ok, grazie. Buona giornata Davide,
+Davide Chieli: Grazie mille.
+Flavia Pigliacelli: Co?
+Davide Chieli: Buon appetito.
+Erik Capoccetta: se puoi testare un secondo.
+Davide Chieli: Sì,
+Erik Capoccetta: Allora,
+Davide Chieli: voi là.
+Erik Capoccetta: eh, come al solito tirano fuori le cose
+Davide Chieli: Erik, Madonna, io non ce la faccio più. Guarda, sto progetto è diventato un mostro, unidra.
+Erik Capoccetta: m
+Davide Chieli: Comunque io non ho capito. Quindi mo a parte, vabbè, le quetanze che ci avevano detto, avevano specificato che si dovesse mettere una pietanza. Quindi io ho dato per scontato che fosse un altro file. Vabbè, quindi le qui è tanto,
+Erik Capoccetta: e vabbè, la guetanza è la ricevuta di Да.
+01:02:58
+Erik Capoccetta's Presentation: Yeah.
+Erik Capoccetta: Alla fine sono sinonimi.
+Davide Chieli: vabbè, eh, quindi diciamo pure qualcosa la devo modificare perché appunto non ci sono più i documenti allegati. Io c'avevo un flag che specificava quale documento allegato dovevano doveva essere obbligatorio poi. Ah, quindi vabbè, questa cosa va modificata.
+Erik Capoccetta: Eh sì, poi quei campi lì vanno tolti dalla dall'anagrafica autista,
+Davide Chieli: Quali campi?
+Erik Capoccetta: quelli lì.
+Davide Chieli: Eh, vanno spostati sui mezzi, quindi sono tutte qui che vanno spostate. Va bene? Poi modificarle
+Erik Capoccetta: La la cosa che non ho capito, però se quelle categorie 1 4 e 5 sono legate al mezzo,
+Davide Chieli: hanno detto così
+Erik Capoccetta: eh, quindi tu per ogni magari c'è un mezzo che ha 1 e 4, un altro mezzo che ha cinque, tu devi chiedere 1 qu, cioè devi controllare tutti i mezzi, capito?
+Davide Chieli: devo controllare per quel mezzo che ha categoria 1 e 4 se ha devo aggiungere due, eh diciamo due file aggiuntivi obbligatori.
+Erik Capoccetta: eh che sono relativi al mezzo,
+Davide Chieli: Qu scadere così hanno detto,
+Erik Capoccetta: quindi quei certificati, non a tutta l'azienda.
+01:04:08
+Davide Chieli: cioè noi noi pensavamo fosse l'autista fino adesso, invece no, invece in mezzo, quindi
+Erik Capoccetta: Quindi no, questa roba dell'anga è legata al mezzo, non è legata all'azienda.
+Davide Chieli: così sembra.
+Erik Capoccetta: Quindi qua vanno fatti angagat 1, 4 e anche 5.
+Davide Chieli: Sì.
+Erik Capoccetta: Eh, come cosa? Tu devi controllare se i mezzi hanno dichiarato stanga. Poi una cosa io, scusa se io voglio avevamo detto lì da capup che se io entravo nella scheda del subvettore mi vedevo qua tutta l'anagrafica mezzi, documenti, non c'è.
+Davide Chieli: Perché non c'è qua?
+Erik Capoccetta: Eh, infatti vedo solo le tratte
+Davide Chieli: Che cosa sei qua? Aspetta però.
+Erik Capoccetta: admin.
+Davide Chieli: Ah, ho cambiato. Mi sa che ho Non lo so che cosa è successo qua. Perché ci tratte poi tra parentesi.
+Erik Capoccetta: M. Mh.
+Davide Chieli: Non lo so, però se è successo questa cosa. Puoi cliccare un'altra volta su subettori. Boh.
+Erik Capoccetta: Moh. Io vado qua alla lentina.
+01:05:32
+Davide Chieli: Come hai fatto? Come hai fatto a fare a tratte?
+Erik Capoccetta: No, sono andato dentro la lentina qua.
+Davide Chieli: Ah, ok. Non lo so che cos'è questo.
+Erik Capoccetta: Cioè,
+Davide Chieli: Ok,
+Erik Capoccetta: qua loro si devono vedere l'anagrafica. Cioè, sono schede consecutive se Ah,
+Davide Chieli: vai un attimo giù, vai giù.
+Erik Capoccetta: stanno qua. Ma Ah, perché contratti,
+Davide Chieli: Ok.
+Erik Capoccetta: documenti. M vabbè, questo l'ha fatto un po' meglio. Eh, qua dovremmo mettere anche autisti e mezzi di quel subovettore.
+Davide Chieli: Sì,
+Erik Capoccetta: Ma come fai?
+Davide Chieli: in realtà c'era la sezione apposta, però questa è per dell'admin, quindi sì, devo mettere anche questa.
+Erik Capoccetta: Eh,
+Davide Chieli: No, non ho avuto il tempo di farla, comunque. Sì, la devo fa'.
+Erik Capoccetta: sì. Vabbè, questa è roba che va rivista. Mo concentriamoci su sto flusso dell'onboarding così
+Davide Chieli: Ma vi ho detto io non ho capito una cosa importantissima, cioè tutti quei dati per la dichiarazioni, a parte che quello che diceva Filippo io in 4 giorni ho lavorato 23 ore, io ho fatto tra virgolette anche i documenti, la parte di firma l'ho fatta in tre giorni, tra parentesi anche quel documento là.
+01:06:40
+Davide Chieli: Comunque eh la tutti i file tutti i dati ehm che ci hanno detto di mettere da parte,
+Erik Capoccetta: Eh, va fatto un forma a parte.
+Davide Chieli: cioè non dove
+Erik Capoccetta: Sì, io secondo me metterei sempre una modale che compilano prima di firmarlo,
+Davide Chieli: ci vuole un altro step.
+Erik Capoccetta: non un altro step, ma dentro a quest a quello step lì,
+Davide Chieli: Ok,
+Erik Capoccetta: mentre per gli altri tre ti si abilita subito il pulsante di firma, quello lì all'altro non ti si abilita fin quando non lo compili, perché siccome son tanti dati si fa un forma apposta per compilarlo.
+Davide Chieli: quella sarà un lavorone, però mamma mia.
+Erik Capoccetta: Eh,
+Davide Chieli: Vabbè,
+Erik Capoccetta: e visto che poi lo devono richiedere ogni anno quel documento
+Davide Chieli: eh questa è un'altra cosa che non ho capito che succede poi quando lo devono richiedere ogni anno.
+Erik Capoccetta: e quando lo richiedono si ricordano loro ogni anno di rimandavanno qua documentazione nuova richiesta.
+Davide Chieli: Fanno nuova. Eh, però il problema è questo, capito? è che attualmente loro richiedono quando fanno questa cosa, questo è il vecchio fusso tra virgolette, cioè loro richiedono il documento al subvettore, subvettore lo carica, ma non carica un'altra volta,
+01:07:58
+Erik Capoccetta: Eh,
+Davide Chieli: cioè tutte le informazioni di quel di quel
+Erik Capoccetta: eh, sì, quello lì lo deve prima firmare e poi lo può caricare,
+Davide Chieli: for eh,
+Erik Capoccetta: capito?
+Davide Chieli: adesso come adesso quella roba non c'è proprio
+Erik Capoccetta: Eh, no, infatti è da fare. Sì, manca. Sì, sì.
+Davide Chieli: Eh, quindi diciamo che devo specificare però con una mani quanta roba c'è da fare troppa roba. Allora, praticamente quando io chiederò questo tipo di documenti verdi, che io li chiamo documenti verdi,
+Erik Capoccetta: Eh,
+Davide Chieli: eh deve per forza aggiung,
+Erik Capoccetta: Sì.
+Davide Chieli: cioè ehm che cosa succede? Perché al subvettore arriva come documento da compilare il la notifica compilare la dichiarazione nuova. Poi come faccio a rifargli caricare i dati? Capito? Questa è la cosa. Devo riaprire il form.
+Erik Capoccetta: Deve riaprire il fuoco. Questo non è un documento che lui carica.
+Erik Capoccetta's Presentation: M.
+Erik Capoccetta: Attenzione, questi documenti verdi non li carica il vettore come quegli altri,
+Davide Chieli: Eh,
+01:09:02
+Erik Capoccetta: ma sono già precompilati da sistema e lui li deve solo riempire e
+Davide Chieli: esatto, esatto, esatto. È così,
+Erik Capoccetta: firmare.
+Davide Chieli: eh. Quindi, banalmente deve deve, vabbè, devo fare un flusso a parte per i documenti verti,
+Erik Capoccetta: Sì.
+Davide Chieli: non posso farla.
+Erik Capoccetta: Eh beh, sì, era già era già previsto questo,
+Davide Chieli: M Eh, beh, questa cosa non era prevista ogni anno, capito?
+Erik Capoccetta: eh. No, non era prevista ogni anno, no. Sì, e questo è giusto. Vabbè, e loro poi o la mandano ogni anno o la mandano ogni settimana.
+Davide Chieli: Mh. No, perché vabbè cambia tanto, appunto, cambia il flusso proprio, vabbè di questi documenti qua.
+Erik Capoccetta: No,
+Davide Chieli: Vabbè,
+Erik Capoccetta: non era previsto,
+Davide Chieli: tanta roba.
+Erik Capoccetta: non era previsto che ci fosse il form apposta per compilare. Era previsto che prendevi i dati dall'anagrafica e gli stampavi da quello,
+Davide Chieli: Eh,
+Erik Capoccetta: lo doveva solo firmare. Invece, siccome questo allegato F c'ha 8.000 campi che deve
+01:09:55
+Davide Chieli: è enorme. Ah,
+Erik Capoccetta: eh quindi poi tra l'altro ti devi anche salvare i dati perché
+Davide Chieli: va bene. Eh, no, dai.
+Erik Capoccetta: hai visto quelli quelli là del fatturato te li devi salvare perché se io li compilo nel 2026 gli devi chied mi devi riproporre gli anni prima che ho già salvato.
+Davide Chieli: Eh no, è chiaro.
+Erik Capoccetta: Eh vabbè questo è una parte in più questo
+Davide Chieli: Ma diglielo a Filippo pure questo,
+Erik Capoccetta: lo Sì,
+Davide Chieli: a Francesca.
+Erik Capoccetta: sì. No, vbè, questo lo dirò.
+Davide Chieli: Com va bene?
+Erik Capoccetta: Assolutamente.
+Davide Chieli: Eh, però per il resto penso sia andato bene tutto.
+Erik Capoccetta: Sì, sì, questa è una modifica grossa. Il resto sono tutti i piccoli cosi che
+Davide Chieli: Quali sono le piccole cose, secondo te? Giusto per chiedere.
+Erik Capoccetta: No, cioè piccole rispetto a quell'altra. Vabbè,
+Davide Chieli: Ah.
+Erik Capoccetta: le piccole cose che devi spostare quei campi da l'autista al mezzo già,
+Davide Chieli: Eh, devo cambiare le quiri,
+Erik Capoccetta: anzi già ci sono
+01:10:52
+Davide Chieli: capito? Devo cambiare le qu, devo cambiare le crit, devo cambiare le fot, devo cambiare, cioè, capito? Sono vabbè, sì, si fa comunque, però sono cose semplici da fare, prendono tempo, tutto qua, tutte cazzatine, perciò ogni volta non possono dirci cambia qua, poi di là, capito? perdiamo un botto di tempo solo facendo ste cose.
+Erik Capoccetta: poi aggiungere lì le date di scadenza, i documenti.
+Davide Chieli: Quella va bene. Sciachezza.
+Erik Capoccetta: Qu è una cavolata perché da quelle sono cose di poco.
+Davide Chieli: Sì, sì, quelle sono cose di poco, sicuramente.
+Erik Capoccetta: L'unica cosa un po' più articolata è quello là del controllare queste categorie e richiedere un allegato rifiuti per ogni categoria.
+Davide Chieli: Mh, va bene, eh.
+Erik Capoccetta: Cioè,
+Davide Chieli: E poi
+Erik Capoccetta: casomai io glielo richiederei direttamente, cioè fai la la il controllo se almeno uno dei mezzi Ah, la categoria un richiedi la categoria 1 se non c'è già
+Davide Chieli: Ah, l'autista non è obbligatorio.
+Erik Capoccetta: l'autista e l'autista non deve essere obbligatorio.
+Davide Chieli: Non deve essere obbligatorio, giustamente.
+01:11:55
+Davide Chieli: Va bene. Vabboh. Tanto c'è M che mi fa il riassunto, io lo carico. in la weekly.
+Erik Capoccetta: Eh, esatto.
+Davide Chieli: Va bene, grazie Eric. C'è altro che non so che cosa ci stiamo dimenticando.
+Erik Capoccetta: No, vabbè, più quelle altre cose che t' avevo segnalato io qua nel documento, alcuni le hai le hai già fatte, mi sembra.
+Davide Chieli: Il fatto che Allora, non capisco perché io nel mio quando Mi fai vedere un attimo l'utenza che stai
+Erik Capoccetta: L'utenza quella che
+Davide Chieli: usando?
+Erik Capoccetta: mi hai dato tu admin.
+Davide Chieli: No, quella di test che hai usato prima. per il subvettore, se ce l'hai ancora, eh,
+Erik Capoccetta: Sì, sì. Ecco.
+Davide Chieli: perché non capisco perché a me i doppi pulsanti chiudi sono stati fixati e adesso invece a te ce l'hai ancora.
+Erik Capoccetta: Boh.
+Davide Chieli: Cioè l'ho testato già prima di alle 11:50 sta cosa, perciò ho detto a meora funziona.
+Erik Capoccetta: Mh.
+Davide Chieli: Ma invece c'erano ancora te mi dai l'utenza dopo vedo un attimo che cosa c'è che che non va.
+01:13:01
+Erik Capoccetta: È questa.
+Davide Chieli: Me l'hai mandata in chat?
+Erik Capoccetta: Ok, che è l'ultima inserita.
+Davide Chieli: Ah, eh me la mandi in chat con la password se ce l'hai. Senò vabbè, la cambio.
+Erik Capoccetta: Password. Sì, è questa qua. Sì. Poi vabbè,
+Davide Chieli: Ok,
+Erik Capoccetta: per il resto, oltre quelle cose che ti avevo segnato io,
+Davide Chieli: sì.
+Erik Capoccetta: eh vedi, infatti te l'avevo chiesto, la scadenza carta di circolazione non è riferita all'autista.
+Davide Chieli: La scadenza della Ma infatti sui mezzi ci sta, eh. Comunque ci sta. Forse ci sta su entrambi.
+Erik Capoccetta: Eh, ma infatti va solo levata su.
+Davide Chieli: Sì, sì, mi sa che ci sta sui mezzi. Infatti io ce l'ho qua, vedi? Scadenza carta circolazione. Sui mezzi ce l'ho.
+Erik Capoccetta: Eh sì, sì, c'era.
+Davide Chieli: Va va levata dagli autisti, probabilmente e basta.
+Erik Capoccetta: Sì,
+Davide Chieli: Va bene, grazie Erik. Questo va bene.
+Erik Capoccetta: va bene.
+01:14:09
+Erik Capoccetta: C Tu fammi sapere quando Allora, database vabbè, poi lo pulisci intanto facciamo tutti i test. Comunque allora glielo glielo diamo completamente vuoto,
+Davide Chieli: Senza i subvettori caricati. Va bene.
+Erik Capoccetta: eh, così se li inseriscono quelli nuovi come li pare, sennò così è troppo un piccione e poi dammi un una scadenza fine settimana, entro fine settimana riesci a fare questi fix,
+Davide Chieli: No, non credo proprio.
+Erik Capoccetta: no? dico almeno questi piccoli, non quello del modello là da compilare quello.
+Davide Chieli: Ah, sì, penso di quelli piccoli. Mimo, dobbiamo farvi una lista perché già non me le ricordo. Comunque sì, vedo di farvi entro venerdì.
+Erik Capoccetta: Eh, così magari ci inseriamo il punto di controllo,
+Erik Capoccetta's Presentation: Ok.
+Erik Capoccetta: almeno per quelli cerchiamo di finirli e lasciarci poi il tempo per fare solo
+Davide Chieli: Sì. No,
+Erik Capoccetta: quell'allegato là grosso.
+Davide Chieli: sì. Allora, questa roba qua dell'anga, il fatto delle pietanze da eliminare, delle eh abbiamo detto il fatto vabbè da autisti, campi degli autisti, matricolaziono, la carta di circolazione, che cos'è, scus?
+01:15:24
+Davide Chieli: Allora, queste cose qui, queste qui sì, delle pixel per venerdì.
+Erik Capoccetta: Sì.
+Davide Chieli: Sì, sì, sì.
+Erik Capoccetta: Va bene. Per il resto vabbè pure queste qua della lista se riesci a mettercele
+Davide Chieli: Quale?
+Erik Capoccetta: queste qua della lista che t' avevo condiviso io sul documento.
+Davide Chieli: Sì, quelli là del l'aggiorna, chiudi eccetera.
+Erik Capoccetta: Eh
+Davide Chieli: Però chiudi serve giusto per chiudi. Non serve, cioè sennò da UI design ci deve stare sempre un tasto per chiudere la modale.
+Erik Capoccetta: no, non è la modale quella, eh.
+Davide Chieli: Sì, chiudi. Stanno sulle modali.
+Erik Capoccetta: No, stanno anche su sul
+Davide Chieli: Ah, tu dici quello, chiudi, torna al step precedente. Ah,
+Erik Capoccetta: eh cioè se io c'ho avanti e indietro non mi serve
+Davide Chieli: ok, ok, ok. Cioè, sì, sì, sì, sì,
+Erik Capoccetta: per Eh
+Davide Chieli: ci sta. Penso che lo faccia script case di base. Devo vedere come devo
+Erik Capoccetta: sì, vabbè, ma quello basta che lo levi da la turb, quello è facilissimo.
+Davide Chieli: buono. Sì, sì. Non essere nzo.
+Erik Capoccetta: Vabbè, ci aggiorniamo in questi giorni, magari venerdì ci facciamo un controllo così vediamo se se
+Davide Chieli: Va bene. No, infatti mi sembra mi sembra una buona soluzione. Almeno riesci a quantizzare le cose che abbiamo fatto
+Erik Capoccetta: Eh, esatto.
+Davide Chieli: Va bene siamo tutti.
+Erik Capoccetta: Ok, dai,
+Davide Chieli: Buon appetito.
+Erik Capoccetta: intanto giorno pure Filippo e Francesca. Ok,
+Davide Chieli: Va bene.
+Erik Capoccetta: ciao da ciao
+Trascrizione terminata dopo 01:17:02
+Questa trascrizione modificabile è stata generata dal computer e potrebbe contenere errori. È possibile anche modificare manualmente il testo dopo la creazione.

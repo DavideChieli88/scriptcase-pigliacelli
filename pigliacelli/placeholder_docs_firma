@@ -1,0 +1,398 @@
+/**
+ * Scriptcase Report PDF: placeholder_docs_firma
+ *
+ * PDF placeholder per documenti verdi (tipi_documento.is_readonly=1)
+ * diversi da Dichiarazioni. Una pagina A4 con intestazione, tipo documento,
+ * dati subvettore e riquadro firma.
+ *
+ * Parametri: subvettoreId / subvector, documentoId, auto_save_pdf=S, next=sign
+ *
+ * SETUP SC: creare app Report PDF con questo codice in onExecute (o evento PDF).
+ */
+
+$subvector = 0;
+if ((int)[subvector] > 0) {
+    $subvector = (int)[subvector];
+}
+if ($subvector <= 0 && (int)[subvettoreId] > 0) {
+    $subvector = (int)[subvettoreId];
+}
+foreach (array('subvector', 'subvettoreId', 'subvettore_id', 'subId') as $k) {
+    if ($subvector > 0) {
+        break;
+    }
+    if (isset($_GET[$k]) && (int)$_GET[$k] > 0) {
+        $subvector = (int)$_GET[$k];
+    } elseif (isset($_POST[$k]) && (int)$_POST[$k] > 0) {
+        $subvector = (int)$_POST[$k];
+    } elseif (isset($_REQUEST[$k]) && (int)$_REQUEST[$k] > 0) {
+        $subvector = (int)$_REQUEST[$k];
+    }
+}
+
+// GET/REQUEST prima del globale SC: [documentoId] resta spesso sporco da form_documenti_wizard
+$documentoId = 0;
+if (isset($_GET['documentoId']) && (int)$_GET['documentoId'] > 0) {
+    $documentoId = (int)$_GET['documentoId'];
+} elseif (isset($_REQUEST['documentoId']) && (int)$_REQUEST['documentoId'] > 0) {
+    $documentoId = (int)$_REQUEST['documentoId'];
+} elseif ((int)[documentoId] > 0) {
+    $documentoId = (int)[documentoId];
+}
+
+if ($subvector <= 0) {
+    die('Parametro subvettoreId mancante.');
+}
+
+$pdf = $this->Pdf;
+$pdf->SetAutoPageBreak(false, 16);
+$pdf->SetMargins(18, 16, 18);
+if (method_exists($pdf, 'setPrintHeader')) {
+    $pdf->setPrintHeader(false);
+}
+if (method_exists($pdf, 'setPrintFooter')) {
+    $pdf->setPrintFooter(false);
+}
+
+// Elimina pagina bianca pre-creata da ScriptCase
+if (method_exists($pdf, 'getNumPages') && method_exists($pdf, 'deletePage')) {
+    $guard = 0;
+    while ((int)$pdf->getNumPages() > 0 && $guard < 10) {
+        $pdf->deletePage(1);
+        $guard++;
+    }
+}
+
+$rs = $this->Db->Execute("
+    SELECT
+        COALESCE(ragione_sociale, ''),
+        COALESCE(piva, ''),
+        COALESCE(cod_fiscale, ''),
+        COALESCE(nome_rappresentante, ''),
+        COALESCE(cognome_rappresentante, ''),
+        COALESCE(sede_citta, ''),
+        COALESCE(sede_prov, '')
+    FROM subvettori
+    WHERE id = " . (int)$subvector . "
+    LIMIT 1
+");
+if ($rs === false || $rs->EOF) {
+    die('Subvettore non trovato: ' . (int)$subvector);
+}
+$ragione = trim((string)$rs->fields[0]);
+$piva = trim((string)$rs->fields[1]);
+$cf = trim((string)$rs->fields[2]);
+$nomeR = trim((string)$rs->fields[3]);
+$cognomeR = trim((string)$rs->fields[4]);
+$citta = trim((string)$rs->fields[5]);
+$prov = trim((string)$rs->fields[6]);
+$rs->Close();
+
+$tipoNome = 'Documento';
+if ($documentoId > 0) {
+    $rsDoc = $this->Db->Execute("
+        SELECT COALESCE(td.nome, 'Documento')
+        FROM documenti d
+        INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+        WHERE d.id = " . (int)$documentoId . "
+          AND d.subvettore_id = " . (int)$subvector . "
+        LIMIT 1
+    ");
+    if ($rsDoc !== false && !$rsDoc->EOF) {
+        $tipoNome = trim((string)$rsDoc->fields[0]);
+        if ($tipoNome === '') {
+            $tipoNome = 'Documento';
+        }
+        $rsDoc->Close();
+    }
+}
+
+$legale = trim($nomeR . ' ' . $cognomeR);
+if ($legale === '') {
+    $legale = 'Legale rappresentante';
+}
+$sede = trim($citta . ($prov !== '' ? ' (' . $prov . ')' : ''));
+
+$sanitize = function ($value) {
+    $value = (string)$value;
+    $value = str_replace(array('\\', '/', ':', '*', '?', '"', '<', '>', '|', "\0"), '_', $value);
+    $value = preg_replace('/\s+/u', '_', $value);
+    $value = preg_replace('/_+/u', '_', $value);
+    return trim($value, '._ ');
+};
+$slugTipo = $sanitize($tipoNome);
+if ($slugTipo === '') {
+    $slugTipo = 'documento';
+}
+$pdfBaseName = 'docverde_' . (int)$subvector . '_' . $slugTipo . '_' . date('Y-m-d');
+if ($documentoId > 0) {
+    $pdfBaseName = 'docverde_' . (int)$documentoId . '_' . $slugTipo . '_' . date('Y-m-d');
+}
+$pdfFileName = $pdfBaseName . '.pdf';
+$pdf->SetTitle($pdfBaseName);
+$pdf->SetCreator('Pigliacelli');
+$pdf->SetAuthor('Autotrasporti Pigliacelli S.p.A.');
+
+// Metadata firma EasyGN (box basso-destra pagina 1)
+$easygnSignVisuals = array(
+    'vettore' => array(
+        array('page' => 1, 'x' => 118.0, 'y' => 250.0, 'w' => 78.0, 'h' => 14.0),
+    ),
+    'committente' => array(),
+);
+$egnPayload = 'EGN_SIGN:' . base64_encode(json_encode(
+    array('version' => 1, 'visuals' => $easygnSignVisuals),
+    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+));
+if (method_exists($pdf, 'SetSubject')) {
+    $pdf->SetSubject($egnPayload);
+}
+
+$pdf->AddPage('P', 'A4');
+$cw = 174.0;
+
+// Header
+$pdf->SetFillColor(26, 58, 92);
+$pdf->Rect(0, 0, 210, 28, 'F');
+$pdf->SetTextColor(255, 255, 255);
+$pdf->SetFont('helvetica', 'B', 14);
+$pdf->SetXY(18, 8);
+$pdf->Cell($cw, 7, 'Autotrasporti Pigliacelli S.p.A.', 0, 1, 'L');
+$pdf->SetFont('helvetica', '', 9);
+$pdf->SetX(18);
+$pdf->Cell($cw, 5, 'Documento verde — onboarding subvettore', 0, 1, 'L');
+
+$pdf->SetTextColor(0, 0, 0);
+$pdf->SetY(36);
+
+$pdf->SetFont('helvetica', 'B', 16);
+$pdf->MultiCell($cw, 8, $tipoNome, 0, 'C');
+$pdf->Ln(2);
+$pdf->SetFont('helvetica', 'I', 10);
+$pdf->Cell($cw, 6, 'Documento generato automaticamente (placeholder)', 0, 1, 'C');
+$pdf->Ln(6);
+
+$pdf->SetDrawColor(26, 58, 92);
+$pdf->SetLineWidth(0.4);
+$pdf->Line(18, $pdf->GetY(), 18 + $cw, $pdf->GetY());
+$pdf->Ln(8);
+
+$pdf->SetFont('helvetica', 'B', 11);
+$pdf->Cell($cw, 7, 'Dati subvettore', 0, 1, 'L');
+$pdf->SetFont('helvetica', '', 10);
+$rows = array(
+    'Ragione sociale' => ($ragione !== '' ? $ragione : '—'),
+    'P. IVA' => ($piva !== '' ? $piva : '—'),
+    'Codice fiscale' => ($cf !== '' ? $cf : '—'),
+    'Sede' => ($sede !== '' ? $sede : '—'),
+    'Legale rappresentante' => $legale,
+    'Data generazione' => date('d/m/Y H:i'),
+);
+foreach ($rows as $label => $val) {
+    $pdf->SetFont('helvetica', 'B', 9);
+    $pdf->Cell(55, 6, $label, 0, 0, 'L');
+    $pdf->SetFont('helvetica', '', 9);
+    $pdf->MultiCell($cw - 55, 6, (string)$val, 0, 'L');
+}
+
+$pdf->Ln(10);
+$pdf->SetFillColor(245, 247, 250);
+$pdf->SetDrawColor(180, 188, 198);
+$pdf->Rect(18, $pdf->GetY(), $cw, 42, 'DF');
+$yBox = $pdf->GetY();
+$pdf->SetXY(22, $yBox + 4);
+$pdf->SetFont('helvetica', 'B', 10);
+$pdf->Cell($cw - 8, 6, 'Nota', 0, 1, 'L');
+$pdf->SetX(22);
+$pdf->SetFont('helvetica', '', 9);
+$pdf->MultiCell(
+    $cw - 8,
+    4.5,
+    'Questo file e\' un placeholder del documento richiesto in fase di onboarding. '
+    . 'Anteprima/firma: ReportPDF dinamico (placeholder_docs_firma). Il campo file in griglia resta sul PDF statico.',
+    0,
+    'L'
+);
+
+// Riquadro firma (allineato a EGN_SIGN)
+$pdf->SetDrawColor(26, 58, 92);
+$pdf->SetLineWidth(0.35);
+$pdf->Rect(118, 248, 78, 28);
+$pdf->SetXY(120, 250);
+$pdf->SetFont('helvetica', '', 8);
+$pdf->Cell(74, 5, 'Firma del legale rappresentante', 0, 1, 'L');
+$pdf->SetXY(120, 268);
+$pdf->SetFont('helvetica', 'I', 8);
+$pdf->Cell(74, 5, $legale, 0, 1, 'L');
+
+$pdf->SetXY(18, 255);
+$pdf->SetFont('helvetica', '', 9);
+$pdf->Cell(90, 5, ($citta !== '' ? $citta . ', ' : '') . date('d/m/Y'), 0, 1, 'L');
+$pdf->SetX(18);
+$pdf->SetFont('helvetica', 'I', 8);
+$pdf->Cell(90, 5, 'Luogo e data', 0, 1, 'L');
+
+// Footer
+$pdf->SetY(280);
+$pdf->SetDrawColor(200, 200, 200);
+$pdf->Line(18, 280, 18 + $cw, 280);
+$pdf->SetFont('helvetica', 'I', 8);
+$pdf->SetTextColor(100, 100, 100);
+$pdf->Cell($cw, 5, 'Autotrasporti Pigliacelli S.p.A. — Via S. Anna 80, 03029 Veroli (FR)', 0, 1, 'L');
+
+$autoSavePdf = (
+    (isset($_SESSION['pdf_auto_save']) && strtoupper(trim((string)$_SESSION['pdf_auto_save'])) === 'S') ||
+    (isset([auto_save_pdf]) && strtoupper(trim((string)[auto_save_pdf])) === 'S') ||
+    (isset($_GET['auto_save_pdf']) && strtoupper(trim((string)$_GET['auto_save_pdf'])) === 'S') ||
+    (isset($_REQUEST['auto_save_pdf']) && strtoupper(trim((string)$_REQUEST['auto_save_pdf'])) === 'S')
+);
+
+if (!$autoSavePdf) {
+    $pdf->Output($pdfFileName, 'I');
+    return;
+}
+
+$sqlQuote = function ($v) {
+    return "'" . str_replace("'", "''", (string)$v) . "'";
+};
+
+/** Resolve baseDir come dichiarazioni_pdf / nuovo_contratto_vettore */
+$rsBaseDir = $this->Db->Execute("
+    SELECT set_value FROM sec_settings WHERE set_name = 'contratti_base_dir' LIMIT 1
+");
+$baseDirRaw = '';
+if ($rsBaseDir !== false && !$rsBaseDir->EOF) {
+    $baseDirRaw = trim((string)$rsBaseDir->fields[0]);
+    $rsBaseDir->Close();
+}
+if ($baseDirRaw === '') {
+    $rsBaseDir2 = $this->Db->Execute("
+        SELECT set_value FROM sec_settings WHERE set_name = 'templates_path' LIMIT 1
+    ");
+    if ($rsBaseDir2 !== false && !$rsBaseDir2->EOF) {
+        $baseDirRaw = trim((string)$rsBaseDir2->fields[0]);
+        $rsBaseDir2->Close();
+        if (preg_match('#/templates$#', str_replace('\\', '/', $baseDirRaw))) {
+            $baseDirRaw = preg_replace('#/templates$#', '', str_replace('\\', '/', $baseDirRaw));
+        }
+    }
+}
+if ($baseDirRaw === '') {
+    die('Impostare sec_settings.contratti_base_dir o templates_path.');
+}
+
+$baseDir = '';
+$normalized = str_replace('\\', '/', trim($baseDirRaw));
+if ($normalized !== '' && $normalized[0] === '/') {
+    $baseDir = is_dir($normalized) ? $normalized : rtrim($normalized, '/');
+} elseif (!empty($_SERVER['DOCUMENT_ROOT'])) {
+    $docRoot = @realpath((string)$_SERVER['DOCUMENT_ROOT']);
+    if ($docRoot !== false) {
+        $cand = $docRoot . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, trim($normalized, '/'));
+        if (!is_dir($cand)) {
+            @mkdir($cand, 0775, true);
+        }
+        $rp = @realpath($cand);
+        $baseDir = $rp !== false ? $rp : $cand;
+    }
+}
+$baseDir = rtrim(str_replace('\\', '/', (string)$baseDir), '/');
+if ($baseDir === '') {
+    die('Impossibile risolvere baseDir da: ' . $baseDirRaw);
+}
+
+$pdfBin = $pdf->Output($pdfFileName, 'S');
+if (!is_string($pdfBin) || strncmp($pdfBin, '%PDF', 4) !== 0) {
+    die('Generazione PDF placeholder non valida.');
+}
+
+// Basename in DB; fisico in baseDir (stessa cartella Document SC, senza subdir)
+$fullPath = '';
+if ($baseDir !== '') {
+    if (!is_dir($baseDir)) {
+        @mkdir($baseDir, 0775, true);
+    }
+    $fullPath = $baseDir . '/' . $pdfFileName;
+    @file_put_contents($fullPath, $pdfBin);
+    if ($fullPath !== '') {
+        clearstatcache(true, $fullPath);
+        @chmod($fullPath, 0664);
+    }
+}
+
+// Salva basename reale (docverde_*) in DB + file su disco (per griglia documenti).
+if ($documentoId > 0) {
+    $this->Db->Execute("
+        UPDATE documenti
+        SET file = " . $sqlQuote($pdfFileName) . ",
+            stato_documento_id = 2,
+            updated_at = NOW()
+        WHERE id = " . (int)$documentoId . "
+    ");
+    if ($fullPath !== '' && is_readable($fullPath)) {
+        if (!isset($_SESSION['docs_pdf_abs']) || !is_array($_SESSION['docs_pdf_abs'])) {
+            $_SESSION['docs_pdf_abs'] = array();
+        }
+        $_SESSION['docs_pdf_abs'][$documentoId] = $fullPath;
+    }
+    if (!isset($_SESSION['docs_pdf_bin']) || !is_array($_SESSION['docs_pdf_bin'])) {
+        $_SESSION['docs_pdf_bin'] = array();
+    }
+    $_SESSION['docs_pdf_bin'][$documentoId] = base64_encode($pdfBin);
+    if (!isset($_SESSION['docs_pdf_generated']) || !is_array($_SESSION['docs_pdf_generated'])) {
+        $_SESSION['docs_pdf_generated'] = array();
+    }
+    $_SESSION['docs_pdf_generated'][$documentoId] = time();
+    if (!empty($_SESSION['docs_pdf_force_regen'][$documentoId])) {
+        unset($_SESSION['docs_pdf_force_regen'][$documentoId]);
+    }
+}
+
+if (function_exists('sc_log_add')) {
+    sc_log_add(
+        'PDF_SAVE',
+        '[documentoId=' . (int)$documentoId . '][subvettoreId=' . (int)$subvector . '] '
+        . 'placeholder_docs_firma tipo=' . $tipoNome
+        . ' db_file=' . $pdfFileName
+        . ' path=' . $fullPath
+        . ' session_bin=1'
+    );
+}
+
+unset($_SESSION['pdf_auto_save']);
+
+$nextSign = (
+    (isset($_GET['next']) && strtolower(trim((string)$_GET['next'])) === 'sign')
+    || (!empty($_SESSION['pdf_next']) && strtolower(trim((string)$_SESSION['pdf_next'])) === 'sign')
+);
+if ($nextSign && $documentoId > 0) {
+    unset($_SESSION['pdf_next']);
+    unset($_SESSION['documento_verde_return_to']);
+    $egUrl = '../easygn_start_wf_docs/'
+        . '?documentoId=' . (int)$documentoId
+        . '&subvettoreId=' . (int)$subvector
+        . '&from_generate=1';
+    if ($fullPath !== '' && is_readable($fullPath)) {
+        $egUrl .= '&pdf_abs=' . rawurlencode($fullPath);
+    }
+    header('Location: ' . $egUrl);
+    exit;
+}
+
+$returnTo = '';
+if (isset($_GET['return_to']) && trim((string)$_GET['return_to']) !== '') {
+    $returnTo = preg_replace('/[^a-zA-Z0-9_\\-]/', '', (string)$_GET['return_to']);
+} elseif (!empty($_SESSION['documento_verde_return_to'])) {
+    $returnTo = preg_replace('/[^a-zA-Z0-9_\\-]/', '', (string)$_SESSION['documento_verde_return_to']);
+}
+if ($returnTo !== '') {
+    unset($_SESSION['documento_verde_return_to']);
+    $_SESSION['wizard_flash_msg'] = 'PDF generato. Ora puoi firmarlo.';
+    header('Location: ../' . $returnTo . '/?generated=1&documentoId=' . (int)$documentoId . '&subvettoreId=' . (int)$subvector);
+    exit;
+}
+
+header('Content-Type: application/pdf');
+header('Content-Disposition: inline; filename="' . $pdfFileName . '"');
+echo $pdfBin;
+exit;

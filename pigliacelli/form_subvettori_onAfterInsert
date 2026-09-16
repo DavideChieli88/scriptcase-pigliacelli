@@ -346,23 +346,121 @@ if ($phone === '' && isset({cellphone})) {
     $phone = trim((string){cellphone});
 }
 
-if ($subvettore_id <= 0 || !form_subvettori_mail_cambiata()) {
-    return;
-}
-
-$created = form_subvettori_crea_utenza(
-    $subvettore_id,
-    $login_subvettore,
-    $login_subvettore,
-    $ragione_sociale,
-    $phone
-);
+// Chiudi subito la tx dell'INSERT form: altrimenti sc_lookup/sc_exec_sql/CALL
+// possono far fatal PDO e fare rollback anche del record subvettori.
+sc_exec_sql('COMMIT');
 
 sc_log_add(
     'SUBVETTORI_USER',
-    'insert: creata utenza subvettore_id=' . $subvettore_id . ' login=' . $login_subvettore . ' active=Y'
+    'insert: after COMMIT sub=' . $subvettore_id . ' login=[' . $login_subvettore . ']'
 );
 
+if ($subvettore_id <= 0) {
+    return;
+}
+
+// Wizard/coda mail anche senza email (record subvettore già salvato)
+sc_exec_sql("
+    UPDATE subvettori
+    SET mail_credenziali_inviata_at = NULL,
+        wizard_complete = 0,
+        wizard_step = CASE
+            WHEN COALESCE(wizard_step, 0) < 1 OR COALESCE(wizard_step, 0) > 5 THEN 1
+            ELSE wizard_step
+        END
+    WHERE id = $subvettore_id
+", 'pigliacelli');
+
+if ($login_subvettore === '' || !form_subvettori_email_valida($login_subvettore)) {
+    sc_log_add('SUBVETTORI_USER', 'insert: skip utenza (email assente/non valida) sub=' . $subvettore_id);
+    return;
+}
+
+$loginSql = str_replace("'", "''", $login_subvettore);
+$created = null;
+
+try {
+    sc_lookup(rsSubInsUser, "
+        SELECT login FROM sec_users WHERE login = '$loginSql' LIMIT 1
+    ", 'pigliacelli');
+
+    if (!empty({rsSubInsUser[0][0]})) {
+        sc_log_add(
+            'SUBVETTORI_USER',
+            'insert: utenza già presente login=' . $login_subvettore . ' sub=' . $subvettore_id
+        );
+    } else {
+        $created = form_subvettori_crea_utenza(
+            $subvettore_id,
+            $login_subvettore,
+            $login_subvettore,
+            $ragione_sociale,
+            $phone
+        );
+        sc_exec_sql('COMMIT');
+        sc_log_add(
+            'SUBVETTORI_USER',
+            'insert: creata utenza subvettore_id=' . $subvettore_id . ' login=' . $login_subvettore . ' active=Y'
+        );
+    }
+
+    // Sempre: gruppo 2 obbligatorio per il pulsante invia credenziali
+    sc_lookup(rsSubInsGrp, "
+        SELECT 1 FROM sec_users_groups
+        WHERE login = '$loginSql' AND group_id = 2
+        LIMIT 1
+    ", 'pigliacelli');
+    if (empty({rsSubInsGrp[0][0]})) {
+        sc_exec_sql("
+            INSERT INTO sec_users_groups (login, group_id)
+            VALUES ('$loginSql', 2)
+        ", 'pigliacelli');
+        sc_exec_sql('COMMIT');
+        sc_log_add('SUBVETTORI_USER', 'insert: aggiunto group_id=2 login=' . $login_subvettore);
+    }
+} catch (Throwable $e) {
+    sc_log_add(
+        'SUBVETTORI_USER',
+        'insert: ERRORE utenza sub=' . $subvettore_id . ' — ' . $e->getMessage()
+    );
+    sc_exec_sql('COMMIT');
+}
+
+// Verifica utenza + gruppo
+sc_lookup(rsSubInsUserCheck, "
+    SELECT su.login
+    FROM sec_users su
+    INNER JOIN sec_users_groups sug ON sug.login = su.login AND sug.group_id = 2
+    WHERE su.login = '$loginSql' AND su.subvettore_id = $subvettore_id
+    LIMIT 1
+", 'pigliacelli');
+if (empty({rsSubInsUserCheck[0][0]})) {
+    sc_log_add(
+        'SUBVETTORI_USER',
+        'insert: WARN utenza o group_id=2 assente sub=' . $subvettore_id . ' login=' . $login_subvettore
+    );
+}
+
+// Bootstrap documenti: non deve mai far fallire la creazione subvettore
+try {
+    $loginBootSql = str_replace("'", "''", $login_subvettore);
+    sc_exec_sql("
+        CALL bootstrap_documenti_from_preset(
+            $subvettore_id,
+            '$loginBootSql'
+        )
+    ", 'pigliacelli');
+    sc_log_add('SUBVETTORI_USER', 'insert: bootstrap_documenti_from_preset ok sub=' . $subvettore_id);
+} catch (Throwable $e) {
+    sc_log_add(
+        'SUBVETTORI_USER',
+        'insert: bootstrap ERRORE sub=' . $subvettore_id . ' — ' . $e->getMessage()
+    );
+    sc_exec_sql('COMMIT');
+}
+
+// TEMP: non inviare mail credenziali alla creazione utenza da form_subvettori.
+/*
 if (is_array($created)) {
     form_subvettori_invia_mail_credenziali(
         $subvettore_id,
@@ -370,5 +468,14 @@ if (is_array($created)) {
         $created['login'],
         $created['password'],
         $ragione_sociale
+    );
+}
+*/
+if (is_array($created)) {
+    sc_log_add(
+        'SUBVETTORI_USER',
+        'insert: mail credenziali NON inviata (disabilitata) subvettore_id=' . $subvettore_id
+            . ' login=' . $created['login']
+            . ' — usare send_credentials_btn in grid_subvettori'
     );
 }
