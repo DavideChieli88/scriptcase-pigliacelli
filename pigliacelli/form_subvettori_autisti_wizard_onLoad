@@ -64,10 +64,10 @@ if ($isInline) {
     sc_btn_display('insert', 'on');
     sc_btn_display('alterar', 'on');
     sc_btn_display('incluir', 'on');
-    sc_btn_display('cancel', 'on');
-    sc_btn_display('annulla', 'on');
-    sc_btn_display('exit', 'on');
-    sc_btn_display('sair', 'on');
+    //sc_btn_display('cancel', 'on');
+    //sc_btn_display('annulla', 'on');
+    // sc_btn_display('exit', 'on');
+    // sc_btn_display('sair', 'on');
     sc_btn_display('back', 'on');
 } else {
     // App principale = editable grid: SEMPRE Avanti/Indietro
@@ -144,7 +144,7 @@ if ($autistaId > 0) {
         {dpi_iii_categoria} = !empty({rsOL21[0][0]}) ? basename(trim((string){rsOL21[0][0]})) : '';
 
         sc_lookup(rsOL30, "
-            SELECT file, in_possesso FROM documenti
+            SELECT file, in_possesso, data_scadenza FROM documenti
             WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = 30
             ORDER BY id ASC LIMIT 1
         ", 'pigliacelli');
@@ -165,6 +165,11 @@ if ($autistaId > 0) {
             {permesso_soggiorno_flag} = 0;
         }
 
+        $scad30 = isset({scadenza_permesso_soggiorno}) ? trim((string){scadenza_permesso_soggiorno}) : '';
+        if (($scad30 === '' || $scad30 === 'null') && !empty({rsOL30[0][2]})) {
+            {scadenza_permesso_soggiorno} = trim((string){rsOL30[0][2]});
+        }
+
         sc_log_add(
             'AUT_LOAD',
             'onLoad FILL id=' . $autistaId
@@ -175,25 +180,30 @@ if ($autistaId > 0) {
     }
 }
 
-// --- Display permesso ---
+// --- Display permesso: in MODALE (inline). In editable grid → onLoadRecord per riga ---
 sc_field_display({permesso_soggiorno_flag}, 'on');
 
-$flagPermesso = {permesso_soggiorno_flag};
-if ($flagPermesso === '' || $flagPermesso === null || $flagPermesso === 'undefined' || $flagPermesso === 'null') {
-    $flagPermesso = 0;
-}
-$flagPermesso = ((int)$flagPermesso === 1) ? 1 : 0;
-{permesso_soggiorno_flag} = $flagPermesso;
+if ($isInline) {
+    $flagPermesso = {permesso_soggiorno_flag};
+    if ($flagPermesso === '' || $flagPermesso === null || $flagPermesso === 'undefined' || $flagPermesso === 'null') {
+        $flagPermesso = 0;
+    }
+    $flagPermesso = ((int)$flagPermesso === 1) ? 1 : 0;
+    {permesso_soggiorno_flag} = $flagPermesso;
 
-if ($flagPermesso === 1) {
-    sc_field_display({permesso_soggiorno}, 'on');
-} else {
-    sc_field_display({permesso_soggiorno}, 'off');
+    if ($flagPermesso === 1) {
+        sc_field_display({permesso_soggiorno}, 'on');
+        sc_field_display({scadenza_permesso_soggiorno}, 'on');
+    } else {
+        sc_field_display({permesso_soggiorno}, 'off');
+        sc_field_display({scadenza_permesso_soggiorno}, 'off');
+    }
 }
 
 sc_log_add(
     'AUT_LOAD',
-    'onLoad display flag=' . $flagPermesso
+    'onLoad display inline=' . ($isInline ? '1' : '0')
+    . ' flag=[' . trim((string){permesso_soggiorno_flag}) . ']'
     . ' pat=[' . trim((string){patente}) . ']'
     . ' id=' . $autistaId
 );

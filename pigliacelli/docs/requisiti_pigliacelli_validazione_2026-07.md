@@ -1,11 +1,12 @@
 # Requisiti Pigliacelli — validazione email luglio 2026
 
 Documento di recap delle specifiche **congelate** emerse dagli scambi email con il cliente (Flavia / Pigliacelli).  
-Da usare come riferimento per sviluppi futuri. Ultimo aggiornamento: **16 settembre 2026**.
+Da usare come riferimento per sviluppi futuri. Ultimo aggiornamento: **17 settembre 2026**.
 
 > **Aggiornamento SAL 16/09/2026:** nuove decisioni operative (mezzi vs autisti, Allegato F annuale, tipo veicolo, scadenze, dedup ANGA/Rentri).  
-> Dettaglio completo: [`pigliacelli_briefing_sal_2026-09-16.md`](pigliacelli_briefing_sal_2026-09-16.md).  
-> Le sezioni sotto restano la baseline di luglio; dove confliggono, **prevale il briefing di settembre**.
+> Dettaglio: [`pigliacelli_briefing_sal_2026-09-16.md`](pigliacelli_briefing_sal_2026-09-16.md).  
+> **Chiarimento mail 17/09/2026 (ANGA = Cat.; RENTRI unico):** [`chiarimento_anga_rentri_2026-09-17.md`](chiarimento_anga_rentri_2026-09-17.md) — **prevale** su interpretazioni precedenti di “2/4 doc per categoria”.  
+> Le sezioni sotto restano la baseline di luglio; dove confliggono, prevalgono settembre + mail 17/09.
 
 ---
 

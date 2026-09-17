@@ -1,9 +1,12 @@
 /**
  * form_subvettori_mezzi → onLoad
  *
- * Su INSERT lo master-detail non valorizza ancora {subvettore_id}:
- * la select autista (lookup su {subvettore_id}) resta vuota finché non salvi.
- * Qui risolviamo subito il subvettore e lo scriviamo sul campo.
+ * 1) Risolve subvettore_id su INSERT
+ * 2) Tasti wizard / inline
+ * 3) Show/hide virtuali ANGA/RENTRI (sc_field_display con 'on'/'off' letterali)
+ * 4) In modale *_inline: precare docs se id > 0
+ *
+ * Setup flag has_cat_* (Radio): Reload OFF + Ajax onClick (come permesso autisti).
  */
 
 $subId = 0;
@@ -44,7 +47,6 @@ if ($subId > 0) {
     [subvettoreId] = $subId;
 }
 
-// Tasti wizard — stessa regola autisti
 $op = '';
 if (isset($this->nmgp_opcao)) {
     $op = strtolower(trim((string)$this->nmgp_opcao));
@@ -80,7 +82,7 @@ foreach ($checks as $p) {
 }
 
 if ($isInline) {
-    sc_btn_display('next_step_btn_mezzi', 'off');
+    sc_btn_display('next_step_btn_docs', 'off');
     sc_btn_display('back_step_btn_autisti', 'off');
     sc_btn_display('update', 'on');
     sc_btn_display('ok', 'on');
@@ -88,13 +90,9 @@ if ($isInline) {
     sc_btn_display('insert', 'on');
     sc_btn_display('alterar', 'on');
     sc_btn_display('incluir', 'on');
-    sc_btn_display('cancel', 'on');
-    sc_btn_display('annulla', 'on');
-    sc_btn_display('exit', 'on');
-    sc_btn_display('sair', 'on');
     sc_btn_display('back', 'on');
 } else {
-    sc_btn_display('next_step_btn_mezzi', 'on');
+    sc_btn_display('next_step_btn_docs', 'on');
     sc_btn_display('back_step_btn_autisti', 'on');
 }
 
@@ -106,3 +104,217 @@ sc_log_add(
     . ' self=[' . (isset($_SERVER['PHP_SELF']) ? $_SERVER['PHP_SELF'] : '') . ']'
     . ' id=' . (isset({id}) ? (int){id} : 0)
 );
+
+/**
+ * Show/hide ANGA/RENTRI — schema autisti:
+ * - onLoad: SOLO modale *_inline
+ * - editable grid: onLoadRecord per riga
+ * IDE: sui virtuali ANGA/RENTRI impostare Display = No (partono nascosti).
+ */
+$raw1 = {has_cat_trasp_rifiuti_1};
+$raw4 = {has_cat_trasp_rifiuti_4};
+$raw5 = {has_cat_trasp_rifiuti_5};
+
+$flag1 = 0;
+$flag4 = 0;
+$flag5 = 0;
+$s1 = strtoupper(trim((string)$raw1));
+$s4 = strtoupper(trim((string)$raw4));
+$s5 = strtoupper(trim((string)$raw5));
+if ($raw1 !== '' && $raw1 !== null && $raw1 !== 'undefined' && $raw1 !== 'null') {
+    if ($s1 === '1' || $s1 === 'S' || $s1 === 'Y' || $s1 === 'SI' || $s1 === 'SÌ' || $s1 === 'YES' || $s1 === 'TRUE' || (int)$raw1 === 1) {
+        $flag1 = 1;
+    }
+}
+if ($raw4 !== '' && $raw4 !== null && $raw4 !== 'undefined' && $raw4 !== 'null') {
+    if ($s4 === '1' || $s4 === 'S' || $s4 === 'Y' || $s4 === 'SI' || $s4 === 'SÌ' || $s4 === 'YES' || $s4 === 'TRUE' || (int)$raw4 === 1) {
+        $flag4 = 1;
+    }
+}
+if ($raw5 !== '' && $raw5 !== null && $raw5 !== 'undefined' && $raw5 !== 'null') {
+    if ($s5 === '1' || $s5 === 'S' || $s5 === 'Y' || $s5 === 'SI' || $s5 === 'SÌ' || $s5 === 'YES' || $s5 === 'TRUE' || (int)$raw5 === 1) {
+        $flag5 = 1;
+    }
+}
+{has_cat_trasp_rifiuti_1} = $flag1;
+{has_cat_trasp_rifiuti_4} = $flag4;
+{has_cat_trasp_rifiuti_5} = $flag5;
+
+sc_log_add(
+    'MEZ_DISP',
+    'onLoad inline=' . ($isInline ? '1' : '0')
+    . ' raw=[' . $raw1 . '|' . $raw4 . '|' . $raw5 . ']'
+    . ' flag=' . $flag1 . $flag4 . $flag5
+);
+
+// Sempre: off di default, on solo se flag=1.
+// (Se gira sulla grid, onLoadRecord rifà il display per riga.)
+sc_field_display({anga_cat_1}, 'off');
+sc_field_display({scadenza_anga_cat_1}, 'off');
+sc_field_display({ricevuta_anga_cat_1}, 'off');
+sc_field_display({scadenza_ricevuta_anga_cat_1}, 'off');
+sc_field_display({anga_cat_4}, 'off');
+sc_field_display({scadenza_anga_cat_4}, 'off');
+sc_field_display({ricevuta_anga_cat_4}, 'off');
+sc_field_display({scadenza_ricevuta_anga_cat_4}, 'off');
+sc_field_display({anga_cat_5}, 'off');
+sc_field_display({scadenza_anga_cat_5}, 'off');
+sc_field_display({ricevuta_anga_cat_5}, 'off');
+sc_field_display({scadenza_ricevuta_anga_cat_5}, 'off');
+sc_field_display({rentri_iscrizione}, 'off');
+sc_field_display({ricevuta_rentri}, 'off');
+sc_field_display({scadenza_ricevuta_rentri}, 'off');
+
+if ($flag1 === 1) {
+    sc_field_display({anga_cat_1}, 'on');
+    sc_field_display({scadenza_anga_cat_1}, 'on');
+    sc_field_display({ricevuta_anga_cat_1}, 'on');
+    sc_field_display({scadenza_ricevuta_anga_cat_1}, 'on');
+}
+if ($flag4 === 1) {
+    sc_field_display({anga_cat_4}, 'on');
+    sc_field_display({scadenza_anga_cat_4}, 'on');
+    sc_field_display({ricevuta_anga_cat_4}, 'on');
+    sc_field_display({scadenza_ricevuta_anga_cat_4}, 'on');
+}
+if ($flag5 === 1) {
+    sc_field_display({anga_cat_5}, 'on');
+    sc_field_display({scadenza_anga_cat_5}, 'on');
+    sc_field_display({ricevuta_anga_cat_5}, 'on');
+    sc_field_display({scadenza_ricevuta_anga_cat_5}, 'on');
+}
+if ($flag1 === 1 || $flag4 === 1 || $flag5 === 1) {
+    sc_field_display({rentri_iscrizione}, 'on');
+    sc_field_display({ricevuta_rentri}, 'on');
+    sc_field_display({scadenza_ricevuta_rentri}, 'on');
+}
+
+// --- Precarica documenti (modale *_inline spesso non ha onLoadRecord) ---
+$mezzoId = isset({id}) ? (int){id} : 0;
+if ($mezzoId > 0) {
+    if (!function_exists('mez_wiz_load_doc_into')) {
+        function mez_wiz_load_doc_into($mezzoId, $tipoId, &$fileField, &$scadField, $loadScad)
+        {
+            $tipoId = (int)$tipoId;
+            $mezzoId = (int)$mezzoId;
+            if ($tipoId <= 0 || $mezzoId <= 0) {
+                return;
+            }
+            $cur = trim((string)$fileField);
+            if ($cur !== '') {
+                return;
+            }
+            sc_lookup(rsMezLoadDoc, "
+                SELECT file, data_scadenza
+                FROM documenti
+                WHERE subvettore_mezzo_id = $mezzoId
+                  AND tipo_documento_id = $tipoId
+                  AND file IS NOT NULL AND TRIM(file) <> ''
+                ORDER BY id ASC LIMIT 1
+            ", 'pigliacelli');
+            if (!empty({rsMezLoadDoc[0][0]})) {
+                $fileField = basename(trim((string){rsMezLoadDoc[0][0]}));
+                if ($loadScad && !empty({rsMezLoadDoc[0][1]})) {
+                    $scadField = (string){rsMezLoadDoc[0][1]};
+                }
+            }
+        }
+    }
+    if (!function_exists('mez_wiz_tipo_id_load')) {
+        function mez_wiz_tipo_id_load($nome, $fallbackId = 0)
+        {
+            $nomeSql = str_replace("'", "''", $nome);
+            sc_lookup(rsMezTipoLoad, "
+                SELECT id FROM tipi_documento
+                WHERE LOWER(TRIM(nome)) = LOWER(TRIM('$nomeSql'))
+                LIMIT 1
+            ", 'pigliacelli');
+            if (!empty({rsMezTipoLoad[0][0]})) {
+                return (int){rsMezTipoLoad[0][0]};
+            }
+            return (int)$fallbackId;
+        }
+    }
+
+    $fCarta = isset({carta_circolazione}) ? {carta_circolazione} : '';
+    $sCarta = isset({scadenza_carta_circolazione}) ? {scadenza_carta_circolazione} : '';
+    mez_wiz_load_doc_into($mezzoId, 22, $fCarta, $sCarta, true);
+    {carta_circolazione} = $fCarta;
+    if (trim((string)$sCarta) !== '' && (trim((string){scadenza_carta_circolazione}) === '' || {scadenza_carta_circolazione} === 'null')) {
+        {scadenza_carta_circolazione} = $sCarta;
+    }
+
+    sc_lookup(rsMezAutOL, "
+        SELECT autista_id
+        FROM subvettori_autisti_mezzi
+        WHERE mezzo_id = $mezzoId AND autista_id > 0
+        ORDER BY id ASC LIMIT 1
+    ", 'pigliacelli');
+    if (!empty({rsMezAutOL[0][0]}) && (!isset({autista_id}) || (int){autista_id} <= 0)) {
+        {autista_id} = (int){rsMezAutOL[0][0]};
+    }
+
+    $fA1 = isset({anga_cat_1}) ? {anga_cat_1} : '';
+    $sA1 = isset({scadenza_anga_cat_1}) ? {scadenza_anga_cat_1} : '';
+    mez_wiz_load_doc_into($mezzoId, mez_wiz_tipo_id_load('Autorizzazione ANGA Cat.1', 11), $fA1, $sA1, true);
+    {anga_cat_1} = $fA1;
+    if (trim((string)$sA1) !== '') {
+        {scadenza_anga_cat_1} = $sA1;
+    }
+    $fR1 = isset({ricevuta_anga_cat_1}) ? {ricevuta_anga_cat_1} : '';
+    $sR1 = isset({scadenza_ricevuta_anga_cat_1}) ? {scadenza_ricevuta_anga_cat_1} : '';
+    mez_wiz_load_doc_into($mezzoId, mez_wiz_tipo_id_load('Ricevuta pagamento ANGA Cat.1', 12), $fR1, $sR1, true);
+    {ricevuta_anga_cat_1} = $fR1;
+    if (trim((string)$sR1) !== '') {
+        {scadenza_ricevuta_anga_cat_1} = $sR1;
+    }
+
+    $fA4 = isset({anga_cat_4}) ? {anga_cat_4} : '';
+    $sA4 = isset({scadenza_anga_cat_4}) ? {scadenza_anga_cat_4} : '';
+    mez_wiz_load_doc_into($mezzoId, mez_wiz_tipo_id_load('Autorizzazione ANGA Cat.4', 0), $fA4, $sA4, true);
+    {anga_cat_4} = $fA4;
+    if (trim((string)$sA4) !== '') {
+        {scadenza_anga_cat_4} = $sA4;
+    }
+    $fR4 = isset({ricevuta_anga_cat_4}) ? {ricevuta_anga_cat_4} : '';
+    $sR4 = isset({scadenza_ricevuta_anga_cat_4}) ? {scadenza_ricevuta_anga_cat_4} : '';
+    mez_wiz_load_doc_into($mezzoId, mez_wiz_tipo_id_load('Ricevuta pagamento ANGA Cat.4', 0), $fR4, $sR4, true);
+    {ricevuta_anga_cat_4} = $fR4;
+    if (trim((string)$sR4) !== '') {
+        {scadenza_ricevuta_anga_cat_4} = $sR4;
+    }
+
+    $fA5 = isset({anga_cat_5}) ? {anga_cat_5} : '';
+    $sA5 = isset({scadenza_anga_cat_5}) ? {scadenza_anga_cat_5} : '';
+    mez_wiz_load_doc_into($mezzoId, mez_wiz_tipo_id_load('Autorizzazione ANGA Cat.5', 0), $fA5, $sA5, true);
+    {anga_cat_5} = $fA5;
+    if (trim((string)$sA5) !== '') {
+        {scadenza_anga_cat_5} = $sA5;
+    }
+    $fR5 = isset({ricevuta_anga_cat_5}) ? {ricevuta_anga_cat_5} : '';
+    $sR5 = isset({scadenza_ricevuta_anga_cat_5}) ? {scadenza_ricevuta_anga_cat_5} : '';
+    mez_wiz_load_doc_into($mezzoId, mez_wiz_tipo_id_load('Ricevuta pagamento ANGA Cat.5', 0), $fR5, $sR5, true);
+    {ricevuta_anga_cat_5} = $fR5;
+    if (trim((string)$sR5) !== '') {
+        {scadenza_ricevuta_anga_cat_5} = $sR5;
+    }
+
+    $fRen = isset({rentri_iscrizione}) ? {rentri_iscrizione} : '';
+    $sRenDummy = '';
+    mez_wiz_load_doc_into($mezzoId, mez_wiz_tipo_id_load('Iscrizione RENTRI', 13), $fRen, $sRenDummy, false);
+    if ($fRen === '') {
+        mez_wiz_load_doc_into($mezzoId, mez_wiz_tipo_id_load('Iscrizione RENTRI Cat.1', 13), $fRen, $sRenDummy, false);
+    }
+    {rentri_iscrizione} = $fRen;
+
+    $fRicRen = isset({ricevuta_rentri}) ? {ricevuta_rentri} : '';
+    $sRicRen = isset({scadenza_ricevuta_rentri}) ? {scadenza_ricevuta_rentri} : '';
+    mez_wiz_load_doc_into($mezzoId, mez_wiz_tipo_id_load('Ricevuta pagamento RENTRI', 14), $fRicRen, $sRicRen, true);
+    if ($fRicRen === '') {
+        mez_wiz_load_doc_into($mezzoId, mez_wiz_tipo_id_load('Ricevuta pagamento RENTRI Cat.1', 14), $fRicRen, $sRicRen, true);
+    }
+    {ricevuta_rentri} = $fRicRen;
+    if (trim((string)$sRicRen) !== '') {
+        {scadenza_ricevuta_rentri} = $sRicRen;
+    }
+}

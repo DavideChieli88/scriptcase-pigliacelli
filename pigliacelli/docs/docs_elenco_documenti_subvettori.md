@@ -3,7 +3,7 @@
 Documentazione fornita dal cliente (Pigliacelli).  
 Riferimento per tipologie documentali, alert scadenze e classificazione Flusso Iniziale / post-contratto.
 
-Vedi anche: [`requisiti_pigliacelli_validazione_2026-07.md`](requisiti_pigliacelli_validazione_2026-07.md)
+Vedi anche: [`requisiti_pigliacelli_validazione_2026-07.md`](requisiti_pigliacelli_validazione_2026-07.md) · **[`chiarimento_anga_rentri_2026-09-17.md`](chiarimento_anga_rentri_2026-09-17.md)** (mail 17/09: Cat.=ANGA; RENTRI unico)
 
 ---
 
@@ -31,10 +31,10 @@ Vedi anche: [`requisiti_pigliacelli_validazione_2026-07.md`](requisiti_pigliacel
 | 8 | Polizza vettoriale + quietanza **(facoltativa)** | — | 7 gg. prima; giorno scadenza |
 | 9 | Certificato White list *(se non iscritti: richiesta + ricevuta PEC)* | — | 60 gg.; 45 gg.; 30 gg. prima; giorno scadenza |
 | 10 | Dichiarazioni allegate compilate e firmate (qualifica, validità annuale) | Annuale | 7 gg. prima; giorno scadenza |
-| 11 | Autorizzazioni ANGA Cat. 1 + 4 + 5 *(se trasporto rifiuti)* | 5 anni dall’emissione | 30 gg. prima; giorno scadenza |
-| 12 | Ricevuta pagamento annuale ANGA | 30 aprile (annuale) | 14 gg. prima; giorno scadenza |
-| 13 | Iscrizione RENTRI | — | — |
-| 14 | Ricevuta pagamento RENTRI | 30 aprile (annuale) | 14 gg. prima; giorno scadenza |
+| 11 | Autorizzazioni ANGA Cat. 1 / 4 / 5 *(= “Cat. X”; se trasporto rifiuti)* | Per cat. flaggata; scadenza da indicare | 30 gg. prima; giorno scadenza |
+| 12 | Ricevuta pagamento ANGA | **30 aprile**; preferibile slot **per cat.** (pagamento unico o in giorni diversi) | 14 gg. prima; giorno scadenza |
+| 13 | Iscrizione RENTRI | **Unica**, **senza scadenza** (non legata alle cat.) | — |
+| 14 | Ricevuta pagamento RENTRI | **Unica** (unità locali azienda); **30 aprile** | 14 gg. prima; giorno scadenza |
 | 15 | Polizza RCT/RCO + quietanza **(facoltativa)** | — | 7 gg. prima; giorno scadenza |
 | 16 | Polizza RCA + quietanza | — | 7 gg. prima; giorno scadenza |
 | 17 | Elenco autisti | Annuale | 7 gg. prima; giorno scadenza |
@@ -93,4 +93,4 @@ Vedi anche: [`requisiti_pigliacelli_validazione_2026-07.md`](requisiti_pigliacel
 
 ---
 
-*Ultimo aggiornamento: luglio 2026*
+*Ultimo aggiornamento: 17 settembre 2026* (ANGA/RENTRI allineati a mail chiarimento)

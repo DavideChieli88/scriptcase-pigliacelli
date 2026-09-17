@@ -4,7 +4,7 @@
 **Partecipanti:** Flavia Pigliacelli, Davide Marcoccia (Pigliacelli); Davide Chieli, Erik Capoccetta (Digiweb)  
 **File originali:** [`pigliacelli_briefing_sal_2026-09-16.docx`](pigliacelli_briefing_sal_2026-09-16.docx) · [`pigliacelli_briefing_sal_2026-09-16.txt`](pigliacelli_briefing_sal_2026-09-16.txt)
 
-Vedi anche: [`requisiti_pigliacelli_validazione_2026-07.md`](requisiti_pigliacelli_validazione_2026-07.md) · [`pigliacelli_briefing_sal_2026-07-21.md`](pigliacelli_briefing_sal_2026-07-21.md) · [`modello_flag_documenti.md`](modello_flag_documenti.md)
+Vedi anche: [`requisiti_pigliacelli_validazione_2026-07.md`](requisiti_pigliacelli_validazione_2026-07.md) · [`pigliacelli_briefing_sal_2026-07-21.md`](pigliacelli_briefing_sal_2026-07-21.md) · [`modello_flag_documenti.md`](modello_flag_documenti.md) · **[`chiarimento_anga_rentri_2026-09-17.md`](chiarimento_anga_rentri_2026-09-17.md)** (mail 17/09 — prevale su D6/D7 per ANGA/RENTRI)
 
 ---
 
@@ -29,8 +29,8 @@ Vedi anche: [`requisiti_pigliacelli_validazione_2026-07.md`](requisiti_pigliacel
 | D3 | Mezzi: **tipo veicolo** a tendina chiusa **Trattore / Semirimorchio** (non testo libero); un record = un veicolo (targa trattore **oppure** targa rimorchio, non entrambi nello stesso form) | Form mezzi |
 | D4 | Associazione **autista ↔ mezzo facoltativa** | Validazione / `btn_prossimo` mezzi |
 | D5 | Flusso dedicato **Allegato F** con rinnovo **annuale** + salvataggio storico | Nuovo form / step; fuori dal “quick fix” |
-| D6 | Se indicate cat. **1 / 4 / 5** → documenti autorizzazione (ANGA / Rentri / pagamenti) **obbligatori** + scadenza | Validazione step documenti / per mezzo |
-| D7 | **Unificare** tipi documento duplicati ANGA (es. 12/24/25) e Rentri (es. 14/26/27); allegati **distinti per categoria** sul mezzo | Seed `tipi_documento` + logica slot |
+| D6 | Se indicate cat. **1 / 4 / 5** sul mezzo → vedi **mail 17/09** ([chiarimento ANGA/RENTRI](chiarimento_anga_rentri_2026-09-17.md)): Cat. = Autorizzazione ANGA; 1 auth+scadenza per cat.; ricevuta ANGA per cat. (scad. 30/04); RENTRI iscrizione **unica senza scadenza**; ricevuta RENTRI **unica** scad. 30/04 | Form mezzi + `documenti.subvettore_mezzo_id` |
+| D7 | **Unificare** tipi documento duplicati ANGA/RENTRI (quietanze = stessa ricevuta); tipi per Cat.1/4/5 solo per **autorizzazione ANGA** e **ricevuta ANGA**; RENTRI non moltiplicare per cat. | Seed `tipi_documento` |
 | D8 | Spostare **categorie rifiuti, ANGA, scadenze relative, carta circolazione** da autista → **mezzo** | Form + validate + grid |
 | D9 | Documenti “verdi” / dichiarazioni: **compilazione annuale** (non solo firma one-shot onboarding) | Flusso post-onboarding |
 | D10 | Rimuovere scadenza **carta circolazione** (e campi assicurativi) dall’anagrafica **autisti** | Form autisti |
@@ -72,7 +72,7 @@ Dati oggi mancanti o incompleti in step 1, richiesti in call:
 | **P0 · venerdì** | Scheda admin subvettore: mostrare autisti + mezzi (non solo tratte) | |
 | **P0** | Pulizia DB test (subvettori prova) | |
 | **P1** | Ampliare anagrafica (residenza LR, CF, albo provincia, banca/IBAN/SDI) | |
-| **P1** | Dedup tipi ANGA/Rentri; obbligo doc per cat. 1/4/5 **per mezzo** | |
+| **P1** | Dedup tipi ANGA/Rentri; obblighi mezzo allineati a [mail 17/09](chiarimento_anga_rentri_2026-09-17.md) | |
 | **P2** | Flusso annuale Allegato F + storico | Scope da stimare; avvisare Filippo/Francesca |
 | **P2** | Presa visione con log data/ora | In corso |
 | **Backlog** | Sostituzione PDF verdi quando arrivano i finali | Ott–nov |
@@ -93,7 +93,7 @@ Dati oggi mancanti o incompleti in step 1, richiesti in call:
 |------|--------|-------------------|
 | Autista ↔ mezzo | Associazione prevista | **Facoltativa** |
 | Categorie 1/4/5 | Su autista | **Su mezzo** + doc obbligatori |
-| ANGA / Rentri | Tipi multipli / quietanze | **Dedup** + allegati per categoria sul mezzo |
+| ANGA / Rentri | Tipi multipli / quietanze | **Dedup**; Cat.=ANGA auth per mezzo; ricevuta ANGA per cat.; RENTRI unico (iscrizione no scad. + ricevuta 30/04) — [mail 17/09](chiarimento_anga_rentri_2026-09-17.md) |
 | Carta circolazione | Anche su autista (bug/demo) | **Solo mezzo** |
 | Dichiarazioni | PDF + firma onboarding | + **form annuale Allegato F** + storico |
 | Tipo veicolo | Testo libero | **Enum** Trattore / Semirimorchio |

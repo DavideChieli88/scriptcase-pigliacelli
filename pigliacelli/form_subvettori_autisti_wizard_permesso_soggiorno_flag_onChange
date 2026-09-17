@@ -6,7 +6,7 @@
  *   2) Ajax Events → nuovo evento → campo permesso_soggiorno_flag → onClick
  *      (NON onChange: la doc SC dice che il radio non è compatibile con onChange)
  *
- * Solo show/hide del file: niente reload, così il flag resta fino al save.
+ * Show/hide: file permesso_soggiorno + scadenza_permesso_soggiorno.
  */
 
 $flagPermesso = {permesso_soggiorno_flag};
@@ -17,6 +17,8 @@ $flagPermesso = ((int)$flagPermesso === 1) ? 1 : 0;
 
 if ($flagPermesso === 1) {
     sc_field_display({permesso_soggiorno}, 'on');
+    sc_field_display({scadenza_permesso_soggiorno}, 'on');
 } else {
     sc_field_display({permesso_soggiorno}, 'off');
+    sc_field_display({scadenza_permesso_soggiorno}, 'off');
 }

@@ -17,6 +17,7 @@ if ($autistaId <= 0) {
     {dpi_iii_categoria} = '';
     {permesso_soggiorno} = '';
     {permesso_soggiorno_flag} = 0;
+    {scadenza_permesso_soggiorno} = '';
     sc_log_add('AUT_LOAD', 'onLoadRecord NEW → flag=0, docs vuoti');
 } else {
 
@@ -73,7 +74,8 @@ if ($autistaId <= 0) {
     {dpi_iii_categoria} = !empty({rsL21[0][0]}) ? basename(trim((string){rsL21[0][0]})) : '';
 
     sc_lookup(rsL30, "
-        SELECT file, in_possesso FROM documenti
+        SELECT file, in_possesso, data_scadenza
+        FROM documenti
         WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = 30
         ORDER BY id ASC LIMIT 1
     ", 'pigliacelli');
@@ -96,6 +98,12 @@ if ($autistaId <= 0) {
         {permesso_soggiorno_flag} = 0;
     }
 
+    // Scadenza: colonna tabella se valorizzata, altrimenti documenti.data_scadenza
+    $scad30 = isset({scadenza_permesso_soggiorno}) ? trim((string){scadenza_permesso_soggiorno}) : '';
+    if (($scad30 === '' || $scad30 === 'null') && !empty({rsL30[0][2]})) {
+        {scadenza_permesso_soggiorno} = trim((string){rsL30[0][2]});
+    }
+
     sc_log_add(
         'AUT_LOAD',
         'onLoadRecord OK'
@@ -107,6 +115,22 @@ if ($autistaId <= 0) {
         . ' perm=[' . $file30 . ']'
         . ' flag=' . (int){permesso_soggiorno_flag}
     );
+}
+
+// Editable grid: show/hide PER RIGA (onLoad globale nascondeva tutto con flag=0)
+$flagPermesso = {permesso_soggiorno_flag};
+if ($flagPermesso === '' || $flagPermesso === null || $flagPermesso === 'undefined' || $flagPermesso === 'null') {
+    $flagPermesso = 0;
+}
+$flagPermesso = ((int)$flagPermesso === 1) ? 1 : 0;
+{permesso_soggiorno_flag} = $flagPermesso;
+
+if ($flagPermesso === 1) {
+    sc_field_display({permesso_soggiorno}, 'on');
+    sc_field_display({scadenza_permesso_soggiorno}, 'on');
+} else {
+    sc_field_display({permesso_soggiorno}, 'off');
+    sc_field_display({scadenza_permesso_soggiorno}, 'off');
 }
 
 /*

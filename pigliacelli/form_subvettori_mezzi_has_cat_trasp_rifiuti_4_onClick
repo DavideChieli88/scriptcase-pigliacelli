@@ -1,0 +1,51 @@
+/**
+ * form_subvettori_mezzi → Ajax onClick di has_cat_trasp_rifiuti_4
+ *
+ * IDE (obbligatorio o l’Ajax non aggiorna la UI):
+ * - Radio 1=Si / 0=No; Reload = OFF; Event = onClick (non onChange)
+ * - In "Fields" dell’Ajax spuntare:
+ *   anga_cat_4, scadenza_anga_cat_4, ricevuta_anga_cat_4, scadenza_ricevuta_anga_cat_4,
+ *   rentri_iscrizione, ricevuta_rentri, scadenza_ricevuta_rentri,
+ *   has_cat_trasp_rifiuti_1, has_cat_trasp_rifiuti_4, has_cat_trasp_rifiuti_5
+ */
+
+$flag = {has_cat_trasp_rifiuti_4};
+if ($flag === '' || $flag === null || $flag === 'undefined' || $flag === 'null') {
+    $flag = 0;
+}
+$flag = ((int)$flag === 1) ? 1 : 0;
+
+sc_log_add('MEZ_DISP', 'onClick cat4 flag=' . $flag);
+
+if ($flag === 1) {
+    sc_field_display({anga_cat_4}, 'on');
+    sc_field_display({scadenza_anga_cat_4}, 'on');
+    sc_field_display({ricevuta_anga_cat_4}, 'on');
+    sc_field_display({scadenza_ricevuta_anga_cat_4}, 'on');
+} else {
+    sc_field_display({anga_cat_4}, 'off');
+    sc_field_display({scadenza_anga_cat_4}, 'off');
+    sc_field_display({ricevuta_anga_cat_4}, 'off');
+    sc_field_display({scadenza_ricevuta_anga_cat_4}, 'off');
+}
+
+$f1 = {has_cat_trasp_rifiuti_1};
+$f5 = {has_cat_trasp_rifiuti_5};
+if ($f1 === '' || $f1 === null || $f1 === 'undefined' || $f1 === 'null') {
+    $f1 = 0;
+}
+if ($f5 === '' || $f5 === null || $f5 === 'undefined' || $f5 === 'null') {
+    $f5 = 0;
+}
+$f1 = ((int)$f1 === 1) ? 1 : 0;
+$f5 = ((int)$f5 === 1) ? 1 : 0;
+
+if ($flag === 1 || $f1 === 1 || $f5 === 1) {
+    sc_field_display({rentri_iscrizione}, 'on');
+    sc_field_display({ricevuta_rentri}, 'on');
+    sc_field_display({scadenza_ricevuta_rentri}, 'on');
+} else {
+    sc_field_display({rentri_iscrizione}, 'off');
+    sc_field_display({ricevuta_rentri}, 'off');
+    sc_field_display({scadenza_ricevuta_rentri}, 'off');
+}

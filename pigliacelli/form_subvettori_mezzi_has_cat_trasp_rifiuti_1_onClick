@@ -1,0 +1,63 @@
+/**
+ * form_subvettori_mezzi → Ajax onClick di has_cat_trasp_rifiuti_1
+ *
+ * ============================================================================IDE — SENZA QUESTO L’onClick NON AGGIORNA LA UI ==========
+ * 1) Campo has_cat_trasp_rifiuti_1:
+ *    - Tipo: Radio
+ *    - Edit Lookup: Manual  →  1=Si  e  0=No   (valori numerici!)
+ *    - "Reload form when value has changed" = OFF
+ * 2) Ajax Events → New → Field = has_cat_trasp_rifiuti_1 → Event = onClick
+ *    (NON onChange)
+ * 3) NELLA FINESTRA DELL’EVENTO AJAX → sezione "Fields" / "Select fields":
+ *    DEVI spuntare TUTTI i campi che mostri/nascondi, altrimenti
+ *    sc_field_display non ha effetto in Ajax:
+ *      anga_cat_1, scadenza_anga_cat_1,
+ *      ricevuta_anga_cat_1, scadenza_ricevuta_anga_cat_1,
+ *      rentri_iscrizione, ricevuta_rentri, scadenza_ricevuta_rentri,
+ *      has_cat_trasp_rifiuti_1, has_cat_trasp_rifiuti_4, has_cat_trasp_rifiuti_5
+ * 4) Generate + Deploy (anche *_inline se editable grid)
+ * ==================================================================
+ */
+
+$flag = {has_cat_trasp_rifiuti_1};
+if ($flag === '' || $flag === null || $flag === 'undefined' || $flag === 'null') {
+    $flag = 0;
+}
+$flag = ((int)$flag === 1) ? 1 : 0;
+
+sc_log_add('MEZ_DISP', 'onClick cat1 flag=' . $flag);
+
+if ($flag === 1) {
+    sc_field_display({anga_cat_1}, 'on');
+    sc_field_display({scadenza_anga_cat_1}, 'on');
+    sc_field_display({ricevuta_anga_cat_1}, 'on');
+    sc_field_display({scadenza_ricevuta_anga_cat_1}, 'on');
+} else {
+    sc_field_display({anga_cat_1}, 'off');
+    sc_field_display({scadenza_anga_cat_1}, 'off');
+    sc_field_display({ricevuta_anga_cat_1}, 'off');
+    sc_field_display({scadenza_ricevuta_anga_cat_1}, 'off');
+}
+
+// RENTRI: mostra se QUESTO flag è 1; se 0 lascia invariati gli altri
+// (per sync completa: include has_cat_4/5 nei Fields Ajax e scommenta sotto)
+$f4 = {has_cat_trasp_rifiuti_4};
+$f5 = {has_cat_trasp_rifiuti_5};
+if ($f4 === '' || $f4 === null || $f4 === 'undefined' || $f4 === 'null') {
+    $f4 = 0;
+}
+if ($f5 === '' || $f5 === null || $f5 === 'undefined' || $f5 === 'null') {
+    $f5 = 0;
+}
+$f4 = ((int)$f4 === 1) ? 1 : 0;
+$f5 = ((int)$f5 === 1) ? 1 : 0;
+
+if ($flag === 1 || $f4 === 1 || $f5 === 1) {
+    sc_field_display({rentri_iscrizione}, 'on');
+    sc_field_display({ricevuta_rentri}, 'on');
+    sc_field_display({scadenza_ricevuta_rentri}, 'on');
+} else {
+    sc_field_display({rentri_iscrizione}, 'off');
+    sc_field_display({ricevuta_rentri}, 'off');
+    sc_field_display({scadenza_ricevuta_rentri}, 'off');
+}
