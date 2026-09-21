@@ -1293,16 +1293,16 @@ function webhook_update_documento_firmato_il($documentoId)
     if ($documentoId <= 0) {
         return false;
     }
-    $dtSql = webhook_now_sql_literal();
+   
     sc_exec_sql("
         UPDATE documenti
-        SET firmato_il = $dtSql,
+        SET firmato_il = NOW(),
             stato_documento_id = 2,
             updated_at = NOW()
         WHERE id = $documentoId
           AND (firmato_il IS NULL OR firmato_il = '0000-00-00 00:00:00')
     ");
-    webhook_sc_log('UPDATE documento_id=' . $documentoId . ' firmato_il=' . trim($dtSql, "'") . ' stato=2');
+    webhook_sc_log('UPDATE documento_id=' . $documentoId . ' stato=2');
     // Se firmato_il era gia' valorizzato, aggiorna comunque lo stato a caricato
     sc_exec_sql("
         UPDATE documenti

@@ -318,12 +318,13 @@ if ($synced > 0 && function_exists('sc_ajax_message')) {
 }
 
 // Non chiudere il wizard qui: lo fa il pulsante "Invia per attivazione".
+// Alert da pulsante PHP: testo in $_SESSION (niente globale SC). sc_alert nel button non parte.
 
 if (!empty($_SESSION['wizard_flash_msg'])) {
     $flash = trim((string)$_SESSION['wizard_flash_msg']);
     unset($_SESSION['wizard_flash_msg']);
-    if ($flash !== '' && function_exists('sc_ajax_message')) {
-        sc_ajax_message($flash, 'Firma documenti', 'Ok');
+    if ($flash !== '') {
+        sc_alert($flash);
     }
 }
 if (isset($_GET['generated']) && (int)$_GET['generated'] === 1 && function_exists('sc_ajax_message')) {
@@ -339,6 +340,11 @@ $wizClickJs = 'var b=document.getElementById("sc_hidden_refresh_top");if(b)b.cli
 echo '<script type="text/javascript">if(!window.wizRefreshTimer)window.wizRefreshTimer=setInterval('
     . json_encode($wizClickJs)
     . ',20000);</script>';
+
+
+
+echo '<style>#sc_hidden_refresh_top{visibility:hidden;}</style>';
+
 
 
 

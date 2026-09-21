@@ -5,9 +5,9 @@
  *   subvettoreId  — id subvettore
  *   created_at    — soglia UTC (YYYY-MM-DD HH:MM:SS) dal btn JS
  *
- * In DB gli orari sono UTC (in estate ~2h indietro rispetto a Europe/Rome|Berlin).
- * Il JS passa già UTC. Filtro su COALESCE(updated_at, created_at) così
- * contano anche gli UPDATE (firma) e non solo le INSERT.
+ * In DB updated_at / created_at sono Europe/Rome (stesso offset di Berlin, CET/CEST).
+ * Il parametro in query string resta UTC: si converte a Rome prima del confronto.
+ * Filtro su COALESCE(updated_at, created_at).
  *
  * Esempio:
  *   ../blank_wizard_firma_documenti/?subvettoreId=221&created_at=2026-09-21+11:16:00
@@ -37,6 +37,7 @@ if ($subId > 0 && $createdAt !== '') {
     $norm = trim($norm);
     $dt = DateTime::createFromFormat('Y-m-d H:i:s', $norm, new DateTimeZone('UTC'));
     if ($dt) {
+        $dt->setTimezone(new DateTimeZone('Europe/Rome'));
         $dateSql = $dt->format('Y-m-d H:i:s');
         sc_lookup(rs, "
             SELECT COUNT(*) as docs

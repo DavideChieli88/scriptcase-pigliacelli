@@ -1,0 +1,21 @@
+---
+description: Pigliacelli LLM wiki — contesto dominio, Scriptcase, requisiti
+alwaysApply: true
+---
+
+# Pigliacelli — usa la LLM wiki
+
+Prima di lavoro sostanziale su `pigliacelli/`, leggi:
+
+`pigliacelli/docs/LLM_WIKI.md`
+
+Poi i doc fonte citati lì se serve dettaglio (SAL, ANGA, elenco documenti).
+
+## Vincoli fissi
+
+- File in `pigliacelli/` = snippet Scriptcase (eventi/blank/report/SQL), non app PHP autonoma
+- Requisiti: mail ANGA 17/09 > SAL 16/09 > SAL 21/07 > requisiti luglio
+- Produzione: varianti `*_basevettori`; ignora `old_files/` e `docs/_tmp*`
+- ANGA/RENTRI e cat. rifiuti → sui **mezzi**, non sugli autisti
+- Indica sempre app + evento Scriptcase di destinazione quando proponi codice
+- Dopo cambi di dominio/requisiti: aggiorna `LLM_WIKI.md`

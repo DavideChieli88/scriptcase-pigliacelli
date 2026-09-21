@@ -52,7 +52,7 @@ fetch(url, { credentials: "same-origin" })
             window.wizCreatedAt = wizUtcNow();
             try {
                 localStorage.setItem(storageKey, window.wizCreatedAt);
-            } catch (e2) {}
+            } catch (e2) { }
             nm_gp_submit_ajax("igual", "breload");
         }
     })
@@ -62,6 +62,7 @@ fetch(url, { credentials: "same-origin" })
 
 if (!window.wizRefreshTimer) {
     window.wizRefreshTimer = setInterval(function () {
+        wizHideRefreshBtn();
         var b = document.getElementById("sc_hidden_refresh_top");
         if (b) {
             b.click();
