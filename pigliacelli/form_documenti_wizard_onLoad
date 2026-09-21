@@ -47,13 +47,16 @@ if ($isModal) {
     sc_btn_display('save', 'on');
     sc_btn_display('insert', 'on');
     sc_btn_display('cancel', 'on');
-    sc_btn_display('annulla', 'on');
-    sc_btn_display('exit', 'on');
-    sc_btn_display('sair', 'on');
-    sc_btn_display('back', 'on');
+   // sc_btn_display('annulla', 'on');
+	sc_btn_display('exit', 'off');
+    sc_btn_display('sair', 'off');
+    sc_btn_display('back', 'off');
+    sc_btn_display('btn_chiudi_modale_3', 'on');
 } else {
     sc_btn_display('next_step_btn_signs', 'on');
     sc_btn_display('back_btn_docs', 'on');
+	sc_btn_display('btn_chiudi_modale_3', 'off');
+	sc_btn_display('exit', 'off');
 }
 
 // --- in_possesso / file (modale) ---

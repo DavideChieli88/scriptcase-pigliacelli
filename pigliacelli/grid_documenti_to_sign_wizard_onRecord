@@ -1,21 +1,11 @@
 /**
  * grid_documenti_to_sign_wizard → onRecord
  *
- * Nasconde sign_doc_btn se il documento è già firmato (firmato_il valorizzato).
- *
- * Campi SC: {d.firmato_il} (alias d nella SELECT)
- * Action Bar: sign_doc_btn (Ajax)
- *
- * Per Action Bar usare sc_actionbar_show / sc_actionbar_hide
- * (non sc_btn_display). Chiamare SEMPRE show o hide su ogni riga.
+ * Nasconde sign_doc_btn se firmato_il e valorizzato.
+ * Action Bar: sign_doc_btn — sc_actionbar_show / hide.
  */
 
-$firmatoIl = '';
-if (isset({d.firmato_il})) {
-    $firmatoIl = trim((string){d.firmato_il});
-} elseif (isset({firmato_il})) {
-    $firmatoIl = trim((string){firmato_il});
-}
+$firmatoIl = trim((string){d.firmato_il});
 
 $firmato = (
     $firmatoIl !== ''

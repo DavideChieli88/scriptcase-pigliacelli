@@ -332,3 +332,14 @@ if (isset($_GET['generated']) && (int)$_GET['generated'] === 1 && function_exist
 if (isset($_GET['from']) && (string)$_GET['from'] === 'firma' && function_exists('sc_ajax_message')) {
     sc_ajax_message('Firma registrata. Controlla lo stato in griglia.', 'Firma', 'Ok');
 }
+
+// Poll 20s: click #sc_hidden_refresh_top. sc_ajax_javascript non esiste qui → echo.
+// NIENTE graffe nel JS: Scriptcase le prende per campi.
+$wizClickJs = 'var b=document.getElementById("sc_hidden_refresh_top");if(b)b.click();';
+echo '<script type="text/javascript">if(!window.wizRefreshTimer)window.wizRefreshTimer=setInterval('
+    . json_encode($wizClickJs)
+    . ',20000);</script>';
+
+
+
+

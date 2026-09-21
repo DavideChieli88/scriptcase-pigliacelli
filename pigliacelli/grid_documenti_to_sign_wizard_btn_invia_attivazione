@@ -28,8 +28,18 @@ if ($subId <= 0) {
 }
 
 if ($subId <= 0) {
-    sc_error_message('Subvettore non identificato.');
-    sc_error_exit();
+    sc_ajax_message(
+        'Subvettore non identificato.',
+        'Invia per attivazione',
+        'error',
+        'Y',
+        0,
+        'OK',
+        'Y',
+        '350',
+        'auto'
+    );
+    return;
 }
 
 [subvettoreId] = $subId;
@@ -45,8 +55,19 @@ $ragione = !empty({rsAttDone[0][1]}) ? trim((string){rsAttDone[0][1]}) : '';
 $loginSub = !empty({rsAttDone[0][2]}) ? trim((string){rsAttDone[0][2]}) : '';
 
 if ($already === 1) {
-    sc_error_message('Wizard gia\' completato. Gli operatori sono stati avvisati.');
+    sc_ajax_message(
+        'Wizard gia\' completato. Gli operatori sono stati avvisati.',
+        'Invia per attivazione',
+        'info',
+        'Y',
+        0,
+        'OK',
+        'Y',
+        '350',
+        'auto'
+    );
     sc_redir('app_menu');
+    return;
 }
 
 sc_lookup(rsAttCnt, "
@@ -64,15 +85,33 @@ $tot = !empty({rsAttCnt[0][0]}) ? (int){rsAttCnt[0][0]} : 0;
 $firmati = !empty({rsAttCnt[0][1]}) ? (int){rsAttCnt[0][1]} : 0;
 
 if ($tot <= 0) {
-    sc_error_message('Nessun documento da firmare configurato.');
-    sc_error_exit();
+    sc_ajax_message(
+        'Nessun documento da firmare configurato.',
+        'Invia per attivazione',
+        'error',
+        'Y',
+        0,
+        'OK',
+        'Y',
+        '350',
+        'auto'
+    );
+    return;
 }
 if ($firmati < $tot) {
-    sc_error_message(
+    sc_ajax_message(
         'Firmare tutti i documenti prima di inviare per attivazione. '
-        . 'Firmati: ' . $firmati . ' / ' . $tot . '.'
+        . 'Firmati: ' . $firmati . ' / ' . $tot . '.',
+        'Invia per attivazione',
+        'warning',
+        'Y',
+        0,
+        'OK',
+        'Y',
+        '350',
+        'auto'
     );
-    sc_error_exit();
+    return;
 }
 
 sc_exec_sql("

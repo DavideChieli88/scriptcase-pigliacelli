@@ -1,6 +1,11 @@
 /**
  * form_subvettori_starting_wizard → onScriptInit
+ *
+ * Nasconde Salva SC (mask, non display:none). Metodo JS: mlReviewHideSaveInit
+ * → file form_subvettori_starting_wizard_hide_save.js
  */
+
+sc_ajax_javascript('mlReviewHideSaveInit');
 
 if (!isset([subvettoreId]) || (int)[subvettoreId] <= 0) {
     $usrLogin = trim((string)[usr_login]);

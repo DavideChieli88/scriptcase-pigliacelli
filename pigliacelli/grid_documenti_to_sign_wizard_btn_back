@@ -1,0 +1,16 @@
+/**
+ * grid_documenti_to_sign_wizard → Toolbar button PHP: back_btn_signs (label: Indietro)
+ * Step 5 → step 4. Speculare a back_btn_docs di form_documenti_wizard.
+ *
+ * IDE: Programming → Buttons → New → PHP → back_btn_signs → Toolbar Top Left.
+ */
+
+if (!isset([subvettoreId]) || (int)[subvettoreId] <= 0) {
+    $_SESSION['wizard_flash_msg'] = 'Subvettore non identificato.';
+    sc_redir('blank_wizard_landing');
+}
+
+// Evita Firma/PDF sul doc dello step 5 al rientro
+[documentoId] = 0;
+
+sc_redir('form_documenti_wizard', subvettoreId=[subvettoreId]);

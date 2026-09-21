@@ -1,37 +1,10 @@
 /**
  * form_subvettori_starting_wizard → onValidate
  *
- * DEPRECATO: wizard multi-step SC. Usare form separate + wizard_step in DB:
- *   step 1 → form_subvettori_for_subvectors_onValidate
- *   step 2 → wizard_step2_continue_onValidate (+ form_subvettori_autisti_onValidate per riga)
- *   step 3 → wizard_step3_continue_onValidate (+ form_subvettori_mezzi_onValidate)
- *   step 4 → wizard_step4_continue_onValidate (+ form_documenti_starting_wizard_onValidate)
- *
- * Se la multi-step è ancora attiva, legge wizard_step da DB (non sc_get_wizard_step).
- * Non usare sc_error_exit.
+ * Form SINGOLA = solo step 1 anagrafica (wizard multi-step SC dismesso).
+ * Avanzamento: onBeforeUpdate imposta wizard_step=2; onAfterUpdate redirige.
+ * Non usare sc_error_exit (AJAX).
  */
-
-$subvettore_id = isset({id}) ? (int){id} : 0;
-if ($subvettore_id <= 0 && isset([subvettoreId]) && (int)[subvettoreId] > 0) {
-    $subvettore_id = (int)[subvettoreId];
-}
-
-// Tab corrente multi-step SC; fallback wizard_step da DB
-$step = 1;
-if (function_exists('sc_get_wizard_step')) {
-    $step = (int)sc_get_wizard_step();
-}
-if ($step < 1 && $subvettore_id > 0) {
-    sc_lookup(rsWizStepVal, "
-        SELECT COALESCE(wizard_step, 1) FROM subvettori WHERE id = $subvettore_id LIMIT 1
-    ", 'pigliacelli');
-    if (!empty({rsWizStepVal[0][0]})) {
-        $step = (int){rsWizStepVal[0][0]};
-    }
-}
-if ($step < 1) {
-    $step = 1;
-}
 
 $errors = array();
 
@@ -40,111 +13,104 @@ $checkEmpty = function ($value) {
     return ($v === '' || $v === 'null');
 };
 
-if ($step === 1) {
-    if ($checkEmpty(isset({ragione_sociale}) ? {ragione_sociale} : '')) {
-        $errors[] = 'Ragione sociale';
-    }
-    if ($checkEmpty(isset({sede_citta}) ? {sede_citta} : '')) {
-        $errors[] = 'Sede città';
-    }
-    if ($checkEmpty(isset({sede_prov}) ? {sede_prov} : '')) {
-        $errors[] = 'Sede provincia';
-    }
-    if ($checkEmpty(isset({indirizzo}) ? {indirizzo} : '')) {
-        $errors[] = 'Indirizzo';
-    }
-    if ($checkEmpty(isset({civico}) ? {civico} : '')) {
-        $errors[] = 'Civico';
-    }
-    if ($checkEmpty(isset({cod_fiscale}) ? {cod_fiscale} : '')) {
-        $errors[] = 'Codice fiscale';
-    }
-    if ($checkEmpty(isset({piva}) ? {piva} : '')) {
-        $errors[] = 'Partita IVA';
-    }
-    if ($checkEmpty(isset({num_iscrizione_reg_imprese}) ? {num_iscrizione_reg_imprese} : '')) {
-        $errors[] = 'Numero iscrizione Registro Imprese';
-    }
-    if ($checkEmpty(isset({locazione_iscrizione_reg_imprese}) ? {locazione_iscrizione_reg_imprese} : '')) {
-        $errors[] = 'Luogo iscrizione Registro Imprese';
-    }
-    if ($checkEmpty(isset({rea}) ? {rea} : '')) {
-        $errors[] = 'R.E.A.';
-    }
-    if ($checkEmpty(isset({phone}) ? {phone} : '')) {
-        $errors[] = 'Telefono / cellulare';
-    }
-    if ($checkEmpty(isset({nome_rappresentante}) ? {nome_rappresentante} : '')) {
-        $errors[] = 'Nome legale rappresentante';
-    }
-    if ($checkEmpty(isset({cognome_rappresentante}) ? {cognome_rappresentante} : '')) {
-        $errors[] = 'Cognome legale rappresentante';
-    }
-    if ($checkEmpty(isset({email_rappresentante}) ? {email_rappresentante} : '')) {
-        $errors[] = 'Email legale rappresentante';
-    }
-    if ($checkEmpty(isset({telefono_rappresentante}) ? {telefono_rappresentante} : '')) {
-        $errors[] = 'Telefono legale rappresentante';
-    }
-    if ($checkEmpty(isset({luogo_nascita_rappresentante}) ? {luogo_nascita_rappresentante} : '')) {
-        $errors[] = 'Luogo di nascita rappresentante';
-    }
-    if ($checkEmpty(isset({prov_luogo_nascita_rappresentante}) ? {prov_luogo_nascita_rappresentante} : '')) {
-        $errors[] = 'Provincia di nascita rappresentante';
-    }
-    if ($checkEmpty(isset({data_nascita_rappresentante}) ? {data_nascita_rappresentante} : '')) {
-        $errors[] = 'Data di nascita rappresentante';
-    }
-    $emailLr = isset({email_rappresentante}) ? trim((string){email_rappresentante}) : '';
-    if ($emailLr !== '' && filter_var($emailLr, FILTER_VALIDATE_EMAIL) === false) {
-        $errors[] = 'Email legale rappresentante non valida';
-    }
+// --- Azienda ---
+if ($checkEmpty(isset({ragione_sociale}) ? {ragione_sociale} : '')) {
+    $errors[] = 'Ragione sociale';
+}
+if ($checkEmpty(isset({sede_citta}) ? {sede_citta} : '')) {
+    $errors[] = 'Sede città';
+}
+if ($checkEmpty(isset({sede_prov}) ? {sede_prov} : '')) {
+    $errors[] = 'Sede provincia';
+}
+if ($checkEmpty(isset({indirizzo}) ? {indirizzo} : '')) {
+    $errors[] = 'Indirizzo';
+}
+if ($checkEmpty(isset({civico}) ? {civico} : '')) {
+    $errors[] = 'Civico';
+}
+if ($checkEmpty(isset({cod_fiscale}) ? {cod_fiscale} : '')) {
+    $errors[] = 'Codice fiscale';
+}
+if ($checkEmpty(isset({piva}) ? {piva} : '')) {
+    $errors[] = 'Partita IVA';
+}
+if ($checkEmpty(isset({num_iscrizione_reg_imprese}) ? {num_iscrizione_reg_imprese} : '')) {
+    $errors[] = 'Numero iscrizione Registro Imprese';
+}
+if ($checkEmpty(isset({locazione_iscrizione_reg_imprese}) ? {locazione_iscrizione_reg_imprese} : '')) {
+    $errors[] = 'Luogo iscrizione Registro Imprese';
+}
+if ($checkEmpty(isset({rea}) ? {rea} : '')) {
+    $errors[] = 'R.E.A.';
+}
+if ($checkEmpty(isset({phone}) ? {phone} : '')) {
+    $errors[] = 'Telefono / cellulare';
 }
 
-if ($step === 2 && $subvettore_id > 0) {
-    sc_lookup(rsWizCntAut, "
-        SELECT COUNT(*) FROM subvettori_autisti WHERE subvettore_id = $subvettore_id
-    ", 'pigliacelli');
-    $nAut = !empty({rsWizCntAut[0][0]}) ? (int){rsWizCntAut[0][0]} : 0;
-    if ($nAut < 1) {
-        $errors[] = 'Almeno un autista (con documenti)';
-    }
+// --- Albo conto terzi + pagamenti (SAL 16/09 P1) ---
+if ($checkEmpty(isset({num_iscrizione_albo}) ? {num_iscrizione_albo} : '')) {
+    $errors[] = 'Numero iscrizione Albo conto terzi';
+}
+if ($checkEmpty(isset({provincia_albo}) ? {provincia_albo} : '')) {
+    $errors[] = 'Provincia Albo conto terzi';
+}
+if ($checkEmpty(isset({banca}) ? {banca} : '')) {
+    $errors[] = 'Banca';
+}
+if ($checkEmpty(isset({iban}) ? {iban} : '')) {
+    $errors[] = 'IBAN';
+}
+if ($checkEmpty(isset({codice_destinatario_sdi}) ? {codice_destinatario_sdi} : '')) {
+    $errors[] = 'Codice destinatario SDI';
 }
 
-if ($step === 3 && $subvettore_id > 0) {
-    sc_lookup(rsWizCntMez, "
-        SELECT COUNT(*) FROM subvettori_mezzi WHERE subvettore_id = $subvettore_id
-    ", 'pigliacelli');
-    $nMez = !empty({rsWizCntMez[0][0]}) ? (int){rsWizCntMez[0][0]} : 0;
-    if ($nMez < 1) {
-        $errors[] = 'Almeno un mezzo (con carta di circolazione)';
-    }
+// --- Legale rappresentante ---
+if ($checkEmpty(isset({nome_rappresentante}) ? {nome_rappresentante} : '')) {
+    $errors[] = 'Nome legale rappresentante';
+}
+if ($checkEmpty(isset({cognome_rappresentante}) ? {cognome_rappresentante} : '')) {
+    $errors[] = 'Cognome legale rappresentante';
+}
+if ($checkEmpty(isset({email_rappresentante}) ? {email_rappresentante} : '')) {
+    $errors[] = 'Email legale rappresentante';
+}
+if ($checkEmpty(isset({telefono_rappresentante}) ? {telefono_rappresentante} : '')) {
+    $errors[] = 'Telefono legale rappresentante';
+}
+if ($checkEmpty(isset({luogo_nascita_rappresentante}) ? {luogo_nascita_rappresentante} : '')) {
+    $errors[] = 'Luogo di nascita rappresentante';
+}
+if ($checkEmpty(isset({prov_luogo_nascita_rappresentante}) ? {prov_luogo_nascita_rappresentante} : '')) {
+    $errors[] = 'Provincia di nascita rappresentante';
+}
+if ($checkEmpty(isset({data_nascita_rappresentante}) ? {data_nascita_rappresentante} : '')) {
+    $errors[] = 'Data di nascita rappresentante';
+}
+if ($checkEmpty(isset({cod_fiscale_rappresentante}) ? {cod_fiscale_rappresentante} : '')) {
+    $errors[] = 'Codice fiscale legale rappresentante';
+}
+if ($checkEmpty(isset({residenza_citta_rappresentante}) ? {residenza_citta_rappresentante} : '')) {
+    $errors[] = 'Residenza rappresentante – città';
+}
+if ($checkEmpty(isset({residenza_prov_rappresentante}) ? {residenza_prov_rappresentante} : '')) {
+    $errors[] = 'Residenza rappresentante – provincia';
+}
+if ($checkEmpty(isset({residenza_indirizzo_rappresentante}) ? {residenza_indirizzo_rappresentante} : '')) {
+    $errors[] = 'Residenza rappresentante – indirizzo';
+}
+if ($checkEmpty(isset({residenza_civico_rappresentante}) ? {residenza_civico_rappresentante} : '')) {
+    $errors[] = 'Residenza rappresentante – civico';
 }
 
-if ($step === 4 && $subvettore_id > 0) {
-    sc_lookup(rsWizDocsMancanti, "
-        SELECT GROUP_CONCAT(td.nome ORDER BY td.id SEPARATOR ', ')
-        FROM tipi_documento td
-        WHERE td.mandatory = 1
-          AND NOT EXISTS (
-              SELECT 1
-              FROM documenti d
-              WHERE d.tipo_documento_id = td.id
-                AND d.subvettore_id = $subvettore_id
-                AND (d.subvettore_autista_id IS NULL OR d.subvettore_autista_id = 0)
-                AND (d.subvettore_mezzo_id IS NULL OR d.subvettore_mezzo_id = 0)
-                AND d.file IS NOT NULL
-                AND TRIM(d.file) <> ''
-          )
-    ", 'pigliacelli');
-    if (!empty({rsWizDocsMancanti[0][0]})) {
-        $errors[] = 'Documenti obbligatori mancanti o senza file: ' . (string){rsWizDocsMancanti[0][0]};
-    }
+$emailLr = isset({email_rappresentante}) ? trim((string){email_rappresentante}) : '';
+if ($emailLr !== '' && filter_var($emailLr, FILTER_VALIDATE_EMAIL) === false) {
+    $errors[] = 'Email legale rappresentante non valida';
 }
 
 if (!empty($errors)) {
     sc_error_message(
-        "Compilare i campi obbligatori di questo step:\n- "
+        "Compilare i campi obbligatori dell'anagrafica:\n- "
         . implode("\n- ", $errors)
     );
 }

@@ -1,24 +1,64 @@
 /**
  * Scriptcase blank: blank_wizard_firma_documenti → onExecute
  *
- * Ponte legacy → grid_documenti_to_sign_wizard (step 5 firme).
- * Mantenuta per vecchi bookmark / link EasyGN.
+ * GET obbligatori:
+ *   subvettoreId  — id subvettore
+ *   created_at    — soglia UTC (YYYY-MM-DD HH:MM:SS) dal btn JS
+ *
+ * In DB gli orari sono UTC (in estate ~2h indietro rispetto a Europe/Rome|Berlin).
+ * Il JS passa già UTC. Filtro su COALESCE(updated_at, created_at) così
+ * contano anche gli UPDATE (firma) e non solo le INSERT.
+ *
+ * Esempio:
+ *   ../blank_wizard_firma_documenti/?subvettoreId=221&created_at=2026-09-21+11:16:00
+ *
+ * Risposta: {"docs":N}
  */
 
-$qs = array();
-if (isset($_GET['from'])) {
-    $qs[] = 'from=' . rawurlencode((string)$_GET['from']);
+$subId = 0;
+if (isset($_GET['subvettoreId'])) {
+    $subId = (int)$_GET['subvettoreId'];
 }
-if (isset($_GET['generated'])) {
-    $qs[] = 'generated=' . rawurlencode((string)$_GET['generated']);
-}
-if (isset($_GET['documentoId']) && (int)$_GET['documentoId'] > 0) {
-    $qs[] = 'documentoId=' . (int)$_GET['documentoId'];
-}
-$suffix = !empty($qs) ? ('?' . implode('&', $qs)) : '';
 
-if (function_exists('sc_redir')) {
-    sc_redir('grid_documenti_to_sign_wizard', implode('&', $qs));
+$createdAt = '';
+if (isset($_GET['created_at'])) {
+    $createdAt = trim((string)$_GET['created_at']);
 }
-header('Location: ../grid_documenti_to_sign_wizard/' . $suffix);
+
+$docs = 0;
+
+if ($subId > 0 && $createdAt !== '') {
+    $norm = str_replace('T', ' ', $createdAt);
+    $norm = str_replace('Z', '', $norm);
+    $dot = strpos($norm, '.');
+    if ($dot !== false) {
+        $norm = substr($norm, 0, $dot);
+    }
+    $norm = trim($norm);
+    $dt = DateTime::createFromFormat('Y-m-d H:i:s', $norm, new DateTimeZone('UTC'));
+    if ($dt) {
+        $dateSql = $dt->format('Y-m-d H:i:s');
+        sc_lookup(rs, "
+            SELECT COUNT(*) as docs
+            FROM documenti d
+            INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+            WHERE td.is_readonly = 1
+              AND d.subvettore_id = $subId
+              AND COALESCE(d.updated_at, d.created_at) > '$dateSql'
+        ", 'pigliacelli');
+        if (isset({rs[0][0]})) {
+            $docs = (int){rs[0][0]};
+        }
+    }
+}
+
+$out = array(
+    'docs' => (int)$docs,
+);
+
+while (ob_get_level() > 0) {
+    ob_end_clean();
+}
+header('Content-Type: application/json; charset=utf-8');
+echo json_encode($out, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 exit;

@@ -723,14 +723,14 @@ if ($webhookUrl !== '' && preg_match('#^https?://#i', $webhookUrl) === 1) {
 
 $mailBaseRet = rtrim(trim($sc_setting('mail_base_url', '')), '/');
 if ($mailBaseRet !== '' && preg_match('#^https?://#i', $mailBaseRet) === 1) {
-    $returnBlank = $mailBaseRet
+    $returnGrid = $mailBaseRet
         . '/grid_documenti_to_sign_wizard/'
         . '?from=firma'
         . '&documentoId=' . (int)$documentoId
         . '&subvettoreId=' . (int)$subvettoreId;
-    $payload['files'][0]['signers'][0]['redirect_url'] = $returnBlank;
-    $payload['files'][0]['signers'][0]['redirectUrl'] = $returnBlank;
-    $log('redirect_url dopo firma: ' . $returnBlank);
+    $payload['files'][0]['signers'][0]['redirect_url'] = $returnGrid;
+    $payload['files'][0]['signers'][0]['redirectUrl'] = $returnGrid;
+    $log('redirect_url dopo firma: ' . $returnGrid);
 }
 
 $payloadLog = $payload;
@@ -861,7 +861,7 @@ if ($signLink === '' || preg_match('#^https?://#i', $signLink) !== 1) {
     );
 }
 
-// Redirect come easygn_start_wf_auto (subvettore → link firma)
+// Redirect subvettore → link firma EasyGN
 while (ob_get_level() > 0) {
     ob_end_clean();
 }

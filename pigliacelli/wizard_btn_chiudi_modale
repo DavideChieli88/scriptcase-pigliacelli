@@ -1,0 +1,23 @@
+/**
+ * Pulsante custom "Chiudi" — modale wizard (editable-grid)
+ *
+ * FUNZIONA (confermato):
+ * 1. Toolbar → togli Exit (nativo SC, doppio #sc_b_sai_t)
+ * 2. Programming → JavaScript Methods → wizChiudiModale
+ *    Body: wizard_btn_chiudi_modale.js
+ * 3. Programming → Buttons → New
+ *    - Type:  JavaScript
+ *    - Name:  btn_chiudi_modale
+ *    - Label: Chiudi
+ *    - Code:  UNA sola riga →  wizChiudiModale();
+ * 4. Toolbar Top Right → btn_chiudi_modale
+ * 5. onLoad: exit/sair/back OFF; btn_chiudi_modale ON solo in modale
+ * 6. Genera
+ *
+ * NON usare (non chiudono / non affidabili in questo contesto):
+ * - sc_exit() / sc_exit(sel) / sc_exit(sef)
+ * - scBtnFn_sys_format_sai()
+ * - pulsante PHP + sc_ajax_javascript (opzionale; il JS button diretto è ok)
+ */
+
+wizChiudiModale();

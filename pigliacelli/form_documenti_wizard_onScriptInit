@@ -84,3 +84,5 @@ if (!empty($_SESSION['wizard_flash_msg'])) {
     unset($_SESSION['wizard_flash_msg']);
     sc_error_message($flashMsg);
 }
+
+// Chiudi modale: btn_chiudi_modale (vedi wizard_btn_chiudi_modale), non Exit SC.

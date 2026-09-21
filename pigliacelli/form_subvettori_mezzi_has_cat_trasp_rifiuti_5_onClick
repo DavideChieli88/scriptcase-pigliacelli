@@ -2,11 +2,9 @@
  * form_subvettori_mezzi → Ajax onClick di has_cat_trasp_rifiuti_5
  *
  * IDE (obbligatorio o l’Ajax non aggiorna la UI):
- * - Radio 1=Si / 0=No; Reload = OFF; Event = onClick (non onChange)
- * - In "Fields" dell’Ajax spuntare:
- *   anga_cat_5, scadenza_anga_cat_5, ricevuta_anga_cat_5, scadenza_ricevuta_anga_cat_5,
- *   rentri_iscrizione, ricevuta_rentri, scadenza_ricevuta_rentri,
- *   has_cat_trasp_rifiuti_1, has_cat_trasp_rifiuti_4, has_cat_trasp_rifiuti_5
+ * - Radio 1=Si / 0=No; Reload = ON; Event = onClick (non onChange)
+ * - Document e Date non sono selezionabili nella lista "Fields":
+ *   vengono aggiornati dal reload completo tramite onLoad (op=recarga).
  */
 
 $flag = {has_cat_trasp_rifiuti_5};
@@ -17,16 +15,18 @@ $flag = ((int)$flag === 1) ? 1 : 0;
 
 sc_log_add('MEZ_DISP', 'onClick cat5 flag=' . $flag);
 
-if ($flag === 1) {
+if ($flag == 1) {
     sc_field_display({anga_cat_5}, 'on');
     sc_field_display({scadenza_anga_cat_5}, 'on');
     sc_field_display({ricevuta_anga_cat_5}, 'on');
     sc_field_display({scadenza_ricevuta_anga_cat_5}, 'on');
-} else {
+} else if($flag == 0) {
     sc_field_display({anga_cat_5}, 'off');
     sc_field_display({scadenza_anga_cat_5}, 'off');
     sc_field_display({ricevuta_anga_cat_5}, 'off');
     sc_field_display({scadenza_ricevuta_anga_cat_5}, 'off');
+}else {
+	sc_log_add('MEZ_DISP_ERR', 'onClick cat5 flag=' . $flag);
 }
 
 $f1 = {has_cat_trasp_rifiuti_1};

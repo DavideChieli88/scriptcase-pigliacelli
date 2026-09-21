@@ -103,6 +103,18 @@ SET @sql := (
 );
 PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- Albo conto terzi: numero (spesso già presente) + provincia (P1 SAL 16/09)
+SET @sql := (
+  SELECT IF(
+    COUNT(*) = 0,
+    'ALTER TABLE subvettori ADD COLUMN num_iscrizione_albo VARCHAR(64) NULL DEFAULT NULL AFTER pec',
+    'SELECT 1'
+  )
+  FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = @db AND TABLE_NAME = 'subvettori' AND COLUMN_NAME = 'num_iscrizione_albo'
+);
+PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+
 SET @sql := (
   SELECT IF(
     COUNT(*) = 0,
@@ -273,5 +285,8 @@ ORDER BY id;
 
 SHOW COLUMNS FROM subvettori_mezzi LIKE 'has_cat%';
 SHOW COLUMNS FROM subvettori LIKE '%rappresentante%';
+SHOW COLUMNS FROM subvettori LIKE 'num_iscrizione_albo';
 SHOW COLUMNS FROM subvettori LIKE 'provincia_albo';
 SHOW COLUMNS FROM subvettori LIKE 'iban';
+SHOW COLUMNS FROM subvettori LIKE 'banca';
+SHOW COLUMNS FROM subvettori LIKE 'codice_destinatario_sdi';

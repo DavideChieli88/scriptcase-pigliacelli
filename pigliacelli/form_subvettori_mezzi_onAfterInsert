@@ -1,156 +1,9 @@
 /**
  * form_subvettori_mezzi → onAfterInsert
  *
- * Carta (22) + ANGA Cat.1/4/5 + ricevute ANGA.
- * Scadenze → documenti.data_scadenza (ricevuta ANGA: default 30/04).
+ * Stesso pattern di onAfterUpdate / autisti_wizard / documenti_wizard:
+ * file + scadenza, stato_documento_id=2 se file presente.
  */
-
-if (!function_exists('mez_wiz_flatten')) {
-    function mez_wiz_flatten($src, $prefix = '')
-    {
-        $out = array();
-        if (!is_array($src)) {
-            return $out;
-        }
-        foreach ($src as $k => $v) {
-            $nk = $prefix === '' ? (string)$k : $prefix . '.' . (string)$k;
-            if (is_array($v)) {
-                $out = array_merge($out, mez_wiz_flatten($v, $nk));
-            } else {
-                $out[$nk] = $v;
-            }
-        }
-        return $out;
-    }
-}
-
-if (!function_exists('mez_wiz_find_autista')) {
-    function mez_wiz_find_autista($subId)
-    {
-        if (isset({autista_id}) && (int){autista_id} > 0) {
-            return (int){autista_id};
-        }
-
-        $flat = array_merge(
-            mez_wiz_flatten(isset($_POST) ? $_POST : array()),
-            mez_wiz_flatten(isset($_GET) ? $_GET : array()),
-            mez_wiz_flatten(isset($_REQUEST) ? $_REQUEST : array())
-        );
-
-        foreach ($flat as $k => $v) {
-            $ks = strtolower((string)$k);
-            if (strpos($ks, 'autista') === false) {
-                continue;
-            }
-            if ((int)$v > 0) {
-                return (int)$v;
-            }
-            $nome = trim((string)$v);
-            if ($nome !== '' && $subId > 0 && !ctype_digit($nome)) {
-                $nomeSql = str_replace("'", "''", $nome);
-                sc_lookup(rsMezAutByNomeI, "
-                    SELECT id FROM subvettori_autisti
-                    WHERE subvettore_id = $subId
-                      AND TRIM(nominativo) = '$nomeSql'
-                    LIMIT 1
-                ", 'pigliacelli');
-                if (!empty({rsMezAutByNomeI[0][0]})) {
-                    return (int){rsMezAutByNomeI[0][0]};
-                }
-            }
-        }
-        return 0;
-    }
-}
-
-if (!function_exists('mez_wiz_default_30_aprile')) {
-    function mez_wiz_default_30_aprile()
-    {
-        $y = (int)date('Y');
-        $d = sprintf('%04d-04-30', $y);
-        if (date('Y-m-d') > $d) {
-            $d = sprintf('%04d-04-30', $y + 1);
-        }
-        return $d;
-    }
-}
-
-if (!function_exists('mez_wiz_tipo_id')) {
-    function mez_wiz_tipo_id($nome, $fallbackId = 0)
-    {
-        $nomeSql = str_replace("'", "''", $nome);
-        sc_lookup(rsMezTipoId, "
-            SELECT id FROM tipi_documento
-            WHERE LOWER(TRIM(nome)) = LOWER(TRIM('$nomeSql'))
-            LIMIT 1
-        ", 'pigliacelli');
-        if (!empty({rsMezTipoId[0][0]})) {
-            return (int){rsMezTipoId[0][0]};
-        }
-        return (int)$fallbackId;
-    }
-}
-
-if (!function_exists('mez_wiz_upsert_doc')) {
-    function mez_wiz_upsert_doc($mezzoId, $subId, $loginSql, $tipoId, $fileVal, $scadVal)
-    {
-        $tipoId = (int)$tipoId;
-        $mezzoId = (int)$mezzoId;
-        $subId = (int)$subId;
-        $fileVal = trim((string)$fileVal);
-        $scadVal = trim((string)$scadVal);
-        if ($tipoId <= 0 || $mezzoId <= 0 || $subId <= 0) {
-            return;
-        }
-        if ($fileVal === '' && ($scadVal === '' || strcasecmp($scadVal, 'null') === 0)) {
-            return;
-        }
-
-        $scadSql = 'NULL';
-        if ($scadVal !== '' && strcasecmp($scadVal, 'null') !== 0) {
-            $scadSql = "'" . str_replace("'", "''", $scadVal) . "'";
-        }
-
-        sc_lookup(rsMezUpsertDoc, "
-            SELECT id, file FROM documenti
-            WHERE subvettore_mezzo_id = $mezzoId
-              AND tipo_documento_id = $tipoId
-            ORDER BY id ASC LIMIT 1
-        ", 'pigliacelli');
-
-        if (!empty({rsMezUpsertDoc[0][0]})) {
-            $docId = (int){rsMezUpsertDoc[0][0]};
-            if ($fileVal !== '') {
-                $fileSql = str_replace("'", "''", basename($fileVal));
-                sc_exec_sql("
-                    UPDATE documenti
-                    SET file = '$fileSql',
-                        data_scadenza = $scadSql,
-                        stato_documento_id = 1,
-                        updated_at = NOW()
-                    WHERE id = $docId
-                ", 'pigliacelli');
-            } else {
-                sc_exec_sql("
-                    UPDATE documenti
-                    SET data_scadenza = $scadSql,
-                        updated_at = NOW()
-                    WHERE id = $docId
-                ", 'pigliacelli');
-            }
-        } elseif ($fileVal !== '') {
-            $fileSql = str_replace("'", "''", basename($fileVal));
-            sc_exec_sql("
-                INSERT INTO documenti (
-                    tipo_documento_id, subvettore_id, subvettore_mezzo_id,
-                    login, stato_documento_id, file, data_scadenza
-                ) VALUES (
-                    $tipoId, $subId, $mezzoId, '$loginSql', 1, '$fileSql', $scadSql
-                )
-            ", 'pigliacelli');
-        }
-    }
-}
 
 $mezzoId = (int){id};
 $subId = (int){subvettore_id};
@@ -165,21 +18,35 @@ if ($mezzoId <= 0 || $subId <= 0) {
     return;
 }
 
+$flag1 = ((int){has_cat_trasp_rifiuti_1} === 1) ? 1 : 0;
+$flag4 = ((int){has_cat_trasp_rifiuti_4} === 1) ? 1 : 0;
+$flag5 = ((int){has_cat_trasp_rifiuti_5} === 1) ? 1 : 0;
+
 $login = trim((string)[usr_login]);
-sc_lookup(rsMezLogin, "
+sc_lookup(rsMezLoginI, "
     SELECT login FROM sec_users
     WHERE subvettore_id = $subId
     ORDER BY login LIMIT 1
 ", 'pigliacelli');
-if (!empty({rsMezLogin[0][0]})) {
-    $login = trim((string){rsMezLogin[0][0]});
+if (!empty({rsMezLoginI[0][0]})) {
+    $login = trim((string){rsMezLoginI[0][0]});
 }
 $loginSql = str_replace("'", "''", $login);
 
-$fCarta = isset({carta_circolazione}) ? trim((string){carta_circolazione}) : '';
-if ($fCarta === '' && !empty($_FILES) && is_array($_FILES)) {
-    foreach ($_FILES as $up) {
+$mezFileVal = function ($fieldVal, $hint) {
+    $fieldVal = trim((string)$fieldVal);
+    if ($fieldVal !== '') {
+        return basename($fieldVal);
+    }
+    if (empty($_FILES) || !is_array($_FILES)) {
+        return '';
+    }
+    $hint = strtolower((string)$hint);
+    foreach ($_FILES as $k => $up) {
         if (!is_array($up)) {
+            continue;
+        }
+        if ($hint !== '' && strpos(strtolower((string)$k), $hint) === false) {
             continue;
         }
         $nm = isset($up['name']) ? $up['name'] : '';
@@ -191,87 +58,181 @@ if ($fCarta === '' && !empty($_FILES) && is_array($_FILES)) {
             $err = reset($err);
         }
         if (trim((string)$nm) !== '' && (int)$err === 0) {
-            $fCarta = basename(trim((string)$nm));
-            break;
+            return basename(trim((string)$nm));
         }
     }
-}
-$sCarta = isset({scadenza_carta_circolazione}) ? trim((string){scadenza_carta_circolazione}) : '';
-mez_wiz_upsert_doc($mezzoId, $subId, $loginSql, 22, $fCarta, $sCarta);
-sc_log_add('MEZ_DOCS', 'FILE carta=[' . $fCarta . '] scad=[' . $sCarta . ']');
+    return '';
+};
 
-$scadRicDefault = mez_wiz_default_30_aprile();
+$mezCleanScad = function ($scadVal) {
+    $scadVal = trim((string)$scadVal);
+    if ($scadVal === '' || strcasecmp($scadVal, 'null') === 0) {
+        return '';
+    }
+    $u = strtoupper(str_replace(array('/', '-', ' ', '.'), '', $scadVal));
+    if ($u === 'DDMMAAAA' || $u === 'GGMMAAAA' || $u === 'AAAAMMDD' || $u === 'YYYYMMDD') {
+        return '';
+    }
+    if (preg_match('/^\d{4}-\d{2}-\d{2}/', $scadVal)) {
+        return substr($scadVal, 0, 10);
+    }
+    if (preg_match('/^(\d{2})\/(\d{2})\/(\d{4})$/', $scadVal, $m)) {
+        return $m[3] . '-' . $m[2] . '-' . $m[1];
+    }
+    if (preg_match('/^(\d{2})-(\d{2})-(\d{4})$/', $scadVal, $m)) {
+        return $m[3] . '-' . $m[2] . '-' . $m[1];
+    }
+    return '';
+};
 
-$fRic1 = isset({ricevuta_anga_cat_1}) ? trim((string){ricevuta_anga_cat_1}) : '';
-$sRic1 = isset({scadenza_ricevuta_anga_cat_1}) ? trim((string){scadenza_ricevuta_anga_cat_1}) : '';
-if ($fRic1 !== '' && ($sRic1 === '' || strcasecmp($sRic1, 'null') === 0)) {
+$mezDefault30Aprile = function () {
+    $y = (int)date('Y');
+    $d = sprintf('%04d-04-30', $y);
+    if (date('Y-m-d') > $d) {
+        $d = sprintf('%04d-04-30', $y + 1);
+    }
+    return $d;
+};
+
+$scadRicDefault = $mezDefault30Aprile();
+
+$fCarta = $mezFileVal(isset({carta_circolazione}) ? {carta_circolazione} : '', 'carta_circolazione');
+$sCarta = $mezCleanScad(isset({scadenza_carta_circolazione}) ? {scadenza_carta_circolazione} : '');
+
+$fA1 = $mezFileVal(isset({anga_cat_1}) ? {anga_cat_1} : '', 'anga_cat_1');
+$sA1 = $mezCleanScad(isset({scadenza_anga_cat_1}) ? {scadenza_anga_cat_1} : '');
+$fRic1 = $mezFileVal(isset({ricevuta_anga_cat_1}) ? {ricevuta_anga_cat_1} : '', 'ricevuta_anga_cat_1');
+$sRic1 = $mezCleanScad(isset({scadenza_ricevuta_anga_cat_1}) ? {scadenza_ricevuta_anga_cat_1} : '');
+if ($fRic1 !== '' && $sRic1 === '') {
     $sRic1 = $scadRicDefault;
 }
-$fRic4 = isset({ricevuta_anga_cat_4}) ? trim((string){ricevuta_anga_cat_4}) : '';
-$sRic4 = isset({scadenza_ricevuta_anga_cat_4}) ? trim((string){scadenza_ricevuta_anga_cat_4}) : '';
-if ($fRic4 !== '' && ($sRic4 === '' || strcasecmp($sRic4, 'null') === 0)) {
+
+$fA4 = $mezFileVal(isset({anga_cat_4}) ? {anga_cat_4} : '', 'anga_cat_4');
+$sA4 = $mezCleanScad(isset({scadenza_anga_cat_4}) ? {scadenza_anga_cat_4} : '');
+$fRic4 = $mezFileVal(isset({ricevuta_anga_cat_4}) ? {ricevuta_anga_cat_4} : '', 'ricevuta_anga_cat_4');
+$sRic4 = $mezCleanScad(isset({scadenza_ricevuta_anga_cat_4}) ? {scadenza_ricevuta_anga_cat_4} : '');
+if ($fRic4 !== '' && $sRic4 === '') {
     $sRic4 = $scadRicDefault;
 }
-$fRic5 = isset({ricevuta_anga_cat_5}) ? trim((string){ricevuta_anga_cat_5}) : '';
-$sRic5 = isset({scadenza_ricevuta_anga_cat_5}) ? trim((string){scadenza_ricevuta_anga_cat_5}) : '';
-if ($fRic5 !== '' && ($sRic5 === '' || strcasecmp($sRic5, 'null') === 0)) {
+
+$fA5 = $mezFileVal(isset({anga_cat_5}) ? {anga_cat_5} : '', 'anga_cat_5');
+$sA5 = $mezCleanScad(isset({scadenza_anga_cat_5}) ? {scadenza_anga_cat_5} : '');
+$fRic5 = $mezFileVal(isset({ricevuta_anga_cat_5}) ? {ricevuta_anga_cat_5} : '', 'ricevuta_anga_cat_5');
+$sRic5 = $mezCleanScad(isset({scadenza_ricevuta_anga_cat_5}) ? {scadenza_ricevuta_anga_cat_5} : '');
+if ($fRic5 !== '' && $sRic5 === '') {
     $sRic5 = $scadRicDefault;
 }
 
-$fRentri = isset({rentri_iscrizione}) ? trim((string){rentri_iscrizione}) : '';
-$fRicRentri = isset({ricevuta_rentri}) ? trim((string){ricevuta_rentri}) : '';
-$sRicRentri = isset({scadenza_ricevuta_rentri}) ? trim((string){scadenza_ricevuta_rentri}) : '';
-if ($fRicRentri !== '' && ($sRicRentri === '' || strcasecmp($sRicRentri, 'null') === 0)) {
+$fRentri = $mezFileVal(isset({rentri_iscrizione}) ? {rentri_iscrizione} : '', 'rentri_iscrizione');
+$fRicRentri = $mezFileVal(isset({ricevuta_rentri}) ? {ricevuta_rentri} : '', 'ricevuta_rentri');
+$sRicRentri = $mezCleanScad(isset({scadenza_ricevuta_rentri}) ? {scadenza_ricevuta_rentri} : '');
+if ($fRicRentri !== '' && $sRicRentri === '') {
     $sRicRentri = $scadRicDefault;
 }
 
-$catPairs = array(
-    array(
-        'Autorizzazione ANGA Cat.1', 11,
-        isset({anga_cat_1}) ? {anga_cat_1} : '',
-        isset({scadenza_anga_cat_1}) ? {scadenza_anga_cat_1} : '',
-    ),
-    array('Ricevuta pagamento ANGA Cat.1', 12, $fRic1, ($fRic1 !== '') ? $sRic1 : ''),
-    array(
-        'Autorizzazione ANGA Cat.4', 0,
-        isset({anga_cat_4}) ? {anga_cat_4} : '',
-        isset({scadenza_anga_cat_4}) ? {scadenza_anga_cat_4} : '',
-    ),
-    array('Ricevuta pagamento ANGA Cat.4', 0, $fRic4, ($fRic4 !== '') ? $sRic4 : ''),
-    array(
-        'Autorizzazione ANGA Cat.5', 0,
-        isset({anga_cat_5}) ? {anga_cat_5} : '',
-        isset({scadenza_anga_cat_5}) ? {scadenza_anga_cat_5} : '',
-    ),
-    array('Ricevuta pagamento ANGA Cat.5', 0, $fRic5, ($fRic5 !== '') ? $sRic5 : ''),
-    array('Iscrizione RENTRI', 13, $fRentri, ''),
-    array('Ricevuta pagamento RENTRI', 14, $fRicRentri, ($fRicRentri !== '') ? $sRicRentri : ''),
+sc_log_add(
+    'MEZ_DOCS',
+    'FILES carta=[' . $fCarta . '] a1=[' . $fA1 . '] r1=[' . $fRic1 . ']'
+    . ' a4=[' . $fA4 . '] r4=[' . $fRic4 . '] a5=[' . $fA5 . '] r5=[' . $fRic5 . ']'
+    . ' ren=[' . $fRentri . '] rren=[' . $fRicRentri . ']'
+    . ' flag=' . $flag1 . $flag4 . $flag5
 );
-foreach ($catPairs as $p) {
-    $tid = mez_wiz_tipo_id($p[0], $p[1]);
-    if ($tid <= 0 && $p[0] === 'Iscrizione RENTRI') {
-        $tid = mez_wiz_tipo_id('Iscrizione RENTRI Cat.1', 13);
+sc_log_add(
+    'MEZ_DOCS',
+    'SCAD carta=[' . $sCarta . '] a1=[' . $sA1 . '] r1=[' . $sRic1 . ']'
+    . ' a4=[' . $sA4 . '] r4=[' . $sRic4 . '] a5=[' . $sA5 . '] r5=[' . $sRic5 . ']'
+    . ' rren=[' . $sRicRentri . ']'
+);
+
+$pairs = array();
+$pairs[] = array(22, 'Carta circolazione', $fCarta, $sCarta);
+
+if ($flag1 === 1) {
+    $pairs[] = array(11, 'Autorizzazione ANGA Cat.1', $fA1, $sA1);
+    $pairs[] = array(12, 'Ricevuta pagamento ANGA Cat.1', $fRic1, $sRic1);
+}
+if ($flag4 === 1) {
+    sc_lookup(rsMezT4aI, "SELECT id FROM tipi_documento WHERE LOWER(TRIM(nome)) = LOWER(TRIM('Autorizzazione ANGA Cat.4')) LIMIT 1", 'pigliacelli');
+    $t4a = !empty({rsMezT4aI[0][0]}) ? (int){rsMezT4aI[0][0]} : 0;
+    sc_lookup(rsMezT4rI, "SELECT id FROM tipi_documento WHERE LOWER(TRIM(nome)) = LOWER(TRIM('Ricevuta pagamento ANGA Cat.4')) LIMIT 1", 'pigliacelli');
+    $t4r = !empty({rsMezT4rI[0][0]}) ? (int){rsMezT4rI[0][0]} : 0;
+    if ($t4a > 0) {
+        $pairs[] = array($t4a, 'Autorizzazione ANGA Cat.4', $fA4, $sA4);
     }
-    if ($tid <= 0 && $p[0] === 'Ricevuta pagamento RENTRI') {
-        $tid = mez_wiz_tipo_id('Ricevuta pagamento RENTRI Cat.1', 14);
+    if ($t4r > 0) {
+        $pairs[] = array($t4r, 'Ricevuta pagamento ANGA Cat.4', $fRic4, $sRic4);
     }
-    mez_wiz_upsert_doc($mezzoId, $subId, $loginSql, $tid, $p[2], $p[3]);
+}
+if ($flag5 === 1) {
+    sc_lookup(rsMezT5aI, "SELECT id FROM tipi_documento WHERE LOWER(TRIM(nome)) = LOWER(TRIM('Autorizzazione ANGA Cat.5')) LIMIT 1", 'pigliacelli');
+    $t5a = !empty({rsMezT5aI[0][0]}) ? (int){rsMezT5aI[0][0]} : 0;
+    sc_lookup(rsMezT5rI, "SELECT id FROM tipi_documento WHERE LOWER(TRIM(nome)) = LOWER(TRIM('Ricevuta pagamento ANGA Cat.5')) LIMIT 1", 'pigliacelli');
+    $t5r = !empty({rsMezT5rI[0][0]}) ? (int){rsMezT5rI[0][0]} : 0;
+    if ($t5a > 0) {
+        $pairs[] = array($t5a, 'Autorizzazione ANGA Cat.5', $fA5, $sA5);
+    }
+    if ($t5r > 0) {
+        $pairs[] = array($t5r, 'Ricevuta pagamento ANGA Cat.5', $fRic5, $sRic5);
+    }
+}
+if ($flag1 === 1 || $flag4 === 1 || $flag5 === 1) {
+    sc_lookup(rsMezT13I, "SELECT id FROM tipi_documento WHERE LOWER(TRIM(nome)) IN (LOWER(TRIM('Iscrizione RENTRI')), LOWER(TRIM('Iscrizione RENTRI Cat.1'))) ORDER BY id ASC LIMIT 1", 'pigliacelli');
+    $t13 = !empty({rsMezT13I[0][0]}) ? (int){rsMezT13I[0][0]} : 13;
+    sc_lookup(rsMezT14I, "SELECT id FROM tipi_documento WHERE LOWER(TRIM(nome)) IN (LOWER(TRIM('Ricevuta pagamento RENTRI')), LOWER(TRIM('Ricevuta pagamento RENTRI Cat.1'))) ORDER BY id ASC LIMIT 1", 'pigliacelli');
+    $t14 = !empty({rsMezT14I[0][0]}) ? (int){rsMezT14I[0][0]} : 14;
+    $pairs[] = array($t13, 'Iscrizione RENTRI', $fRentri, '');
+    $pairs[] = array($t14, 'Ricevuta pagamento RENTRI', $fRicRentri, $sRicRentri);
 }
 
-$autId = mez_wiz_find_autista($subId);
-sc_log_add('MEZ_DOCS', 'AUTISTA letto=' . $autId);
+foreach ($pairs as $p) {
+    $tipoId = (int)$p[0];
+    $label = $p[1];
+    $fileVal = trim((string)$p[2]);
+    $scadVal = trim((string)$p[3]);
+    if ($tipoId <= 0 || ($fileVal === '' && $scadVal === '')) {
+        continue;
+    }
+    if ($fileVal === '') {
+        continue;
+    }
 
-if ($autId > 0) {
+    $fileSql = str_replace("'", "''", basename($fileVal));
+    $scadSql = 'NULL';
+    if ($scadVal !== '') {
+        $scadSql = "'" . str_replace("'", "''", $scadVal) . "'";
+    }
+
     sc_exec_sql("
-        DELETE FROM subvettori_autisti_mezzi WHERE mezzo_id = $mezzoId
+        INSERT INTO documenti (
+            tipo_documento_id, subvettore_id, subvettore_mezzo_id,
+            login, stato_documento_id, file, data_scadenza
+        ) VALUES (
+            $tipoId, $subId, $mezzoId, '$loginSql', 2, '$fileSql', $scadSql
+        )
     ", 'pigliacelli');
+    sc_log_add('MEZ_DOCS', 'INSERT ' . $label . ' file=[' . $fileVal . '] scad=[' . $scadVal . '] stato=2');
+}
+
+$rawAut = isset({autista_id}) ? {autista_id} : '';
+if (is_array($rawAut)) {
+    $rawAut = reset($rawAut);
+}
+$rawAut = trim((string)$rawAut);
+$autId = 0;
+if ($rawAut !== '' && $rawAut !== '-' && $rawAut !== 'null' && $rawAut !== 'undefined') {
+    $autId = (int)$rawAut;
+    if ($autId < 0) {
+        $autId = 0;
+    }
+}
+sc_log_add('MEZ_DOCS', 'AUTISTA letto=' . $autId);
+sc_exec_sql("DELETE FROM subvettori_autisti_mezzi WHERE mezzo_id = $mezzoId", 'pigliacelli');
+if ($autId > 0) {
     sc_exec_sql("
         INSERT INTO subvettori_autisti_mezzi (subvettore_id, autista_id, mezzo_id)
         VALUES ($subId, $autId, $mezzoId)
     ", 'pigliacelli');
     sc_log_add('MEZ_DOCS', 'PONTE autista=' . $autId . ' mezzo=' . $mezzoId);
-} else {
-    sc_log_add('MEZ_DOCS', 'PONTE SKIP autista vuoto mezzo=' . $mezzoId);
 }
 
 sc_log_add('MEZ_DOCS', 'FINE onAfterInsert mezzo=' . $mezzoId);

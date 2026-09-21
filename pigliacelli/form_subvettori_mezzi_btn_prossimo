@@ -51,20 +51,10 @@ $nDocOk = !empty({rsWizMezDocOk[0][0]}) ? (int){rsWizMezDocOk[0][0]} : 0;
 
 sc_log_add('WIZARD', 'MEZZI_PROSSIMO_V3 COUNT_CARTA=' . $nDocOk);
 
-sc_lookup(rsWizMezAutOk, "
-    SELECT COUNT(DISTINCT sm.id)
-    FROM subvettori_mezzi sm
-    INNER JOIN subvettori_autisti_mezzi sam ON sam.mezzo_id = sm.id
-    WHERE sm.subvettore_id = $subId
-      AND sam.autista_id > 0
-", 'pigliacelli');
-$nAutOk = !empty({rsWizMezAutOk[0][0]}) ? (int){rsWizMezAutOk[0][0]} : 0;
-
-sc_log_add('WIZARD', 'MEZZI_PROSSIMO_V3 COUNT_AUTISTA=' . $nAutOk);
-
-if ($nDocOk < $nMezzi || $nAutOk < $nMezzi) {
-    $_SESSION['wizard_flash_msg'] = 'Completare carta di circolazione e autista collegato per ogni mezzo prima di proseguire.';
-    sc_log_add('WIZARD', 'MEZZI_PROSSIMO_V3 BLOCK docs/autista');
+// Autista↔mezzo facoltativo (SAL 16/09): non bloccare Prossimo.
+if ($nDocOk < $nMezzi) {
+    $_SESSION['wizard_flash_msg'] = 'Completare la carta di circolazione per ogni mezzo prima di proseguire.';
+    sc_log_add('WIZARD', 'MEZZI_PROSSIMO_V3 BLOCK carta');
     sc_redir('form_subvettori_mezzi', subvettoreId=[subvettoreId]);
 }
 

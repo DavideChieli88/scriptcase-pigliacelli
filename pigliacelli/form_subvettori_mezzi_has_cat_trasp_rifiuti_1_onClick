@@ -5,16 +5,11 @@
  * 1) Campo has_cat_trasp_rifiuti_1:
  *    - Tipo: Radio
  *    - Edit Lookup: Manual  →  1=Si  e  0=No   (valori numerici!)
- *    - "Reload form when value has changed" = OFF
+ *    - "Reload form when value has changed" = ON
  * 2) Ajax Events → New → Field = has_cat_trasp_rifiuti_1 → Event = onClick
  *    (NON onChange)
- * 3) NELLA FINESTRA DELL’EVENTO AJAX → sezione "Fields" / "Select fields":
- *    DEVI spuntare TUTTI i campi che mostri/nascondi, altrimenti
- *    sc_field_display non ha effetto in Ajax:
- *      anga_cat_1, scadenza_anga_cat_1,
- *      ricevuta_anga_cat_1, scadenza_ricevuta_anga_cat_1,
- *      rentri_iscrizione, ricevuta_rentri, scadenza_ricevuta_rentri,
- *      has_cat_trasp_rifiuti_1, has_cat_trasp_rifiuti_4, has_cat_trasp_rifiuti_5
+ * 3) Document e Date non sono selezionabili nella lista "Fields":
+ *    vengono aggiornati dal reload completo tramite onLoad (op=recarga).
  * 4) Generate + Deploy (anche *_inline se editable grid)
  * ==================================================================
  */
@@ -27,20 +22,21 @@ $flag = ((int)$flag === 1) ? 1 : 0;
 
 sc_log_add('MEZ_DISP', 'onClick cat1 flag=' . $flag);
 
-if ($flag === 1) {
+if ($flag == 1) {
     sc_field_display({anga_cat_1}, 'on');
     sc_field_display({scadenza_anga_cat_1}, 'on');
     sc_field_display({ricevuta_anga_cat_1}, 'on');
     sc_field_display({scadenza_ricevuta_anga_cat_1}, 'on');
-} else {
+} else if ($flag == 0) {
     sc_field_display({anga_cat_1}, 'off');
     sc_field_display({scadenza_anga_cat_1}, 'off');
     sc_field_display({ricevuta_anga_cat_1}, 'off');
     sc_field_display({scadenza_ricevuta_anga_cat_1}, 'off');
+}else {
+	sc_log_add('MEZ_DISP_ERR', 'onClick cat1 flag=' . $flag);
 }
 
-// RENTRI: mostra se QUESTO flag è 1; se 0 lascia invariati gli altri
-// (per sync completa: include has_cat_4/5 nei Fields Ajax e scommenta sotto)
+// RENTRI: mostra se almeno una categoria è selezionata.
 $f4 = {has_cat_trasp_rifiuti_4};
 $f5 = {has_cat_trasp_rifiuti_5};
 if ($f4 === '' || $f4 === null || $f4 === 'undefined' || $f4 === 'null') {

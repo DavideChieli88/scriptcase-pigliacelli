@@ -1,84 +1,9 @@
 /**
- * form_subvettori_starting_wizard -> pulsante PHP "Prossimo"
+ * DEPRECATO — non usare più come pulsante PHP.
  *
- * Niente concatenazione dentro sc_redir / sc_log_add (rompe il parser SC).
- * Niente closure PHP.
+ * Prossimo è ora JavaScript: vedi form_subvettori_starting_wizard_btn_prossimo.js
+ * (scBtnFn_sys_format_alt → onValidate → onBeforeUpdate → onAfterUpdate).
+ *
+ * Se questo evento PHP è ancora collegato in Scriptcase, svuotalo o elimina
+ * il pulsante PHP e ricrea uno JavaScript con il body del file .js.
  */
-
-$subId = 0;
-if (isset({id}) && (int){id} > 0) {
-    $subId = (int){id};
-}
-if ($subId <= 0 && isset([subvettoreId])) {
-    $subId = (int)[subvettoreId];
-}
-if ($subId <= 0 && isset($_SESSION['wizard_subvettore_id'])) {
-    $subId = (int)$_SESSION['wizard_subvettore_id'];
-}
-
-$log1 = 'START_PROSSIMO_V1 START sub=' . $subId;
-sc_log_add('WIZARD', $log1);
-
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    @session_start();
-}
-
-if ($subId <= 0) {
-    $_SESSION['wizard_flash_msg'] = 'Subvettore non identificato.';
-    sc_redir('blank_wizard_landing');
-}
-
-[subvettoreId] = $subId;
-$_SESSION['wizard_subvettore_id'] = $subId;
-
-$errors = array();
-
-$v = isset({ragione_sociale}) ? trim((string){ragione_sociale}) : '';
-if ($v === '' || $v === 'null') {
-    $errors[] = 'Ragione sociale';
-}
-$v = isset({sede_citta}) ? trim((string){sede_citta}) : '';
-if ($v === '' || $v === 'null') {
-    $errors[] = 'Sede citta';
-}
-$v = isset({piva}) ? trim((string){piva}) : '';
-if ($v === '' || $v === 'null') {
-    $errors[] = 'Partita IVA';
-}
-$v = isset({cod_fiscale}) ? trim((string){cod_fiscale}) : '';
-if ($v === '' || $v === 'null') {
-    $errors[] = 'Codice fiscale';
-}
-$v = isset({nome_rappresentante}) ? trim((string){nome_rappresentante}) : '';
-if ($v === '' || $v === 'null') {
-    $errors[] = 'Nome legale rappresentante';
-}
-$v = isset({cognome_rappresentante}) ? trim((string){cognome_rappresentante}) : '';
-if ($v === '' || $v === 'null') {
-    $errors[] = 'Cognome legale rappresentante';
-}
-
-if (!empty($errors)) {
-    $_SESSION['wizard_flash_msg'] = 'Compilare e salvare i campi obbligatori prima di proseguire.';
-    $log2 = 'START_PROSSIMO_V1 BLOCK campi';
-    sc_log_add('WIZARD', $log2);
-    $redirBack = 'subvettoreId=' . (int)$subId;
-    sc_redir('form_subvettori_starting_wizard', $redirBack);
-}
-
-sc_exec_sql("
-    UPDATE subvettori
-    SET wizard_step = 2
-    WHERE id = $subId
-      AND wizard_complete = 0
-      AND wizard_step = 1
-", 'pigliacelli');
-
-// COMMIT DOPO l'UPDATE (non prima): altrimenti resta aperta la transazione
-// del form → fatal PDO "already an active transaction" su autisti/mezzi.
-sc_exec_sql('COMMIT');
-
-$log3 = 'START_PROSSIMO_V1 OK autisti sub=' . $subId;
-sc_log_add('WIZARD', $log3);
-$redirAutisti = 'subvettoreId=' . (int)$subId;
-sc_redir('form_subvettori_autisti_wizard', $redirAutisti);

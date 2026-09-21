@@ -14,7 +14,8 @@
  *   - Reload = OFF
  *   - Ajax onClick (non onChange)
  *
- * Name Buttons: next_step_btn_mezzi, back_step_btn_autisti
+ * Name Buttons: next_step_btn_mezzi, back_step_btn_autisti, btn_chiudi_modale
+ * (Exit SC nativo spegnuto: vedi wizard_btn_chiudi_modale)
  */
 
 // --- Tasti wizard ---
@@ -55,7 +56,15 @@ foreach ($checks as $p) {
     }
 }
 
+// Reload della modale (radio con "Reload form when value has changed" = ON → op=recarga):
+// il path può non contenere più "_inline" → senza questo tornavano Avanti/Indietro e spariva Chiudi.
+// Il reload esiste solo nella form di edit, mai sulla griglia.
+if (!$isInline && ($op === 'recarga' || $op === 'reload')) {
+    $isInline = true;
+}
+
 if ($isInline) {
+    // Modale: wizard nav OFF, salvataggio ON, Exit SC OFF, Chiudi custom ON
     sc_btn_display('next_step_btn_mezzi', 'off');
     sc_btn_display('back_step_btn_autisti', 'off');
     sc_btn_display('update', 'on');
@@ -64,15 +73,17 @@ if ($isInline) {
     sc_btn_display('insert', 'on');
     sc_btn_display('alterar', 'on');
     sc_btn_display('incluir', 'on');
-    //sc_btn_display('cancel', 'on');
-    //sc_btn_display('annulla', 'on');
-    // sc_btn_display('exit', 'on');
-    // sc_btn_display('sair', 'on');
-    sc_btn_display('back', 'on');
+    // Exit nativo (anche se duplicato in HTML): tutti OFF
+    sc_btn_display('exit', 'off');
+    sc_btn_display('sair', 'off');
+    sc_btn_display('back', 'off');
+    sc_btn_display('btn_chiudi_modale', 'on');
 } else {
-    // App principale = editable grid: SEMPRE Avanti/Indietro
+    // Griglia: Avanti/Indietro ON, Chiudi modale OFF
     sc_btn_display('next_step_btn_mezzi', 'on');
     sc_btn_display('back_step_btn_autisti', 'on');
+    sc_btn_display('btn_chiudi_modale', 'off');
+    sc_btn_display('exit', 'off');
 }
 
 sc_log_add(
