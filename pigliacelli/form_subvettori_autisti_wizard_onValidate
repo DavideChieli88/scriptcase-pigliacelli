@@ -1,12 +1,12 @@
 /**
- * form_subvettori_autisti → onValidate
- * Stessa logica di form_subvettori_autisti_wizard_onValidate.
+ * form_subvettori_autisti_wizard → onValidate
+ * Wizard step 2 — validazione singolo autista (+ documenti virtuali).
  * Tipi: 18 idoneità, 19 patente, CQC tipo 'CQC autisti (fronte/retro)',
  *       20 formazione, 21 DPI.
  * permesso_soggiorno (30): obbligatorio solo se permesso_soggiorno_flag=1.
  *
  * IDE: Events → onValidate → incolla questo file. Generate.
- * Per il wizard usa form_subvettori_autisti_wizard_onValidate.
+ * Non usare sc_error_exit (AJAX / modale).
  */
 
 $errors = array();
@@ -72,7 +72,7 @@ if (!$hasPatente) {
     $errors[] = 'Documento patente';
 }
 
-// --- CQC ---
+// --- CQC (tipo dedicato, non più seconda riga del 19) ---
 $hasCqc = ($vCqc !== '');
 if (!$hasCqc && $autistaId > 0) {
     $tipoCqc = 0;

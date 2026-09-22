@@ -7,7 +7,7 @@
  *   subvettoreId          → Integer, default 0, NON richiedere a startup
  *   subvettoreContrattoId → NON richiedere a startup
  *
- * Wizard / menu: contratto non serve → 'null' se assente.
+ * Wizard / menu: contratto non serve → globale 0 (mai stringa 'null').
  * Se arriva da GET/REQUEST con id > 0, lo conserva.
  */
 
@@ -41,5 +41,5 @@ if (isset($_GET['subvettoreContrattoId']) && (int)$_GET['subvettoreContrattoId']
 if ($ctrId > 0) {
     [subvettoreContrattoId] = $ctrId;
 } else {
-    [subvettoreContrattoId] = 'null';
+    [subvettoreContrattoId] = 0;
 }

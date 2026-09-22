@@ -5,7 +5,7 @@
  * questa app salva documenti su subvettore_autista_id, tipi 18–21 e 30.
  *
  * Tipi:
- *   18 idoneità, 19 patente (1ª riga) + cqc (2ª), 20 formazione, 21 DPI,
+ *   18 idoneità, 19 patente, CQC tipo dedicato, 20 formazione, 21 DPI,
  *   30 permesso_soggiorno (+ in_possesso da permesso_soggiorno_flag)
  *
  * IDE: Events → onAfterUpdate → incolla questo file. Generate.
@@ -35,6 +35,14 @@ if (!empty({rsLoginAnyU[0][0]})) {
     $login = trim((string){rsLoginAnyU[0][0]});
 }
 $loginSql = str_replace("'", "''", $login);
+
+$tipoCqc = 0;
+sc_lookup(rsTipoCqcU, "
+    SELECT id FROM tipi_documento
+    WHERE LOWER(TRIM(nome)) = LOWER(TRIM('CQC autisti (fronte/retro)'))
+    LIMIT 1
+", 'pigliacelli');
+$tipoCqc = !empty({rsTipoCqcU[0][0]}) ? (int){rsTipoCqcU[0][0]} : 0;
 
 /**
  * Nome file da campo virtuale Document; se vuoto, prova $_FILES con chiave che contiene $hint.
@@ -114,19 +122,19 @@ if ($fIdoneita !== '') {
     ", 'pigliacelli');
     if (!empty({rsU18[0][0]})) {
         sc_exec_sql(
-            "UPDATE documenti SET file='$fileSql', stato_documento_id=1, updated_at=NOW() WHERE id=" . (int){rsU18[0][0]},
+            "UPDATE documenti SET file='$fileSql', stato_documento_id=2, updated_at=NOW() WHERE id=" . (int){rsU18[0][0]},
             'pigliacelli'
         );
     } else {
         sc_exec_sql("
             INSERT INTO documenti (tipo_documento_id, subvettore_id, subvettore_autista_id, login, stato_documento_id, file)
-            VALUES (18, $subId, $autistaId, '$loginSql', 1, '$fileSql')
+            VALUES (18, $subId, $autistaId, '$loginSql', 2, '$fileSql')
         ", 'pigliacelli');
     }
     sc_log_add('AUT_DOCS', "UPSERT 18 $fileSql");
 }
 
-// --- 19 patente = prima riga ---
+// --- 19 patente ---
 if ($fPatente !== '') {
     $fileSql = str_replace("'", "''", $fPatente);
     $scadSql = 'NULL';
@@ -140,53 +148,42 @@ if ($fPatente !== '') {
     ", 'pigliacelli');
     if (!empty({rsU19a[0][0]})) {
         sc_exec_sql(
-            "UPDATE documenti SET file='$fileSql', data_scadenza=$scadSql, stato_documento_id=1, updated_at=NOW() WHERE id=" . (int){rsU19a[0][0]},
+            "UPDATE documenti SET file='$fileSql', data_scadenza=$scadSql, stato_documento_id=2, updated_at=NOW() WHERE id=" . (int){rsU19a[0][0]},
             'pigliacelli'
         );
     } else {
         sc_exec_sql("
             INSERT INTO documenti (tipo_documento_id, subvettore_id, subvettore_autista_id, login, stato_documento_id, file, data_scadenza)
-            VALUES (19, $subId, $autistaId, '$loginSql', 1, '$fileSql', $scadSql)
+            VALUES (19, $subId, $autistaId, '$loginSql', 2, '$fileSql', $scadSql)
         ", 'pigliacelli');
     }
     sc_log_add('AUT_DOCS', "UPSERT 19 patente $fileSql");
 }
 
-// --- 19 cqc = seconda riga ---
-if ($fCqc !== '') {
+// --- CQC (tipo dedicato) ---
+if ($fCqc !== '' && $tipoCqc > 0) {
     $fileSql = str_replace("'", "''", $fCqc);
     $scadSql = 'NULL';
     if (isset({scadenza_cqc}) && {scadenza_cqc} !== '' && {scadenza_cqc} !== 'null') {
         $scadSql = "'" . str_replace("'", "''", (string){scadenza_cqc}) . "'";
     }
-    $idPrima = 0;
-    sc_lookup(rsU19first, "
+    sc_lookup(rsUCqc, "
         SELECT id FROM documenti
-        WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = 19
+        WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = $tipoCqc
         ORDER BY id ASC LIMIT 1
     ", 'pigliacelli');
-    if (!empty({rsU19first[0][0]})) {
-        $idPrima = (int){rsU19first[0][0]};
-    }
-    sc_lookup(rsU19b, "
-        SELECT id FROM documenti
-        WHERE subvettore_autista_id = $autistaId
-          AND tipo_documento_id = 19
-          AND id <> $idPrima
-        ORDER BY id ASC LIMIT 1
-    ", 'pigliacelli');
-    if (!empty({rsU19b[0][0]})) {
+    if (!empty({rsUCqc[0][0]})) {
         sc_exec_sql(
-            "UPDATE documenti SET file='$fileSql', data_scadenza=$scadSql, stato_documento_id=1, updated_at=NOW() WHERE id=" . (int){rsU19b[0][0]},
+            "UPDATE documenti SET file='$fileSql', data_scadenza=$scadSql, stato_documento_id=2, updated_at=NOW() WHERE id=" . (int){rsUCqc[0][0]},
             'pigliacelli'
         );
     } else {
         sc_exec_sql("
             INSERT INTO documenti (tipo_documento_id, subvettore_id, subvettore_autista_id, login, stato_documento_id, file, data_scadenza)
-            VALUES (19, $subId, $autistaId, '$loginSql', 1, '$fileSql', $scadSql)
+            VALUES ($tipoCqc, $subId, $autistaId, '$loginSql', 2, '$fileSql', $scadSql)
         ", 'pigliacelli');
     }
-    sc_log_add('AUT_DOCS', "UPSERT 19 cqc $fileSql");
+    sc_log_add('AUT_DOCS', "UPSERT CQC tipo=$tipoCqc $fileSql");
 }
 
 // --- 20 formazione ---
@@ -199,13 +196,13 @@ if ($fFormaz !== '') {
     ", 'pigliacelli');
     if (!empty({rsU20[0][0]})) {
         sc_exec_sql(
-            "UPDATE documenti SET file='$fileSql', stato_documento_id=1, updated_at=NOW() WHERE id=" . (int){rsU20[0][0]},
+            "UPDATE documenti SET file='$fileSql', stato_documento_id=2, updated_at=NOW() WHERE id=" . (int){rsU20[0][0]},
             'pigliacelli'
         );
     } else {
         sc_exec_sql("
             INSERT INTO documenti (tipo_documento_id, subvettore_id, subvettore_autista_id, login, stato_documento_id, file)
-            VALUES (20, $subId, $autistaId, '$loginSql', 1, '$fileSql')
+            VALUES (20, $subId, $autistaId, '$loginSql', 2, '$fileSql')
         ", 'pigliacelli');
     }
     sc_log_add('AUT_DOCS', "UPSERT 20 $fileSql");
@@ -221,13 +218,13 @@ if ($fDpi !== '') {
     ", 'pigliacelli');
     if (!empty({rsU21[0][0]})) {
         sc_exec_sql(
-            "UPDATE documenti SET file='$fileSql', stato_documento_id=1, updated_at=NOW() WHERE id=" . (int){rsU21[0][0]},
+            "UPDATE documenti SET file='$fileSql', stato_documento_id=2, updated_at=NOW() WHERE id=" . (int){rsU21[0][0]},
             'pigliacelli'
         );
     } else {
         sc_exec_sql("
             INSERT INTO documenti (tipo_documento_id, subvettore_id, subvettore_autista_id, login, stato_documento_id, file)
-            VALUES (21, $subId, $autistaId, '$loginSql', 1, '$fileSql')
+            VALUES (21, $subId, $autistaId, '$loginSql', 2, '$fileSql')
         ", 'pigliacelli');
     }
     sc_log_add('AUT_DOCS', "UPSERT 21 $fileSql");
@@ -254,7 +251,7 @@ if ($fPermesso !== '') {
             SET file='$fileSql',
                 in_possesso=$flagPoss30,
                 data_scadenza=$scad30Sql,
-                stato_documento_id=1,
+                stato_documento_id=2,
                 updated_at=NOW()
             WHERE id=$idDoc30
         ", 'pigliacelli');
@@ -264,7 +261,7 @@ if ($fPermesso !== '') {
                 tipo_documento_id, subvettore_id, subvettore_autista_id,
                 login, stato_documento_id, file, in_possesso, data_scadenza
             ) VALUES (
-                30, $subId, $autistaId, '$loginSql', 1, '$fileSql', $flagPoss30, $scad30Sql
+                30, $subId, $autistaId, '$loginSql', 2, '$fileSql', $flagPoss30, $scad30Sql
             )
         ", 'pigliacelli');
     }

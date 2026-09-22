@@ -48,28 +48,26 @@ if ($mezzoId > 0) {
         sc_lookup(rsMezD11r, "
             SELECT file, data_scadenza FROM documenti
             WHERE subvettore_mezzo_id = $mezzoId AND tipo_documento_id = $t
-              AND file IS NOT NULL AND TRIM(file) <> ''
             ORDER BY id ASC LIMIT 1
         ", 'pigliacelli');
         if (!empty({rsMezD11r[0][0]})) {
             {anga_cat_1} = basename(trim((string){rsMezD11r[0][0]}));
-            if (!empty({rsMezD11r[0][1]})) {
-                {scadenza_anga_cat_1} = (string){rsMezD11r[0][1]};
-            }
+        }
+        if (!empty({rsMezD11r[0][1]})) {
+            {scadenza_anga_cat_1} = (string){rsMezD11r[0][1]};
         }
         sc_lookup(rsMezT12r, "SELECT id FROM tipi_documento WHERE LOWER(TRIM(nome)) = LOWER(TRIM('Ricevuta pagamento ANGA Cat.1')) LIMIT 1", 'pigliacelli');
         $t = !empty({rsMezT12r[0][0]}) ? (int){rsMezT12r[0][0]} : 12;
         sc_lookup(rsMezD12r, "
             SELECT file, data_scadenza FROM documenti
             WHERE subvettore_mezzo_id = $mezzoId AND tipo_documento_id = $t
-              AND file IS NOT NULL AND TRIM(file) <> ''
             ORDER BY id ASC LIMIT 1
         ", 'pigliacelli');
         if (!empty({rsMezD12r[0][0]})) {
             {ricevuta_anga_cat_1} = basename(trim((string){rsMezD12r[0][0]}));
-            if (!empty({rsMezD12r[0][1]})) {
-                {scadenza_ricevuta_anga_cat_1} = (string){rsMezD12r[0][1]};
-            }
+        }
+        if (!empty({rsMezD12r[0][1]})) {
+            {scadenza_ricevuta_anga_cat_1} = (string){rsMezD12r[0][1]};
         }
     }
 
@@ -80,14 +78,13 @@ if ($mezzoId > 0) {
             sc_lookup(rsMezD41r, "
                 SELECT file, data_scadenza FROM documenti
                 WHERE subvettore_mezzo_id = $mezzoId AND tipo_documento_id = $t
-                  AND file IS NOT NULL AND TRIM(file) <> ''
                 ORDER BY id ASC LIMIT 1
             ", 'pigliacelli');
             if (!empty({rsMezD41r[0][0]})) {
                 {anga_cat_4} = basename(trim((string){rsMezD41r[0][0]}));
-                if (!empty({rsMezD41r[0][1]})) {
-                    {scadenza_anga_cat_4} = (string){rsMezD41r[0][1]};
-                }
+            }
+            if (!empty({rsMezD41r[0][1]})) {
+                {scadenza_anga_cat_4} = (string){rsMezD41r[0][1]};
             }
         }
         sc_lookup(rsMezT42r, "SELECT id FROM tipi_documento WHERE LOWER(TRIM(nome)) = LOWER(TRIM('Ricevuta pagamento ANGA Cat.4')) LIMIT 1", 'pigliacelli');
@@ -96,14 +93,13 @@ if ($mezzoId > 0) {
             sc_lookup(rsMezD42r, "
                 SELECT file, data_scadenza FROM documenti
                 WHERE subvettore_mezzo_id = $mezzoId AND tipo_documento_id = $t
-                  AND file IS NOT NULL AND TRIM(file) <> ''
                 ORDER BY id ASC LIMIT 1
             ", 'pigliacelli');
             if (!empty({rsMezD42r[0][0]})) {
                 {ricevuta_anga_cat_4} = basename(trim((string){rsMezD42r[0][0]}));
-                if (!empty({rsMezD42r[0][1]})) {
-                    {scadenza_ricevuta_anga_cat_4} = (string){rsMezD42r[0][1]};
-                }
+            }
+            if (!empty({rsMezD42r[0][1]})) {
+                {scadenza_ricevuta_anga_cat_4} = (string){rsMezD42r[0][1]};
             }
         }
     }
@@ -115,14 +111,13 @@ if ($mezzoId > 0) {
             sc_lookup(rsMezD51r, "
                 SELECT file, data_scadenza FROM documenti
                 WHERE subvettore_mezzo_id = $mezzoId AND tipo_documento_id = $t
-                  AND file IS NOT NULL AND TRIM(file) <> ''
                 ORDER BY id ASC LIMIT 1
             ", 'pigliacelli');
             if (!empty({rsMezD51r[0][0]})) {
                 {anga_cat_5} = basename(trim((string){rsMezD51r[0][0]}));
-                if (!empty({rsMezD51r[0][1]})) {
-                    {scadenza_anga_cat_5} = (string){rsMezD51r[0][1]};
-                }
+            }
+            if (!empty({rsMezD51r[0][1]})) {
+                {scadenza_anga_cat_5} = (string){rsMezD51r[0][1]};
             }
         }
         sc_lookup(rsMezT52r, "SELECT id FROM tipi_documento WHERE LOWER(TRIM(nome)) = LOWER(TRIM('Ricevuta pagamento ANGA Cat.5')) LIMIT 1", 'pigliacelli');
@@ -131,14 +126,13 @@ if ($mezzoId > 0) {
             sc_lookup(rsMezD52r, "
                 SELECT file, data_scadenza FROM documenti
                 WHERE subvettore_mezzo_id = $mezzoId AND tipo_documento_id = $t
-                  AND file IS NOT NULL AND TRIM(file) <> ''
                 ORDER BY id ASC LIMIT 1
             ", 'pigliacelli');
             if (!empty({rsMezD52r[0][0]})) {
                 {ricevuta_anga_cat_5} = basename(trim((string){rsMezD52r[0][0]}));
-                if (!empty({rsMezD52r[0][1]})) {
-                    {scadenza_ricevuta_anga_cat_5} = (string){rsMezD52r[0][1]};
-                }
+            }
+            if (!empty({rsMezD52r[0][1]})) {
+                {scadenza_ricevuta_anga_cat_5} = (string){rsMezD52r[0][1]};
             }
         }
     }

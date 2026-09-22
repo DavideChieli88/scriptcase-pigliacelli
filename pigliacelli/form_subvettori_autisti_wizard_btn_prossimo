@@ -44,7 +44,15 @@ sc_lookup(rsWizAutBad, "
           OR (SELECT COUNT(*) FROM documenti d
            WHERE d.subvettore_autista_id = sa.id
              AND d.tipo_documento_id = 19
-             AND d.file IS NOT NULL AND TRIM(d.file) <> '') < 2
+             AND d.file IS NOT NULL AND TRIM(d.file) <> '') < 1
+          OR (SELECT COUNT(*) FROM documenti d
+           WHERE d.subvettore_autista_id = sa.id
+             AND d.tipo_documento_id = (
+                 SELECT td.id FROM tipi_documento td
+                 WHERE LOWER(TRIM(td.nome)) = LOWER(TRIM('CQC autisti (fronte/retro)'))
+                 LIMIT 1
+             )
+             AND d.file IS NOT NULL AND TRIM(d.file) <> '') < 1
           OR (SELECT COUNT(*) FROM documenti d
            WHERE d.subvettore_autista_id = sa.id
              AND d.tipo_documento_id = 20

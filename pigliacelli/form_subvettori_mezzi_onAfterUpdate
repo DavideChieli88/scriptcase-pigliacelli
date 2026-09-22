@@ -69,22 +69,37 @@ $mezFileVal = function ($fieldVal, $hint) {
 };
 
 $mezCleanScad = function ($scadVal) {
+    if (is_array($scadVal)) {
+        $scadVal = reset($scadVal);
+    }
     $scadVal = trim((string)$scadVal);
     if ($scadVal === '' || strcasecmp($scadVal, 'null') === 0) {
         return '';
     }
-    $u = strtoupper(str_replace(array('/', '-', ' ', '.'), '', $scadVal));
-    if ($u === 'DDMMAAAA' || $u === 'GGMMAAAA' || $u === 'AAAAMMDD' || $u === 'YYYYMMDD') {
+    $scadVal = str_replace('T', ' ', $scadVal);
+    $u = strtoupper(str_replace(array('/', '-', ' ', '.', '_', ':'), '', $scadVal));
+    if ($u === '' || $u === 'DDMMAAAA' || $u === 'GGMMAAAA' || $u === 'AAAAMMDD'
+        || $u === 'YYYYMMDD' || $u === '00000000' || strpos($u, '00000000') === 0
+    ) {
         return '';
     }
-    if (preg_match('/^\d{4}-\d{2}-\d{2}/', $scadVal)) {
-        return substr($scadVal, 0, 10);
+    if (preg_match('/^(\d{4})-(\d{2})-(\d{2})/', $scadVal, $m)) {
+        if ($m[1] === '0000' || $m[2] === '00' || $m[3] === '00') {
+            return '';
+        }
+        return $m[1] . '-' . $m[2] . '-' . $m[3];
     }
-    if (preg_match('/^(\d{2})\/(\d{2})\/(\d{4})$/', $scadVal, $m)) {
-        return $m[3] . '-' . $m[2] . '-' . $m[1];
+    if (preg_match('/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/', $scadVal, $m)) {
+        $d = (int)$m[1];
+        $mo = (int)$m[2];
+        $y = (int)$m[3];
+        if ($d < 1 || $d > 31 || $mo < 1 || $mo > 12 || $y < 1990) {
+            return '';
+        }
+        return sprintf('%04d-%02d-%02d', $y, $mo, $d);
     }
-    if (preg_match('/^(\d{2})-(\d{2})-(\d{4})$/', $scadVal, $m)) {
-        return $m[3] . '-' . $m[2] . '-' . $m[1];
+    if (preg_match('/^(\d{4})(\d{2})(\d{2})/', $u, $m)) {
+        return $m[1] . '-' . $m[2] . '-' . $m[3];
     }
     return '';
 };
@@ -143,6 +158,12 @@ sc_log_add(
 );
 sc_log_add(
     'MEZ_DOCS',
+    'RAW scad a1=[' . trim((string)(isset({scadenza_anga_cat_1}) ? {scadenza_anga_cat_1} : '')) . ']'
+    . ' a4=[' . trim((string)(isset({scadenza_anga_cat_4}) ? {scadenza_anga_cat_4} : '')) . ']'
+    . ' a5=[' . trim((string)(isset({scadenza_anga_cat_5}) ? {scadenza_anga_cat_5} : '')) . ']'
+);
+sc_log_add(
+    'MEZ_DOCS',
     'SCAD carta=[' . $sCarta . '] a1=[' . $sA1 . '] r1=[' . $sRic1 . ']'
     . ' a4=[' . $sA4 . '] r4=[' . $sRic4 . '] a5=[' . $sA5 . '] r5=[' . $sRic5 . ']'
     . ' rren=[' . $sRicRentri . ']'
@@ -153,8 +174,16 @@ $pairs = array();
 $pairs[] = array(22, 'Carta circolazione', $fCarta, $sCarta);
 
 if ($flag1 === 1) {
-    $pairs[] = array(11, 'Autorizzazione ANGA Cat.1', $fA1, $sA1);
-    $pairs[] = array(12, 'Ricevuta pagamento ANGA Cat.1', $fRic1, $sRic1);
+    sc_lookup(rsMezT1a, "SELECT id FROM tipi_documento WHERE LOWER(TRIM(nome)) = LOWER(TRIM('Autorizzazione ANGA Cat.1')) LIMIT 1", 'pigliacelli');
+    $t1a = !empty({rsMezT1a[0][0]}) ? (int){rsMezT1a[0][0]} : 11;
+    sc_lookup(rsMezT1r, "SELECT id FROM tipi_documento WHERE LOWER(TRIM(nome)) = LOWER(TRIM('Ricevuta pagamento ANGA Cat.1')) LIMIT 1", 'pigliacelli');
+    $t1r = !empty({rsMezT1r[0][0]}) ? (int){rsMezT1r[0][0]} : 12;
+    if ($t1a > 0) {
+        $pairs[] = array($t1a, 'Autorizzazione ANGA Cat.1', $fA1, $sA1);
+    }
+    if ($t1r > 0) {
+        $pairs[] = array($t1r, 'Ricevuta pagamento ANGA Cat.1', $fRic1, $sRic1);
+    }
 }
 if ($flag4 === 1) {
     sc_lookup(rsMezT4a, "SELECT id FROM tipi_documento WHERE LOWER(TRIM(nome)) = LOWER(TRIM('Autorizzazione ANGA Cat.4')) LIMIT 1", 'pigliacelli');
@@ -248,6 +277,16 @@ foreach ($pairs as $p) {
             )
         ", 'pigliacelli');
         sc_log_add('MEZ_DOCS', 'INSERT ' . $label . ' file=[' . $fileVal . '] scad=[' . $scadVal . '] stato=2');
+    } elseif ($scadVal !== '') {
+        sc_exec_sql("
+            INSERT INTO documenti (
+                tipo_documento_id, subvettore_id, subvettore_mezzo_id,
+                login, stato_documento_id, file, data_scadenza
+            ) VALUES (
+                $tipoId, $subId, $mezzoId, '$loginSql', 1, NULL, $scadSql
+            )
+        ", 'pigliacelli');
+        sc_log_add('MEZ_DOCS', 'INSERT ' . $label . ' file=[] scad=[' . $scadVal . '] stato=1');
     }
 }
 

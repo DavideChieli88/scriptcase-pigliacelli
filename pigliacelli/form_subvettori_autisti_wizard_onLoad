@@ -79,9 +79,27 @@ if ($isInline) {
     sc_btn_display('back', 'off');
     sc_btn_display('btn_chiudi_modale', 'on');
 } else {
-    // Griglia: Avanti/Indietro ON, Chiudi modale OFF
-    sc_btn_display('next_step_btn_mezzi', 'on');
-    sc_btn_display('back_step_btn_autisti', 'on');
+    $wizComplete = 0;
+    $subNav = isset([subvettoreId]) ? (int)[subvettoreId] : 0;
+    if ($subNav > 0) {
+        sc_lookup(rsWizCompleteNav, "
+            SELECT COALESCE(wizard_complete, 0)
+            FROM subvettori
+            WHERE id = $subNav
+            LIMIT 1
+        ", 'pigliacelli');
+        if (!empty({rsWizCompleteNav[0][0]})) {
+            $wizComplete = (int){rsWizCompleteNav[0][0]};
+        }
+    }
+
+    if ($wizComplete === 0) {
+        sc_btn_display('next_step_btn_mezzi', 'on');
+        sc_btn_display('back_step_btn_autisti', 'on');
+    } else {
+        sc_btn_display('next_step_btn_mezzi', 'off');
+        sc_btn_display('back_step_btn_autisti', 'off');
+    }
     sc_btn_display('btn_chiudi_modale', 'off');
     sc_btn_display('exit', 'off');
 }
@@ -89,6 +107,7 @@ if ($isInline) {
 sc_log_add(
     'WIZ_BTN',
     'autisti onLoad inline=' . ($isInline ? '1' : '0')
+    . ' wizard_complete=' . (isset($wizComplete) ? $wizComplete : '-')
     . ' op=[' . $op . ']'
     . ' cod=[' . $codApl . ']'
     . ' self=[' . (isset($_SERVER['PHP_SELF']) ? $_SERVER['PHP_SELF'] : '') . ']'
@@ -118,25 +137,23 @@ if ($autistaId > 0) {
         ", 'pigliacelli');
         {patente} = !empty({rsOL19a[0][0]}) ? basename(trim((string){rsOL19a[0][0]})) : '';
 
-        $idPrima = 0;
-        sc_lookup(rsOL19id, "
-            SELECT id FROM documenti
-            WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = 19
-            ORDER BY id ASC LIMIT 1
+        $tipoCqc = 0;
+        sc_lookup(rsTipoCqcOL, "
+            SELECT id FROM tipi_documento
+            WHERE LOWER(TRIM(nome)) = LOWER(TRIM('CQC autisti (fronte/retro)'))
+            LIMIT 1
         ", 'pigliacelli');
-        if (!empty({rsOL19id[0][0]})) {
-            $idPrima = (int){rsOL19id[0][0]};
+        $tipoCqc = !empty({rsTipoCqcOL[0][0]}) ? (int){rsTipoCqcOL[0][0]} : 0;
+        {cqc} = '';
+        if ($tipoCqc > 0) {
+            sc_lookup(rsOLCqc, "
+                SELECT file FROM documenti
+                WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = $tipoCqc
+                  AND file IS NOT NULL AND TRIM(file) <> ''
+                ORDER BY id ASC LIMIT 1
+            ", 'pigliacelli');
+            {cqc} = !empty({rsOLCqc[0][0]}) ? basename(trim((string){rsOLCqc[0][0]})) : '';
         }
-
-        sc_lookup(rsOL19b, "
-            SELECT file FROM documenti
-            WHERE subvettore_autista_id = $autistaId
-              AND tipo_documento_id = 19
-              AND id <> $idPrima
-              AND file IS NOT NULL AND TRIM(file) <> ''
-            ORDER BY id ASC LIMIT 1
-        ", 'pigliacelli');
-        {cqc} = !empty({rsOL19b[0][0]}) ? basename(trim((string){rsOL19b[0][0]})) : '';
 
         sc_lookup(rsOL20, "
             SELECT file FROM documenti

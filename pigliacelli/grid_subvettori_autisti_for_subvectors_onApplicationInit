@@ -7,6 +7,10 @@
  * SQL: WHERE subvettore_id = [subvettoreId]
  * Globale: Integer, default 0, NON richiedere a startup.
  *
+ * Link IDE → form_subvettori_autisti:
+ *   subvettoreId = [subvettoreId]
+ *   NON passare subvettoreContrattoId (se lo passi come 'null' → popup Parametri mancanti)
+ *
  * Risolve: GET / REQUEST / [subvettoreId] (settato da app_menu o link).
  */
 

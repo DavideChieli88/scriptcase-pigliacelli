@@ -1,0 +1,36 @@
+/**
+ * form_subvettori_mezzi_for_subvectors → onApplicationInit
+ *
+ * Stesso ruolo di form_subvettori_autisti rispetto a
+ * grid_subvettori_autisti_for_subvectors.
+ *
+ * Doc SC: prima della SQL. Globali OK; niente sc_lookup.
+ *
+ * Setup IDE:
+ *   subvettoreId → Integer, default 0, NON richiedere a startup
+ *   Grid link: subvettoreId = [subvettoreId]
+ */
+
+if (!isset([subvettoreId]) || (string)[subvettoreId] === '' || (int)[subvettoreId] < 0) {
+    [subvettoreId] = 0;
+}
+
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    @session_start();
+}
+
+$subId = 0;
+if (isset($_GET['subvettoreId']) && (int)$_GET['subvettoreId'] > 0) {
+    $subId = (int)$_GET['subvettoreId'];
+} elseif (isset($_REQUEST['subvettoreId']) && (int)$_REQUEST['subvettoreId'] > 0) {
+    $subId = (int)$_REQUEST['subvettoreId'];
+} elseif ((int)[subvettoreId] > 0) {
+    $subId = (int)[subvettoreId];
+} elseif (isset($_SESSION['wizard_subvettore_id']) && (int)$_SESSION['wizard_subvettore_id'] > 0) {
+    $subId = (int)$_SESSION['wizard_subvettore_id'];
+}
+
+[subvettoreId] = $subId > 0 ? $subId : 0;
+if ($subId > 0) {
+    $_SESSION['wizard_subvettore_id'] = $subId;
+}

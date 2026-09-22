@@ -36,6 +36,14 @@ if (!empty({rsLoginAnyI[0][0]})) {
 }
 $loginSql = str_replace("'", "''", $login);
 
+$tipoCqc = 0;
+sc_lookup(rsTipoCqcNI, "
+    SELECT id FROM tipi_documento
+    WHERE LOWER(TRIM(nome)) = LOWER(TRIM('CQC autisti (fronte/retro)'))
+    LIMIT 1
+", 'pigliacelli');
+$tipoCqc = !empty({rsTipoCqcNI[0][0]}) ? (int){rsTipoCqcNI[0][0]} : 0;
+
 if (!function_exists('aut_wiz_file_val')) {
     function aut_wiz_file_val($fieldVal, $hint)
     {
@@ -105,12 +113,12 @@ if ($fIdoneita !== '') {
     $fileSql = str_replace("'", "''", $fIdoneita);
     sc_exec_sql("
         INSERT INTO documenti (tipo_documento_id, subvettore_id, subvettore_autista_id, login, stato_documento_id, file)
-        VALUES (18, $subId, $autistaId, '$loginSql', 1, '$fileSql')
+        VALUES (18, $subId, $autistaId, '$loginSql', 2, '$fileSql')
     ", 'pigliacelli');
     sc_log_add('AUT_DOCS', "INSERT 18 $fileSql");
 }
 
-// --- 19 patente (1ª riga) ---
+// --- 19 patente ---
 if ($fPatente !== '') {
     $fileSql = str_replace("'", "''", $fPatente);
     $scadSql = 'NULL';
@@ -119,13 +127,13 @@ if ($fPatente !== '') {
     }
     sc_exec_sql("
         INSERT INTO documenti (tipo_documento_id, subvettore_id, subvettore_autista_id, login, stato_documento_id, file, data_scadenza)
-        VALUES (19, $subId, $autistaId, '$loginSql', 1, '$fileSql', $scadSql)
+        VALUES (19, $subId, $autistaId, '$loginSql', 2, '$fileSql', $scadSql)
     ", 'pigliacelli');
     sc_log_add('AUT_DOCS', "INSERT 19 patente $fileSql");
 }
 
-// --- 19 cqc (2ª riga) ---
-if ($fCqc !== '') {
+// --- CQC (tipo dedicato) ---
+if ($fCqc !== '' && $tipoCqc > 0) {
     $fileSql = str_replace("'", "''", $fCqc);
     $scadSql = 'NULL';
     if (isset({scadenza_cqc}) && {scadenza_cqc} !== '' && {scadenza_cqc} !== 'null') {
@@ -133,9 +141,9 @@ if ($fCqc !== '') {
     }
     sc_exec_sql("
         INSERT INTO documenti (tipo_documento_id, subvettore_id, subvettore_autista_id, login, stato_documento_id, file, data_scadenza)
-        VALUES (19, $subId, $autistaId, '$loginSql', 1, '$fileSql', $scadSql)
+        VALUES ($tipoCqc, $subId, $autistaId, '$loginSql', 2, '$fileSql', $scadSql)
     ", 'pigliacelli');
-    sc_log_add('AUT_DOCS', "INSERT 19 cqc $fileSql");
+    sc_log_add('AUT_DOCS', "INSERT CQC tipo=$tipoCqc $fileSql");
 }
 
 // --- 20 formazione ---
@@ -143,7 +151,7 @@ if ($fFormaz !== '') {
     $fileSql = str_replace("'", "''", $fFormaz);
     sc_exec_sql("
         INSERT INTO documenti (tipo_documento_id, subvettore_id, subvettore_autista_id, login, stato_documento_id, file)
-        VALUES (20, $subId, $autistaId, '$loginSql', 1, '$fileSql')
+        VALUES (20, $subId, $autistaId, '$loginSql', 2, '$fileSql')
     ", 'pigliacelli');
     sc_log_add('AUT_DOCS', "INSERT 20 $fileSql");
 }
@@ -153,7 +161,7 @@ if ($fDpi !== '') {
     $fileSql = str_replace("'", "''", $fDpi);
     sc_exec_sql("
         INSERT INTO documenti (tipo_documento_id, subvettore_id, subvettore_autista_id, login, stato_documento_id, file)
-        VALUES (21, $subId, $autistaId, '$loginSql', 1, '$fileSql')
+        VALUES (21, $subId, $autistaId, '$loginSql', 2, '$fileSql')
     ", 'pigliacelli');
     sc_log_add('AUT_DOCS', "INSERT 21 $fileSql");
 }
@@ -171,7 +179,7 @@ if ($fPermesso !== '') {
             tipo_documento_id, subvettore_id, subvettore_autista_id,
             login, stato_documento_id, file, in_possesso, data_scadenza
         ) VALUES (
-            30, $subId, $autistaId, '$loginSql', 1, '$fileSql', $flagPoss30, $scad30Sql
+            30, $subId, $autistaId, '$loginSql', 2, '$fileSql', $flagPoss30, $scad30Sql
         )
     ", 'pigliacelli');
     sc_log_add('AUT_DOCS', "INSERT 30 file=$fileSql flag=$flagPoss30");

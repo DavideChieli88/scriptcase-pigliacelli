@@ -1,0 +1,68 @@
+/**
+ * form_subvettori_mezzi_for_subvectors → onBeforeInsert
+ *
+ * Come form_subvettori_autisti_onBeforeInsert: la grid passa [subvettoreId],
+ * qui lo copiamo su {subvettore_id} prima dell'INSERT.
+ *
+ * COMMIT: chiude eventuale tx lasciata da sc_lookup in onValidate
+ * (PDO PHP 8.2 → "There is already an active transaction").
+ */
+
+sc_exec_sql('COMMIT');
+
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    @session_start();
+}
+
+$subId = 0;
+if (isset({subvettore_id}) && (int){subvettore_id} > 0) {
+    $subId = (int){subvettore_id};
+}
+if ($subId <= 0 && isset([subvettoreId]) && (int)[subvettoreId] > 0) {
+    $subId = (int)[subvettoreId];
+}
+if ($subId <= 0 && isset($_GET['subvettoreId']) && (int)$_GET['subvettoreId'] > 0) {
+    $subId = (int)$_GET['subvettoreId'];
+}
+if ($subId <= 0 && isset($_REQUEST['subvettoreId']) && (int)$_REQUEST['subvettoreId'] > 0) {
+    $subId = (int)$_REQUEST['subvettoreId'];
+}
+if ($subId <= 0 && isset($_SESSION['wizard_subvettore_id']) && (int)$_SESSION['wizard_subvettore_id'] > 0) {
+    $subId = (int)$_SESSION['wizard_subvettore_id'];
+}
+if ($subId <= 0) {
+    $usrLogin = trim((string)[usr_login]);
+    if ($usrLogin !== '') {
+        $usrSql = str_replace("'", "''", $usrLogin);
+        sc_lookup(rsMezFsBiSub, "
+            SELECT COALESCE(
+                (SELECT su.subvettore_id
+                 FROM sec_users su
+                 INNER JOIN sec_users_groups sug ON sug.login = su.login
+                 WHERE su.login = '$usrSql'
+                   AND su.active = 'Y'
+                   AND sug.group_id = 2
+                   AND su.subvettore_id > 0
+                 LIMIT 1),
+                (SELECT s.id
+                 FROM subvettori s
+                 WHERE TRIM(s.login_subvettore) = '$usrSql'
+                 LIMIT 1)
+            ) AS sub_id
+        ", 'pigliacelli');
+        if (!empty({rsMezFsBiSub[0][0]})) {
+            $subId = (int){rsMezFsBiSub[0][0]};
+        }
+    }
+}
+
+if ($subId <= 0) {
+    sc_error_message('Subvettore non identificato: impossibile salvare il mezzo.');
+    sc_error_exit();
+}
+
+{subvettore_id} = $subId;
+[subvettoreId] = $subId;
+$_SESSION['wizard_subvettore_id'] = $subId;
+
+sc_log_add('MEZ_FS', 'onBeforeInsert subvettore_id=' . $subId);

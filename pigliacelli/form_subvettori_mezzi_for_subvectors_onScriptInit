@@ -1,0 +1,48 @@
+/**
+ * form_subvettori_mezzi_for_subvectors → onScriptInit
+ *
+ * Recupera subvettoreId (parametro / sessione / login).
+ * NON redirigere a blank_wizard_landing (questa non è la form wizard).
+ */
+
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    @session_start();
+}
+
+if (!isset([subvettoreId]) || (int)[subvettoreId] <= 0) {
+    if (isset($_SESSION['wizard_subvettore_id']) && (int)$_SESSION['wizard_subvettore_id'] > 0) {
+        [subvettoreId] = (int)$_SESSION['wizard_subvettore_id'];
+    }
+}
+
+if (!isset([subvettoreId]) || (int)[subvettoreId] <= 0) {
+    $usrLogin = trim((string)[usr_login]);
+    if ($usrLogin !== '') {
+        $usrSql = str_replace("'", "''", $usrLogin);
+        sc_lookup(rsMezFsResolveSub, "
+            SELECT COALESCE(
+                (SELECT su.subvettore_id
+                 FROM sec_users su
+                 INNER JOIN sec_users_groups sug ON sug.login = su.login
+                 WHERE su.login = '$usrSql'
+                   AND su.active = 'Y'
+                   AND sug.group_id = 2
+                   AND su.subvettore_id > 0
+                 LIMIT 1),
+                (SELECT s.id
+                 FROM subvettori s
+                 WHERE TRIM(s.login_subvettore) = '$usrSql'
+                 LIMIT 1)
+            ) AS sub_id
+        ", 'pigliacelli');
+        if (!empty({rsMezFsResolveSub[0][0]})) {
+            [subvettoreId] = (int){rsMezFsResolveSub[0][0]};
+        }
+    }
+}
+
+if ((int)[subvettoreId] > 0) {
+    $_SESSION['wizard_subvettore_id'] = (int)[subvettoreId];
+}
+
+sc_log_add('MEZ_FS', 'onScriptInit subvettoreId=' . (int)[subvettoreId]);

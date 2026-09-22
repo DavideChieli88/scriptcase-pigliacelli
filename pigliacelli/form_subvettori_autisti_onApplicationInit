@@ -1,15 +1,31 @@
+sc_apl_conf("form_subvettori_autisti", "start", "edit");
+
 /**
  * form_subvettori_autisti → onApplicationInit
  *
+ * Usata da grid_subvettori_autisti_for_subvectors (Nuovo/modifica).
  * Doc SC: prima della SQL. Globali OK; niente sc_lookup.
  *
- * Usata da grid_subvettori_autisti_for_subvectors (edit) e contesti contratto.
- * Onboarding senza contratto: [subvettoreContrattoId] = 'null'.
+ * Popup "Parametri mancanti: subvettoreContrattoId=0 subvettoreId=222":
+ * SC elenca TUTTE le globali IN; quella vuota è contratto=0 (0 = mancante).
  *
- * Setup IDE (obbligatorio):
- *   subvettoreId          → IN, default 0, NON richiedere a startup
- *   subvettoreContrattoId → IN o OUT, OPTIONAL, NON richiedere a startup
- *   (altrimenti "Crea connessioni" prima di qualsiasi evento PHP)
+ * IDE — Application → Global variables:
+ *   subvettoreId          → tipo OUT (non IN), Integer, default 0, Request = NO
+ *   subvettoreContrattoId → tipo OUT (non IN), Integer, default 0, Request = NO
+ *   Se restano IN, il chiamante DEVE passarle e 0/'null' fanno fallire il check.
+ *
+ * IDE — SQL della form: NON usare [subvettoreContrattoId] nel WHERE
+ *   (un WHERE su quella globale la forza a IN obbligatoria).
+ *   Filtro: solo PK, oppure WHERE subvettore_id = [subvettoreId]
+ *
+ * IDE — grid link:
+ *   solo subvettoreId = [subvettoreId]
+ *   togliere subvettoreContrattoId dalla mappa parametri
+ *
+ * Non assegnare [subvettoreContrattoId] = 0 né 'null' (diventa parametro "mancante").
+ * NULL sul campo DB: onBeforeInsert {subvettore_contratto_id} = 'null'
+ *
+ * Firma/magic link: usa [subvettore_contratto_id] (snake_case), non questa globale.
  */
 
 if (!isset([subvettoreId]) || (string)[subvettoreId] === '' || (int)[subvettoreId] < 0) {
@@ -24,7 +40,9 @@ if (isset($_GET['subvettoreId']) && (int)$_GET['subvettoreId'] > 0) {
 } elseif ((int)[subvettoreId] > 0) {
     $subId = (int)[subvettoreId];
 }
-[subvettoreId] = $subId > 0 ? $subId : 0;
+if ($subId > 0) {
+    [subvettoreId] = $subId;
+}
 
 $ctrId = 0;
 if (isset($_GET['subvettoreContrattoId']) && (int)$_GET['subvettoreContrattoId'] > 0) {
@@ -38,9 +56,6 @@ if (isset($_GET['subvettoreContrattoId']) && (int)$_GET['subvettoreContrattoId']
 ) {
     $ctrId = (int)[subvettoreContrattoId];
 }
-
 if ($ctrId > 0) {
     [subvettoreContrattoId] = $ctrId;
-} else {
-    [subvettoreContrattoId] = 'null';
 }
