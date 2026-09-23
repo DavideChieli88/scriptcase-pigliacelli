@@ -1,0 +1,113 @@
+/**
+ * form_subvettori_autisti_admin → onLoad
+ *
+ * Solo admin/operatori. Non è lo step wizard.
+ * IDE: cancella i pulsanti next_step_btn_mezzi e back_step_btn_autisti (toolbar).
+ * onApplicationInit vuoto. SQL: niente WHERE subvettore_id = [subvettoreId].
+ *
+ * Precarica i Document virtuali se id > 0.
+ * Show/hide permesso_soggiorno dal flag.
+ *
+ * Radio permesso_soggiorno_flag: valore iniziale 0, Reload OFF, Ajax onClick.
+ */
+
+$autistaId = isset({id}) ? (int){id} : 0;
+
+if ($autistaId > 0) {
+    $patNow = trim((string){patente});
+    if ($patNow === '') {
+        sc_lookup(rsOL18, "
+            SELECT file FROM documenti
+            WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = 18
+              AND file IS NOT NULL AND TRIM(file) <> ''
+            ORDER BY id ASC LIMIT 1
+        ", 'pigliacelli');
+        {idoneita_sanitaria} = !empty({rsOL18[0][0]}) ? basename(trim((string){rsOL18[0][0]})) : '';
+
+        sc_lookup(rsOL19a, "
+            SELECT file FROM documenti
+            WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = 19
+              AND file IS NOT NULL AND TRIM(file) <> ''
+            ORDER BY id ASC LIMIT 1
+        ", 'pigliacelli');
+        {patente} = !empty({rsOL19a[0][0]}) ? basename(trim((string){rsOL19a[0][0]})) : '';
+
+        $tipoCqc = 0;
+        sc_lookup(rsTipoCqcOL, "
+            SELECT id FROM tipi_documento
+            WHERE LOWER(TRIM(nome)) = LOWER(TRIM('CQC autisti (fronte/retro)'))
+            LIMIT 1
+        ", 'pigliacelli');
+        $tipoCqc = !empty({rsTipoCqcOL[0][0]}) ? (int){rsTipoCqcOL[0][0]} : 0;
+        {cqc} = '';
+        if ($tipoCqc > 0) {
+            sc_lookup(rsOLCqc, "
+                SELECT file FROM documenti
+                WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = $tipoCqc
+                  AND file IS NOT NULL AND TRIM(file) <> ''
+                ORDER BY id ASC LIMIT 1
+            ", 'pigliacelli');
+            {cqc} = !empty({rsOLCqc[0][0]}) ? basename(trim((string){rsOLCqc[0][0]})) : '';
+        }
+
+        sc_lookup(rsOL20, "
+            SELECT file FROM documenti
+            WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = 20
+              AND file IS NOT NULL AND TRIM(file) <> ''
+            ORDER BY id ASC LIMIT 1
+        ", 'pigliacelli');
+        {formazione_sicurezza} = !empty({rsOL20[0][0]}) ? basename(trim((string){rsOL20[0][0]})) : '';
+
+        sc_lookup(rsOL21, "
+            SELECT file FROM documenti
+            WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = 21
+              AND file IS NOT NULL AND TRIM(file) <> ''
+            ORDER BY id ASC LIMIT 1
+        ", 'pigliacelli');
+        {dpi_iii_categoria} = !empty({rsOL21[0][0]}) ? basename(trim((string){rsOL21[0][0]})) : '';
+
+        sc_lookup(rsOL30, "
+            SELECT file, in_possesso, data_scadenza FROM documenti
+            WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = 30
+            ORDER BY id ASC LIMIT 1
+        ", 'pigliacelli');
+
+        $file30 = '';
+        if (!empty({rsOL30[0][0]})) {
+            $file30 = basename(trim((string){rsOL30[0][0]}));
+        }
+        {permesso_soggiorno} = $file30;
+
+        $inPoss30 = 0;
+        if (isset({rsOL30[0][1]}) && {rsOL30[0][1]} !== '' && {rsOL30[0][1]} !== null && (string){rsOL30[0][1]} !== 'null') {
+            $inPoss30 = ((int){rsOL30[0][1]} === 1) ? 1 : 0;
+        }
+        if ($inPoss30 === 1 || $file30 !== '') {
+            {permesso_soggiorno_flag} = 1;
+        } else {
+            {permesso_soggiorno_flag} = 0;
+        }
+
+        $scad30 = isset({scadenza_permesso_soggiorno}) ? trim((string){scadenza_permesso_soggiorno}) : '';
+        if (($scad30 === '' || $scad30 === 'null') && !empty({rsOL30[0][2]})) {
+            {scadenza_permesso_soggiorno} = trim((string){rsOL30[0][2]});
+        }
+    }
+}
+
+sc_field_display({permesso_soggiorno_flag}, 'on');
+
+$flagPermesso = isset({permesso_soggiorno_flag}) ? {permesso_soggiorno_flag} : 0;
+if ($flagPermesso === '' || $flagPermesso === null || $flagPermesso === 'undefined' || $flagPermesso === 'null') {
+    $flagPermesso = 0;
+}
+$flagPermesso = ((int)$flagPermesso === 1) ? 1 : 0;
+{permesso_soggiorno_flag} = $flagPermesso;
+
+if ($flagPermesso === 1) {
+    sc_field_display({permesso_soggiorno}, 'on');
+    sc_field_display({scadenza_permesso_soggiorno}, 'on');
+} else {
+    sc_field_display({permesso_soggiorno}, 'off');
+    sc_field_display({scadenza_permesso_soggiorno}, 'off');
+}

@@ -110,12 +110,14 @@ if (!function_exists('gsc_portal_url')) {
     }
 }
 
-// Stesso logo/layout delle altre mail Pigliacelli (form_subvettori / batch)
-if (!function_exists('gsc_mail_logo_src')) {
-    function gsc_mail_logo_src()
+// Come form_documenti / magic_link / docs_multi:
+// 1) PNG da disco → data:image/png;base64
+// 2) se manca il file → sec_settings.mail_base_url + /_lib/img/...
+if (!function_exists('gsc_mail_logo_read_embed')) {
+    function gsc_mail_logo_read_embed($anchorFile = null)
     {
         $rel = '_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png';
-        $dir = realpath(dirname(__FILE__));
+        $dir = realpath(dirname($anchorFile ?: __FILE__));
         for ($i = 0; $i < 12 && $dir; $i++) {
             $try = $dir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel);
             if (is_readable($try)) {
@@ -129,6 +131,17 @@ if (!function_exists('gsc_mail_logo_src')) {
                 break;
             }
             $dir = $p;
+        }
+        return '';
+    }
+}
+
+if (!function_exists('gsc_mail_logo_src')) {
+    function gsc_mail_logo_src()
+    {
+        $embed = gsc_mail_logo_read_embed(__FILE__);
+        if ($embed !== '') {
+            return $embed;
         }
         $base = rtrim(gsc_mail_setting('mail_base_url', ''), '/');
         if ($base !== '' && preg_match('#^https?://#i', $base) === 1) {

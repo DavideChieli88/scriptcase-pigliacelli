@@ -8,8 +8,8 @@
 
 // --- subvettore_id ---
 $subId = 0;
-if (isset({subvettore_id}) && (int){subvettore_id} > 0) {
-    $subId = (int){subvettore_id};
+if (isset({ subvettore_id }) && (int){ subvettore_id } > 0) {
+    $subId = (int){ subvettore_id };
 }
 if ($subId <= 0 && isset([subvettoreId]) && (int)[subvettoreId] > 0) {
     $subId = (int)[subvettoreId];
@@ -20,7 +20,7 @@ if ($subId <= 0) {
         $usrSql = str_replace("'", "''", $usrLogin);
         sc_lookup(rsMezSubOnLoad, "
             SELECT COALESCE(
-                (SELECT su.subvettore_id
+            (SELECT su.subvettore_id
                  FROM sec_users su
                  INNER JOIN sec_users_groups sug ON sug.login = su.login
                  WHERE su.login = '$usrSql'
@@ -28,29 +28,29 @@ if ($subId <= 0) {
                    AND sug.group_id = 2
                    AND su.subvettore_id > 0
                  LIMIT 1),
-                (SELECT s.id
+            (SELECT s.id
                  FROM subvettori s
                  WHERE TRIM(s.login_subvettore) = '$usrSql'
                  LIMIT 1)
             ) AS sub_id
         ", 'pigliacelli');
-        if (!empty({rsMezSubOnLoad[0][0]})) {
-            $subId = (int){rsMezSubOnLoad[0][0]};
+        if (!empty({ rsMezSubOnLoad[0][0] })) {
+            $subId = (int){ rsMezSubOnLoad[0][0] };
         }
     }
 }
 if ($subId > 0) {
-    {subvettore_id} = $subId;
+    { subvettore_id } = $subId;
     [subvettoreId] = $subId;
 }
 
 // --- inline / tasti ---
 $op = '';
-if (isset($this->nmgp_opcao)) {
-    $op = strtolower(trim((string)$this->nmgp_opcao));
-} elseif (isset($_POST['nmgp_opcao'])) {
+if (isset($this -> nmgp_opcao)) {
+    $op = strtolower(trim((string)$this -> nmgp_opcao));
+} elseif(isset($_POST['nmgp_opcao'])) {
     $op = strtolower(trim((string)$_POST['nmgp_opcao']));
-} elseif (isset($_GET['nmgp_opcao'])) {
+} elseif(isset($_GET['nmgp_opcao'])) {
     $op = strtolower(trim((string)$_GET['nmgp_opcao']));
 }
 
@@ -81,7 +81,7 @@ if ($isInline) {
     }
     if ($subNav > 0) {
         sc_lookup(rsMezWC, "SELECT COALESCE(wizard_complete, 0) FROM subvettori WHERE id = $subNav LIMIT 1", 'pigliacelli');
-        $wizComplete = !empty({rsMezWC[0][0]}) ? (int){rsMezWC[0][0]} : 0;
+        $wizComplete = !empty({ rsMezWC[0][0] }) ? (int){ rsMezWC[0][0] } : 0;
     }
     if ($wizComplete === 0) {
         sc_btn_display('next_step_btn_docs', 'on');
@@ -94,32 +94,32 @@ if ($isInline) {
     sc_btn_display('btn_chiudi_modale_2', 'off');
 }
 
-$flag1 = ((int){has_cat_trasp_rifiuti_1} === 1) ? 1 : 0;
-$flag4 = ((int){has_cat_trasp_rifiuti_4} === 1) ? 1 : 0;
-$flag5 = ((int){has_cat_trasp_rifiuti_5} === 1) ? 1 : 0;
+$flag1 = ((int){ has_cat_trasp_rifiuti_1 } === 1) ?1 : 0;
+$flag4 = ((int){ has_cat_trasp_rifiuti_4 } === 1) ?1 : 0;
+$flag5 = ((int){ has_cat_trasp_rifiuti_5 } === 1) ?1 : 0;
 
 sc_log_add(
     'MEZ_DISP',
-    'onLoad inline=' . ($isInline ? '1' : '0')
-    . ' wizard_complete=' . (isset($wizComplete) ? $wizComplete : '-')
-    . ' op=[' . $op . ']'
-    . ' flag=' . $flag1 . $flag4 . $flag5
-    . ' id=' . (isset({id}) ? (int){id} : 0)
+    'onLoad inline='. ($isInline ? '1' : '0')
+        . ' wizard_complete='. (isset($wizComplete) ? $wizComplete : '-')
+    . ' op=['.$op. ']'
+    . ' flag='.$flag1.$flag4.$flag5
+    . ' id='. (isset({ id }) ? (int){ id } : 0)
 );
 
-$mezzoId = isset({id}) ? (int){id} : 0;
+$mezzoId = isset({ id }) ? (int){ id } : 0;
 if ($mezzoId > 0) {
-    if (trim((string){carta_circolazione}) === '') {
+    if (trim((string){ carta_circolazione }) === '') {
         sc_lookup(rsMezDoc22, "
             SELECT file, data_scadenza FROM documenti
             WHERE subvettore_mezzo_id = $mezzoId AND tipo_documento_id = 22
               AND file IS NOT NULL AND TRIM(file) <> ''
             ORDER BY id ASC LIMIT 1
         ", 'pigliacelli');
-        if (!empty({rsMezDoc22[0][0]})) {
-            {carta_circolazione} = basename(trim((string){rsMezDoc22[0][0]}));
-            if (!empty({rsMezDoc22[0][1]}) && (trim((string){scadenza_carta_circolazione}) === '' || {scadenza_carta_circolazione} === 'null')) {
-                {scadenza_carta_circolazione} = (string){rsMezDoc22[0][1]};
+        if (!empty({ rsMezDoc22[0][0] })) {
+            { carta_circolazione } = basename(trim((string){ rsMezDoc22[0][0] }));
+            if (!empty({ rsMezDoc22[0][1] }) && (trim((string){ scadenza_carta_circolazione }) === '' || { scadenza_carta_circolazione } === 'null')) {
+                { scadenza_carta_circolazione } = (string){ rsMezDoc22[0][1] };
             }
         }
     }
@@ -129,136 +129,136 @@ if ($mezzoId > 0) {
         WHERE mezzo_id = $mezzoId AND autista_id > 0
         ORDER BY id ASC LIMIT 1
     ", 'pigliacelli');
-    if (!empty({rsMezAutOL[0][0]}) && (!isset({autista_id}) || (int){autista_id} <= 0)) {
-        {autista_id} = (int){rsMezAutOL[0][0]};
+    if (!empty({ rsMezAutOL[0][0] }) && (!isset({ autista_id }) || (int){ autista_id } <= 0)) {
+        { autista_id } = (int){ rsMezAutOL[0][0] };
     }
 
     if ($flag1 === 1) {
         sc_lookup(rsMezT11, "SELECT id FROM tipi_documento WHERE LOWER(TRIM(nome)) = LOWER(TRIM('Autorizzazione ANGA Cat.1')) LIMIT 1", 'pigliacelli');
-        $t11 = !empty({rsMezT11[0][0]}) ? (int){rsMezT11[0][0]} : 11;
+        $t11 = !empty({ rsMezT11[0][0] }) ? (int){ rsMezT11[0][0] } : 11;
         if ($t11 > 0) {
             sc_lookup(rsMezD11, "
                 SELECT file, data_scadenza FROM documenti
                 WHERE subvettore_mezzo_id = $mezzoId AND tipo_documento_id = $t11
                 ORDER BY id ASC LIMIT 1
             ", 'pigliacelli');
-            if (!empty({rsMezD11[0][0]}) && trim((string){anga_cat_1}) === '') {
-                {anga_cat_1} = basename(trim((string){rsMezD11[0][0]}));
+            if (!empty({ rsMezD11[0][0] }) && trim((string){ anga_cat_1 }) === '') {
+                { anga_cat_1 } = basename(trim((string){ rsMezD11[0][0] }));
             }
-            if (!empty({rsMezD11[0][1]}) && (trim((string){scadenza_anga_cat_1}) === '' || {scadenza_anga_cat_1} === 'null')) {
-                {scadenza_anga_cat_1} = (string){rsMezD11[0][1]};
+            if (!empty({ rsMezD11[0][1] }) && (trim((string){ scadenza_anga_cat_1 }) === '' || { scadenza_anga_cat_1 } === 'null')) {
+                { scadenza_anga_cat_1 } = (string){ rsMezD11[0][1] };
             }
         }
         sc_lookup(rsMezT12, "SELECT id FROM tipi_documento WHERE LOWER(TRIM(nome)) = LOWER(TRIM('Ricevuta pagamento ANGA Cat.1')) LIMIT 1", 'pigliacelli');
-        $t12 = !empty({rsMezT12[0][0]}) ? (int){rsMezT12[0][0]} : 12;
+        $t12 = !empty({ rsMezT12[0][0] }) ? (int){ rsMezT12[0][0] } : 12;
         if ($t12 > 0) {
             sc_lookup(rsMezD12, "
                 SELECT file, data_scadenza FROM documenti
                 WHERE subvettore_mezzo_id = $mezzoId AND tipo_documento_id = $t12
                 ORDER BY id ASC LIMIT 1
             ", 'pigliacelli');
-            if (!empty({rsMezD12[0][0]}) && trim((string){ricevuta_anga_cat_1}) === '') {
-                {ricevuta_anga_cat_1} = basename(trim((string){rsMezD12[0][0]}));
+            if (!empty({ rsMezD12[0][0] }) && trim((string){ ricevuta_anga_cat_1 }) === '') {
+                { ricevuta_anga_cat_1 } = basename(trim((string){ rsMezD12[0][0] }));
             }
-            if (!empty({rsMezD12[0][1]}) && (trim((string){scadenza_ricevuta_anga_cat_1}) === '' || {scadenza_ricevuta_anga_cat_1} === 'null')) {
-                {scadenza_ricevuta_anga_cat_1} = (string){rsMezD12[0][1]};
+            if (!empty({ rsMezD12[0][1] }) && (trim((string){ scadenza_ricevuta_anga_cat_1 }) === '' || { scadenza_ricevuta_anga_cat_1 } === 'null')) {
+                { scadenza_ricevuta_anga_cat_1 } = (string){ rsMezD12[0][1] };
             }
         }
     }
 
     if ($flag4 === 1) {
         sc_lookup(rsMezT41, "SELECT id FROM tipi_documento WHERE LOWER(TRIM(nome)) = LOWER(TRIM('Autorizzazione ANGA Cat.4')) LIMIT 1", 'pigliacelli');
-        $t41 = !empty({rsMezT41[0][0]}) ? (int){rsMezT41[0][0]} : 0;
+        $t41 = !empty({ rsMezT41[0][0] }) ? (int){ rsMezT41[0][0] } : 0;
         if ($t41 > 0) {
             sc_lookup(rsMezD41, "
                 SELECT file, data_scadenza FROM documenti
                 WHERE subvettore_mezzo_id = $mezzoId AND tipo_documento_id = $t41
                 ORDER BY id ASC LIMIT 1
             ", 'pigliacelli');
-            if (!empty({rsMezD41[0][0]}) && trim((string){anga_cat_4}) === '') {
-                {anga_cat_4} = basename(trim((string){rsMezD41[0][0]}));
+            if (!empty({ rsMezD41[0][0] }) && trim((string){ anga_cat_4 }) === '') {
+                { anga_cat_4 } = basename(trim((string){ rsMezD41[0][0] }));
             }
-            if (!empty({rsMezD41[0][1]}) && (trim((string){scadenza_anga_cat_4}) === '' || {scadenza_anga_cat_4} === 'null')) {
-                {scadenza_anga_cat_4} = (string){rsMezD41[0][1]};
+            if (!empty({ rsMezD41[0][1] }) && (trim((string){ scadenza_anga_cat_4 }) === '' || { scadenza_anga_cat_4 } === 'null')) {
+                { scadenza_anga_cat_4 } = (string){ rsMezD41[0][1] };
             }
         }
         sc_lookup(rsMezT42, "SELECT id FROM tipi_documento WHERE LOWER(TRIM(nome)) = LOWER(TRIM('Ricevuta pagamento ANGA Cat.4')) LIMIT 1", 'pigliacelli');
-        $t42 = !empty({rsMezT42[0][0]}) ? (int){rsMezT42[0][0]} : 0;
+        $t42 = !empty({ rsMezT42[0][0] }) ? (int){ rsMezT42[0][0] } : 0;
         if ($t42 > 0) {
             sc_lookup(rsMezD42, "
                 SELECT file, data_scadenza FROM documenti
                 WHERE subvettore_mezzo_id = $mezzoId AND tipo_documento_id = $t42
                 ORDER BY id ASC LIMIT 1
             ", 'pigliacelli');
-            if (!empty({rsMezD42[0][0]}) && trim((string){ricevuta_anga_cat_4}) === '') {
-                {ricevuta_anga_cat_4} = basename(trim((string){rsMezD42[0][0]}));
+            if (!empty({ rsMezD42[0][0] }) && trim((string){ ricevuta_anga_cat_4 }) === '') {
+                { ricevuta_anga_cat_4 } = basename(trim((string){ rsMezD42[0][0] }));
             }
-            if (!empty({rsMezD42[0][1]}) && (trim((string){scadenza_ricevuta_anga_cat_4}) === '' || {scadenza_ricevuta_anga_cat_4} === 'null')) {
-                {scadenza_ricevuta_anga_cat_4} = (string){rsMezD42[0][1]};
+            if (!empty({ rsMezD42[0][1] }) && (trim((string){ scadenza_ricevuta_anga_cat_4 }) === '' || { scadenza_ricevuta_anga_cat_4 } === 'null')) {
+                { scadenza_ricevuta_anga_cat_4 } = (string){ rsMezD42[0][1] };
             }
         }
     }
 
     if ($flag5 === 1) {
         sc_lookup(rsMezT51, "SELECT id FROM tipi_documento WHERE LOWER(TRIM(nome)) = LOWER(TRIM('Autorizzazione ANGA Cat.5')) LIMIT 1", 'pigliacelli');
-        $t51 = !empty({rsMezT51[0][0]}) ? (int){rsMezT51[0][0]} : 0;
+        $t51 = !empty({ rsMezT51[0][0] }) ? (int){ rsMezT51[0][0] } : 0;
         if ($t51 > 0) {
             sc_lookup(rsMezD51, "
                 SELECT file, data_scadenza FROM documenti
                 WHERE subvettore_mezzo_id = $mezzoId AND tipo_documento_id = $t51
                 ORDER BY id ASC LIMIT 1
             ", 'pigliacelli');
-            if (!empty({rsMezD51[0][0]}) && trim((string){anga_cat_5}) === '') {
-                {anga_cat_5} = basename(trim((string){rsMezD51[0][0]}));
+            if (!empty({ rsMezD51[0][0] }) && trim((string){ anga_cat_5 }) === '') {
+                { anga_cat_5 } = basename(trim((string){ rsMezD51[0][0] }));
             }
-            if (!empty({rsMezD51[0][1]}) && (trim((string){scadenza_anga_cat_5}) === '' || {scadenza_anga_cat_5} === 'null')) {
-                {scadenza_anga_cat_5} = (string){rsMezD51[0][1]};
+            if (!empty({ rsMezD51[0][1] }) && (trim((string){ scadenza_anga_cat_5 }) === '' || { scadenza_anga_cat_5 } === 'null')) {
+                { scadenza_anga_cat_5 } = (string){ rsMezD51[0][1] };
             }
         }
         sc_lookup(rsMezT52, "SELECT id FROM tipi_documento WHERE LOWER(TRIM(nome)) = LOWER(TRIM('Ricevuta pagamento ANGA Cat.5')) LIMIT 1", 'pigliacelli');
-        $t52 = !empty({rsMezT52[0][0]}) ? (int){rsMezT52[0][0]} : 0;
+        $t52 = !empty({ rsMezT52[0][0] }) ? (int){ rsMezT52[0][0] } : 0;
         if ($t52 > 0) {
             sc_lookup(rsMezD52, "
                 SELECT file, data_scadenza FROM documenti
                 WHERE subvettore_mezzo_id = $mezzoId AND tipo_documento_id = $t52
                 ORDER BY id ASC LIMIT 1
             ", 'pigliacelli');
-            if (!empty({rsMezD52[0][0]}) && trim((string){ricevuta_anga_cat_5}) === '') {
-                {ricevuta_anga_cat_5} = basename(trim((string){rsMezD52[0][0]}));
+            if (!empty({ rsMezD52[0][0] }) && trim((string){ ricevuta_anga_cat_5 }) === '') {
+                { ricevuta_anga_cat_5 } = basename(trim((string){ rsMezD52[0][0] }));
             }
-            if (!empty({rsMezD52[0][1]}) && (trim((string){scadenza_ricevuta_anga_cat_5}) === '' || {scadenza_ricevuta_anga_cat_5} === 'null')) {
-                {scadenza_ricevuta_anga_cat_5} = (string){rsMezD52[0][1]};
+            if (!empty({ rsMezD52[0][1] }) && (trim((string){ scadenza_ricevuta_anga_cat_5 }) === '' || { scadenza_ricevuta_anga_cat_5 } === 'null')) {
+                { scadenza_ricevuta_anga_cat_5 } = (string){ rsMezD52[0][1] };
             }
         }
     }
 
     if ($flag1 === 1 || $flag4 === 1 || $flag5 === 1) {
         sc_lookup(rsMezT13, "SELECT id FROM tipi_documento WHERE LOWER(TRIM(nome)) IN (LOWER(TRIM('Iscrizione RENTRI')), LOWER(TRIM('Iscrizione RENTRI Cat.1'))) ORDER BY id ASC LIMIT 1", 'pigliacelli');
-        $t13 = !empty({rsMezT13[0][0]}) ? (int){rsMezT13[0][0]} : 13;
-        if (trim((string){rentri_iscrizione}) === '' && $t13 > 0) {
+        $t13 = !empty({ rsMezT13[0][0] }) ? (int){ rsMezT13[0][0] } : 13;
+        if (trim((string){ rentri_iscrizione }) === '' && $t13 > 0) {
             sc_lookup(rsMezD13, "
                 SELECT file FROM documenti
                 WHERE subvettore_mezzo_id = $mezzoId AND tipo_documento_id = $t13
                   AND file IS NOT NULL AND TRIM(file) <> ''
                 ORDER BY id ASC LIMIT 1
             ", 'pigliacelli');
-            if (!empty({rsMezD13[0][0]})) {
-                {rentri_iscrizione} = basename(trim((string){rsMezD13[0][0]}));
+            if (!empty({ rsMezD13[0][0] })) {
+                { rentri_iscrizione } = basename(trim((string){ rsMezD13[0][0] }));
             }
         }
         sc_lookup(rsMezT14, "SELECT id FROM tipi_documento WHERE LOWER(TRIM(nome)) IN (LOWER(TRIM('Ricevuta pagamento RENTRI')), LOWER(TRIM('Ricevuta pagamento RENTRI Cat.1'))) ORDER BY id ASC LIMIT 1", 'pigliacelli');
-        $t14 = !empty({rsMezT14[0][0]}) ? (int){rsMezT14[0][0]} : 14;
-        if (trim((string){ricevuta_rentri}) === '' && $t14 > 0) {
+        $t14 = !empty({ rsMezT14[0][0] }) ? (int){ rsMezT14[0][0] } : 14;
+        if (trim((string){ ricevuta_rentri }) === '' && $t14 > 0) {
             sc_lookup(rsMezD14, "
                 SELECT file, data_scadenza FROM documenti
                 WHERE subvettore_mezzo_id = $mezzoId AND tipo_documento_id = $t14
                   AND file IS NOT NULL AND TRIM(file) <> ''
                 ORDER BY id ASC LIMIT 1
             ", 'pigliacelli');
-            if (!empty({rsMezD14[0][0]})) {
-                {ricevuta_rentri} = basename(trim((string){rsMezD14[0][0]}));
-                if (!empty({rsMezD14[0][1]})) {
-                    {scadenza_ricevuta_rentri} = (string){rsMezD14[0][1]};
+            if (!empty({ rsMezD14[0][0] })) {
+                { ricevuta_rentri } = basename(trim((string){ rsMezD14[0][0] }));
+                if (!empty({ rsMezD14[0][1] })) {
+                    { scadenza_ricevuta_rentri } = (string){ rsMezD14[0][1] };
                 }
             }
         }
@@ -266,47 +266,47 @@ if ($mezzoId > 0) {
 }
 
 if ($flag1 === 1) {
-    sc_field_display({anga_cat_1}, 'on');
-    sc_field_display({scadenza_anga_cat_1}, 'on');
-    sc_field_display({ricevuta_anga_cat_1}, 'on');
-    sc_field_display({scadenza_ricevuta_anga_cat_1}, 'on');
+    sc_field_display({ anga_cat_1 }, 'on');
+    sc_field_display({ scadenza_anga_cat_1 }, 'on');
+    sc_field_display({ ricevuta_anga_cat_1 }, 'on');
+    sc_field_display({ scadenza_ricevuta_anga_cat_1 }, 'on');
 } else {
-    sc_field_display({anga_cat_1}, 'off');
-    sc_field_display({scadenza_anga_cat_1}, 'off');
-    sc_field_display({ricevuta_anga_cat_1}, 'off');
-    sc_field_display({scadenza_ricevuta_anga_cat_1}, 'off');
+    sc_field_display({ anga_cat_1 }, 'off');
+    sc_field_display({ scadenza_anga_cat_1 }, 'off');
+    sc_field_display({ ricevuta_anga_cat_1 }, 'off');
+    sc_field_display({ scadenza_ricevuta_anga_cat_1 }, 'off');
 }
 
 if ($flag4 === 1) {
-    sc_field_display({anga_cat_4}, 'on');
-    sc_field_display({scadenza_anga_cat_4}, 'on');
-    sc_field_display({ricevuta_anga_cat_4}, 'on');
-    sc_field_display({scadenza_ricevuta_anga_cat_4}, 'on');
+    sc_field_display({ anga_cat_4 }, 'on');
+    sc_field_display({ scadenza_anga_cat_4 }, 'on');
+    sc_field_display({ ricevuta_anga_cat_4 }, 'on');
+    sc_field_display({ scadenza_ricevuta_anga_cat_4 }, 'on');
 } else {
-    sc_field_display({anga_cat_4}, 'off');
-    sc_field_display({scadenza_anga_cat_4}, 'off');
-    sc_field_display({ricevuta_anga_cat_4}, 'off');
-    sc_field_display({scadenza_ricevuta_anga_cat_4}, 'off');
+    sc_field_display({ anga_cat_4 }, 'off');
+    sc_field_display({ scadenza_anga_cat_4 }, 'off');
+    sc_field_display({ ricevuta_anga_cat_4 }, 'off');
+    sc_field_display({ scadenza_ricevuta_anga_cat_4 }, 'off');
 }
 
 if ($flag5 === 1) {
-    sc_field_display({anga_cat_5}, 'on');
-    sc_field_display({scadenza_anga_cat_5}, 'on');
-    sc_field_display({ricevuta_anga_cat_5}, 'on');
-    sc_field_display({scadenza_ricevuta_anga_cat_5}, 'on');
+    sc_field_display({ anga_cat_5 }, 'on');
+    sc_field_display({ scadenza_anga_cat_5 }, 'on');
+    sc_field_display({ ricevuta_anga_cat_5 }, 'on');
+    sc_field_display({ scadenza_ricevuta_anga_cat_5 }, 'on');
 } else {
-    sc_field_display({anga_cat_5}, 'off');
-    sc_field_display({scadenza_anga_cat_5}, 'off');
-    sc_field_display({ricevuta_anga_cat_5}, 'off');
-    sc_field_display({scadenza_ricevuta_anga_cat_5}, 'off');
+    sc_field_display({ anga_cat_5 }, 'off');
+    sc_field_display({ scadenza_anga_cat_5 }, 'off');
+    sc_field_display({ ricevuta_anga_cat_5 }, 'off');
+    sc_field_display({ scadenza_ricevuta_anga_cat_5 }, 'off');
 }
 
 if ($flag1 === 1 || $flag4 === 1 || $flag5 === 1) {
-    sc_field_display({rentri_iscrizione}, 'on');
-    sc_field_display({ricevuta_rentri}, 'on');
-    sc_field_display({scadenza_ricevuta_rentri}, 'on');
+    sc_field_display({ rentri_iscrizione }, 'on');
+    sc_field_display({ ricevuta_rentri }, 'on');
+    sc_field_display({ scadenza_ricevuta_rentri }, 'on');
 } else {
-    sc_field_display({rentri_iscrizione}, 'off');
-    sc_field_display({ricevuta_rentri}, 'off');
-    sc_field_display({scadenza_ricevuta_rentri}, 'off');
+    sc_field_display({ rentri_iscrizione }, 'off');
+    sc_field_display({ ricevuta_rentri }, 'off');
+    sc_field_display({ scadenza_ricevuta_rentri }, 'off');
 }
