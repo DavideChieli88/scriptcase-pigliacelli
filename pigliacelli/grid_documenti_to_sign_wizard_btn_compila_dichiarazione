@@ -1,0 +1,110 @@
+/**
+ * grid_documenti_to_sign_wizard → Action Bar compila_dichiarazione_btn (Ajax)
+ *
+ * Solo sulla riga dichiarazioni (onRecord lo nasconde sulle altre).
+ * Crea la bozza dell'anno se manca e apre form_subvettori_dichiarazioni in modale.
+ *
+ * Setup IDE:
+ * - Action Bar, tipo PHP Ajax, Name: compila_dichiarazione_btn
+ * - Label: Compila dichiarazione
+ * - Form: WHERE id = [dichiarazioneId]
+ *   Globali sulla form (non sulla griglia): dichiarazioneId, subvettoreId
+ *   Integer OUT, non IN. onApplicationInit legge GET, poi la sessione.
+ *
+ * Macro SC: niente spazi dentro le graffe.
+ */
+
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    @session_start();
+}
+
+$subId = 0;
+$usrLogin = trim((string)[usr_login]);
+if ($usrLogin !== '' && strcasecmp($usrLogin, 'Guest') !== 0) {
+    $loginSql = str_replace("'", "''", $usrLogin);
+    sc_lookup(rsCompSub, "
+        SELECT COALESCE(su.subvettore_id, 0)
+        FROM sec_users su
+        INNER JOIN sec_users_groups sug
+            ON sug.login = su.login
+           AND sug.group_id = 2
+        WHERE su.login = '$loginSql'
+        LIMIT 1
+    ", 'pigliacelli');
+    $subId = !empty({rsCompSub[0][0]}) ? (int){rsCompSub[0][0]} : 0;
+}
+if ($subId <= 0 && !empty($_SESSION['wizard_subvettore_id'])) {
+    $subId = (int)$_SESSION['wizard_subvettore_id'];
+}
+if ($subId <= 0 && isset({d.subvettore_id}) && (int){d.subvettore_id} > 0) {
+    $subId = (int){d.subvettore_id};
+}
+
+$documentoId = 0;
+if (isset({d.id}) && (int){d.id} > 0) {
+    $documentoId = (int){d.id};
+}
+
+$tipoNome = '';
+if ($documentoId > 0 && $subId > 0) {
+    sc_lookup(rsCompTipo, "
+        SELECT COALESCE(td.nome, '')
+        FROM documenti d
+        INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+        WHERE d.id = $documentoId
+          AND d.subvettore_id = $subId
+          AND COALESCE(td.is_readonly, 0) = 1
+        LIMIT 1
+    ", 'pigliacelli');
+    if (!empty({rsCompTipo[0][0]})) {
+        $tipoNome = trim((string){rsCompTipo[0][0]});
+    } else {
+        $documentoId = 0;
+    }
+}
+
+if ($documentoId <= 0 || $subId <= 0) {
+    sc_ajax_message('Documento non identificato. Ricaricare lo step 5 e riprovare.');
+    sc_error_exit();
+}
+if (stripos($tipoNome, 'dichiaraz') === false) {
+    sc_ajax_message('La compilazione vale solo per le dichiarazioni.');
+    sc_error_exit();
+}
+
+$anno = (int)date('Y');
+sc_lookup(rsCompDic, "
+    SELECT id
+    FROM subvettori_dichiarazioni
+    WHERE subvettore_id = $subId
+      AND anno = $anno
+    LIMIT 1
+", 'pigliacelli');
+
+$dicId = !empty({rsCompDic[0][0]}) ? (int){rsCompDic[0][0]} : 0;
+if ($dicId <= 0) {
+    sc_exec_sql("
+        INSERT INTO subvettori_dichiarazioni (subvettore_id, anno, stato)
+        VALUES ($subId, $anno, 'bozza')
+    ", 'pigliacelli');
+    sc_lookup(rsCompDicNew, "
+        SELECT id
+        FROM subvettori_dichiarazioni
+        WHERE subvettore_id = $subId
+          AND anno = $anno
+        LIMIT 1
+    ", 'pigliacelli');
+    $dicId = !empty({rsCompDicNew[0][0]}) ? (int){rsCompDicNew[0][0]} : 0;
+}
+
+if ($dicId <= 0) {
+    sc_ajax_message('Impossibile aprire la dichiarazione di quest\'anno.');
+    sc_error_exit();
+}
+
+$_SESSION['wizard_dichiarazione_id'] = $dicId;
+$_SESSION['wizard_dichiarazione_anno'] = $anno;
+$_SESSION['wizard_subvettore_id'] = $subId;
+[subvettoreId] = $subId;
+
+sc_redir('form_subvettori_dichiarazioni', subvettoreId=[subvettoreId], 'modal');

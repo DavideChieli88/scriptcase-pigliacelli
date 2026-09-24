@@ -163,8 +163,12 @@ if ($firmatoIl !== '' && $firmatoIl !== '0000-00-00 00:00:00') {
     sc_redir('grid_documenti_to_sign_wizard', subvettoreId=[subvettoreId]);
 }
 
+// Dichiarazioni: il PDF cambia dopo la compilazione. Un link EasyGN già salvato
+// riaprirebbe il file della prima firma (spesso il template vuoto).
+$isDichiarazioni = (stripos($docNome, 'dichiaraz') !== false);
+
 // Se esiste già un link di firma salvato, riapri quello (come easygn_start_wf_auto)
-if ($existingLinkJson !== '') {
+if ($existingLinkJson !== '' && !$isDichiarazioni) {
     $meta = json_decode($existingLinkJson, true);
     if (is_array($meta)) {
         $linkReuse = '';
@@ -563,21 +567,103 @@ $easygn_visual_from_mm = function ($pageMm) use ($mm_to_pt, $easygn_position_fro
     );
 };
 
-// MVP: box basso-destra pagina 1 (coordinate in mm come i contratti)
-$pageMm = array(
-    'page' => 1,
-    'x' => 120.0,
-    'y' => 250.0,
-    'w' => 70.0,
-    'h' => 14.0,
-);
-$visual = $easygn_visual_from_mm($pageMm);
-$log('visual page=' . $visual['page']
-    . ' x=' . $visual['x']
-    . ' y=' . $visual['y']
-    . ' w=' . $visual['width']
-    . ' h=' . $visual['height']
-    . ' position=' . $visual['position']);
+// Coordinate: prima la sessione scritta da dichiarazioni_pdf, poi il Subject del PDF.
+// Se non ce n'è nessuna, resta il box unico in basso a destra sulla pagina 1.
+$visualsMm = array();
+$signSource = '';
+if ($documentoId > 0 && !empty($_SESSION['docs_pdf_sign'][$documentoId]) && is_array($_SESSION['docs_pdf_sign'][$documentoId])) {
+    foreach ($_SESSION['docs_pdf_sign'][$documentoId] as $row) {
+        if (!is_array($row) || (int)$row['page'] < 1) {
+            continue;
+        }
+        $visualsMm[] = array(
+            'page' => (int)$row['page'],
+            'x' => isset($row['x']) ? (float)$row['x'] : 0.0,
+            'y' => isset($row['y']) ? (float)$row['y'] : 0.0,
+            'w' => isset($row['w']) ? (float)$row['w'] : 70.0,
+            'h' => isset($row['h']) ? (float)$row['h'] : 14.0,
+        );
+    }
+    if (!empty($visualsMm)) {
+        $signSource = 'session';
+    }
+}
+$pdfBinForSign = base64_decode($pdfB64, true);
+if (empty($visualsMm) && is_string($pdfBinForSign) && $pdfBinForSign !== '') {
+    $b64Sign = '';
+    if (preg_match('/EGN_SIGN:([A-Za-z0-9+\/=]+)/', $pdfBinForSign, $mPlain)) {
+        $b64Sign = $mPlain[1];
+    } else {
+        $utfNeedle = '';
+        foreach (str_split('EGN_SIGN:') as $ch) {
+            $utfNeedle .= "\x00" . $ch;
+        }
+        $at = strpos($pdfBinForSign, $utfNeedle);
+        if ($at !== false) {
+            $rawTail = substr($pdfBinForSign, $at + strlen($utfNeedle), 8000);
+            $b64Chars = '';
+            $lenTail = strlen($rawTail);
+            for ($i = 0; $i + 1 < $lenTail; $i += 2) {
+                if ($rawTail[$i] !== "\x00") {
+                    break;
+                }
+                $c = $rawTail[$i + 1];
+                if (strpos('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=', $c) === false) {
+                    break;
+                }
+                $b64Chars .= $c;
+            }
+            $b64Sign = $b64Chars;
+        }
+    }
+    if ($b64Sign !== '') {
+        $jsonSign = base64_decode($b64Sign, true);
+        $dataSign = is_string($jsonSign) ? json_decode($jsonSign, true) : null;
+        $rowsSign = (is_array($dataSign) && isset($dataSign['visuals']['vettore']) && is_array($dataSign['visuals']['vettore']))
+            ? $dataSign['visuals']['vettore']
+            : array();
+        foreach ($rowsSign as $row) {
+            if (!is_array($row) || (int)$row['page'] < 1) {
+                continue;
+            }
+            $visualsMm[] = array(
+                'page' => (int)$row['page'],
+                'x' => isset($row['x']) ? (float)$row['x'] : 0.0,
+                'y' => isset($row['y']) ? (float)$row['y'] : 0.0,
+                'w' => isset($row['w']) ? (float)$row['w'] : 70.0,
+                'h' => isset($row['h']) ? (float)$row['h'] : 14.0,
+            );
+        }
+        if (!empty($visualsMm)) {
+            $signSource = 'pdf';
+        }
+    }
+}
+if (empty($visualsMm)) {
+    $visualsMm[] = array(
+        'page' => 1,
+        'x' => 120.0,
+        'y' => 250.0,
+        'w' => 70.0,
+        'h' => 14.0,
+    );
+    $signSource = 'fallback-pagina-1';
+}
+$log('visual source=' . $signSource . ' count=' . count($visualsMm));
+$visuals = array();
+foreach ($visualsMm as $pageMm) {
+    if ((float)$pageMm['h'] < 13.1) {
+        $pageMm['h'] = 13.1;
+    }
+    $one = $easygn_visual_from_mm($pageMm);
+    $visuals[] = $one;
+    $log('visual page=' . $one['page']
+        . ' x=' . $one['x']
+        . ' y=' . $one['y']
+        . ' w=' . $one['width']
+        . ' h=' . $one['height']
+        . ' position=' . $one['position']);
+}
 
 $easygn_request = function ($method, $url, $bearerKy, $jsonPayload = null) {
     $ch = curl_init();
@@ -700,7 +786,7 @@ $payload = array(
             'language' => 'it',
             'ordered' => true,
             'order' => 1,
-            'visuals' => array($visual),
+            'visuals' => $visuals,
         )),
     )),
 );

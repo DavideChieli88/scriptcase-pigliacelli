@@ -1,8 +1,12 @@
 /**
  * grid_documenti_to_sign_wizard → onRecord
  *
- * Nasconde sign_doc_btn se firmato_il e valorizzato.
- * Action Bar: sign_doc_btn — sc_actionbar_show / hide.
+ * sign_doc_btn: nascosto se firmato_il e' valorizzato.
+ * Sulla riga dichiarazioni e' nascosto anche finche' la form annuale
+ * non e' salvata (stato compilata/firmata, flag in onScriptInit).
+ *
+ * compila_dichiarazione_btn: solo sulla riga il cui tipo contiene "dichiaraz".
+ * Action Bar Ajax: sign_doc_btn, compila_dichiarazione_btn.
  */
 
 $firmatoIl = trim((string){d.firmato_il});
@@ -13,8 +17,43 @@ $firmato = (
     && strpos($firmatoIl, '0000-00-00') !== 0
 );
 
-if ($firmato) {
-    sc_actionbar_hide('sign_doc_btn');
+$tipoNome = '';
+if (isset({td_nome})) {
+    $tipoNome = trim((string){td_nome});
+}
+if ($tipoNome === '' && isset({d.tipo_documento_id}) && (int){d.tipo_documento_id} > 0) {
+    $tipoId = (int){d.tipo_documento_id};
+    sc_lookup(rsRecTipoNome, "
+        SELECT COALESCE(nome, '')
+        FROM tipi_documento
+        WHERE id = $tipoId
+        LIMIT 1
+    ", 'pigliacelli');
+    if (!empty({rsRecTipoNome[0][0]})) {
+        $tipoNome = trim((string){rsRecTipoNome[0][0]});
+    }
+}
+
+$isDichiarazioni = (stripos($tipoNome, 'dichiaraz') !== false);
+$pronta = !empty($_SESSION['wizard_dichiarazione_pronta']);
+
+if ($isDichiarazioni) {
+    if ($firmato) {
+        sc_actionbar_hide('compila_dichiarazione_btn');
+        sc_actionbar_hide('sign_doc_btn');
+    } else {
+        sc_actionbar_show('compila_dichiarazione_btn');
+        if ($pronta) {
+            sc_actionbar_show('sign_doc_btn');
+        } else {
+            sc_actionbar_hide('sign_doc_btn');
+        }
+    }
 } else {
-    sc_actionbar_show('sign_doc_btn');
+    sc_actionbar_hide('compila_dichiarazione_btn');
+    if ($firmato) {
+        sc_actionbar_hide('sign_doc_btn');
+    } else {
+        sc_actionbar_show('sign_doc_btn');
+    }
 }

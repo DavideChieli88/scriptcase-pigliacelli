@@ -1,0 +1,248 @@
+/**
+ * form_subvettori_dichiarazioni → onValidate
+ *
+ * Tutti i campi della dichiarazione sono obbligatori, altrimenti non si salva
+ * e lo stato resta bozza: la firma in griglia non si sblocca.
+ * Se il salvataggio passa, stato = compilata (firmata non viene sovrascritta).
+ *
+ * Salto come sul PDF:
+ * - 5.1 = sì → non chiedere 5.2, 5.3, 5.5–5.15 né la sezione 6; 5.4 resta
+ * - 7.1 = sì → non chiedere il resto della 7 tranne 7.4
+ * - 8.1 = sì → non chiedere il resto della 8 tranne 8.4
+ * - 10.1 = sì → non chiedere il resto della 10 tranne 10.4
+ * Se 5.4 / 7.4 / 8.4 / 10.4 = sì, nome e telefono del responsabile sono obbligatori.
+ *
+ * IDE: campo stato presente in form e nascosto.
+ * Non usare sc_error_exit (modale).
+ * Macro SC: niente spazi dentro le graffe.
+ */
+
+if (!function_exists('dic_si_no')) {
+    function dic_si_no($raw)
+    {
+        if ($raw === null) {
+            return null;
+        }
+        $s = trim((string)$raw);
+        if ($s === '' || strcasecmp($s, 'null') === 0 || strcasecmp($s, 'undefined') === 0) {
+            return null;
+        }
+        if ($s === '1') {
+            return 1;
+        }
+        if ($s === '0') {
+            return 0;
+        }
+        return null;
+    }
+}
+if (!function_exists('dic_filled')) {
+    function dic_filled($raw)
+    {
+        if ($raw === null) {
+            return false;
+        }
+        $s = trim((string)$raw);
+        if ($s === '' || strcasecmp($s, 'null') === 0 || strpos($s, '0000-00-00') === 0) {
+            return false;
+        }
+        return true;
+    }
+}
+if (!function_exists('dic_flag')) {
+    function dic_flag($raw)
+    {
+        $s = strtolower(trim((string)$raw));
+        return ($s === '1' || $s === 'y' || $s === 'on' || $s === 's') ? 1 : 0;
+    }
+}
+if (!function_exists('dic_need_sino')) {
+    function dic_need_sino($label, $raw, &$missing)
+    {
+        if (dic_si_no($raw) === null) {
+            $missing[] = $label;
+        }
+    }
+}
+if (!function_exists('dic_need_text')) {
+    function dic_need_text($label, $raw, &$missing)
+    {
+        if (!dic_filled($raw)) {
+            $missing[] = $label;
+        }
+    }
+}
+
+$missing = array();
+
+dic_need_text('Capitale sociale', {capitale_sociale}, $missing);
+dic_need_sino('Capitale interamente versato', {capitale_iv}, $missing);
+dic_need_text('Anno inizio attività', {anno_inizio_attivita}, $missing);
+dic_need_text('Sede amministrativa', {sede_amministrativa}, $missing);
+dic_need_text('Fax', {fax}, $missing);
+dic_need_text('REN', {ren}, $missing);
+dic_need_text('Albo gestori ambientali', {num_albo_gestori}, $missing);
+dic_need_text('Attività svolta', {attivita_svolta}, $missing);
+
+if (dic_flag({anga_cat1}) === 1) {
+    dic_need_text('Data ANGA cat. 1', {anga_cat1_data}, $missing);
+}
+if (dic_flag({anga_cat4}) === 1) {
+    dic_need_text('Data ANGA cat. 4', {anga_cat4_data}, $missing);
+}
+if (dic_flag({anga_cat5}) === 1) {
+    dic_need_text('Data ANGA cat. 5', {anga_cat5_data}, $missing);
+}
+
+dic_need_text('Responsabile contabilità', {resp_contabilita}, $missing);
+dic_need_text('Tel. responsabile contabilità', {resp_contabilita_tel}, $missing);
+dic_need_text('Cell. responsabile contabilità', {resp_contabilita_cell}, $missing);
+dic_need_text('Responsabile commerciale', {resp_commerciale}, $missing);
+dic_need_text('Tel. responsabile commerciale', {resp_commerciale_tel}, $missing);
+dic_need_text('Cell. responsabile commerciale', {resp_commerciale_cell}, $missing);
+dic_need_text('Responsabile logistica', {resp_logistica}, $missing);
+dic_need_text('Tel. responsabile logistica', {resp_logistica_tel}, $missing);
+dic_need_text('Cell. responsabile logistica', {resp_logistica_cell}, $missing);
+dic_need_text('Responsabile amministrativo', {resp_amministrativo}, $missing);
+
+$naz = dic_flag({mercato_nazionale});
+$int = dic_flag({mercato_internazionale});
+if ($naz !== 1 && $int !== 1) {
+    $missing[] = 'Presenza sul mercato (nazionale o internazionale)';
+}
+if ($int === 1) {
+    dic_need_text('Nazioni', {nazioni}, $missing);
+}
+
+dic_need_text('Numero personale', {n_personale}, $missing);
+dic_need_text('Numero dirigenti', {n_dirigenti}, $missing);
+dic_need_text('Numero impiegati', {n_impiegati}, $missing);
+dic_need_text('Numero operai/autisti', {n_operai}, $missing);
+
+dic_need_text('Fatturato anno 1', {fatturato_anno_1}, $missing);
+dic_need_text('Fatturato importo 1', {fatturato_importo_1}, $missing);
+dic_need_text('Fatturato anno 2', {fatturato_anno_2}, $missing);
+dic_need_text('Fatturato importo 2', {fatturato_importo_2}, $missing);
+dic_need_text('Fatturato anno 3', {fatturato_anno_3}, $missing);
+dic_need_text('Fatturato importo 3', {fatturato_importo_3}, $missing);
+
+dic_need_text('Cliente 1', {cliente_1}, $missing);
+dic_need_text('Prodotto/servizio 1', {prodotto_1}, $missing);
+dic_need_text('% fatturato 1', {perc_fatturato_1}, $missing);
+dic_need_text('Cliente 2', {cliente_2}, $missing);
+dic_need_text('Prodotto/servizio 2', {prodotto_2}, $missing);
+dic_need_text('% fatturato 2', {perc_fatturato_2}, $missing);
+dic_need_text('Cliente 3', {cliente_3}, $missing);
+dic_need_text('Prodotto/servizio 3', {prodotto_3}, $missing);
+dic_need_text('% fatturato 3', {perc_fatturato_3}, $missing);
+
+dic_need_text('Massimale polizza vettoriale/merci', {massimale_vettoriale}, $missing);
+dic_need_text('Massimale RC Auto', {massimale_rc_auto}, $missing);
+dic_need_text('Massimale RCT/RCO', {massimale_rct_rco}, $missing);
+
+$q51 = dic_si_no({q_5_1_iso9001});
+dic_need_sino('5.1', {q_5_1_iso9001}, $missing);
+dic_need_sino('5.4', {q_5_4_resp_qualita}, $missing);
+if ($q51 === 0) {
+    dic_need_sino('5.2', {q_5_2_piano_iso9001}, $missing);
+    dic_need_sino('5.3', {q_5_3_politica_qualita}, $missing);
+    dic_need_sino('5.5', {q_5_5_responsabilita}, $missing);
+    dic_need_sino('5.6', {q_5_6_audit_interni}, $missing);
+    dic_need_sino('5.7', {q_5_7_riunione_coord}, $missing);
+    dic_need_sino('5.8', {q_5_8_procedure_generali}, $missing);
+    dic_need_sino('5.9', {q_5_9_rimorchi_cassonati}, $missing);
+    dic_need_sino('5.10', {q_5_10_rimorchi_vasche}, $missing);
+    dic_need_sino('5.11', {q_5_11_rimorchi_centinati}, $missing);
+    dic_need_sino('5.12', {q_5_12_rimorchi_silos}, $missing);
+    dic_need_sino('5.13', {q_5_13_manichette_silos}, $missing);
+    dic_need_sino('5.14', {q_5_14_manutenzione_mezzi}, $missing);
+    dic_need_sino('5.15', {q_5_15_no_subvezione_terzi}, $missing);
+    dic_need_sino('6.1', {q_6_1_resp_acquisti}, $missing);
+    dic_need_sino('6.2', {q_6_2_procedure_acquisti}, $missing);
+    dic_need_sino('6.3', {q_6_3_conformita_acquisti}, $missing);
+    dic_need_sino('6.4a', {q_6_4a_selezione_fornitori}, $missing);
+    dic_need_sino('6.4b', {q_6_4b_sorveglianza_forniture}, $missing);
+    dic_need_sino('6.4c', {q_6_4c_ispezione_ricevimento}, $missing);
+    dic_need_sino('6.5', {q_6_5_elenco_fornitori}, $missing);
+    dic_need_sino('6.6', {q_6_6_certificati_fornitori}, $missing);
+}
+if (dic_si_no({q_5_4_resp_qualita}) === 1) {
+    dic_need_text('Responsabile qualità', {resp_qualita}, $missing);
+    dic_need_text('Tel. responsabile qualità', {resp_qualita_tel}, $missing);
+}
+
+$q71 = dic_si_no({q_7_1_iso14001});
+dic_need_sino('7.1', {q_7_1_iso14001}, $missing);
+dic_need_sino('7.4', {q_7_4_resp_ambientale}, $missing);
+if ($q71 === 0) {
+    dic_need_sino('7.2', {q_7_2_piano_iso14001}, $missing);
+    dic_need_sino('7.3', {q_7_3_politica_ambiente}, $missing);
+    dic_need_sino('7.5', {q_7_5_analisi_ambientale}, $missing);
+    dic_need_sino('7.6', {q_7_6_formazione_rifiuti}, $missing);
+    dic_need_sino('7.7', {q_7_7_kit_antisversamento}, $missing);
+    dic_need_sino('7.8', {q_7_8_pronto_intervento}, $missing);
+    dic_need_sino('7.9', {q_7_9_verifica_trasporti}, $missing);
+    dic_need_sino('7.10', {q_7_10_mezzi_autorizzati_anga}, $missing);
+    dic_need_sino('7.11', {q_7_11_quantitativi_anga}, $missing);
+    dic_need_sino('7.12', {q_7_12_mud_152}, $missing);
+}
+if (dic_si_no({q_7_4_resp_ambientale}) === 1) {
+    dic_need_text('Responsabile ambientale', {resp_ambientale}, $missing);
+    dic_need_text('Tel. responsabile ambientale', {resp_ambientale_tel}, $missing);
+}
+
+$q81 = dic_si_no({q_8_1_iso45001});
+dic_need_sino('8.1', {q_8_1_iso45001}, $missing);
+dic_need_sino('8.4', {q_8_4_dl_rspp}, $missing);
+if ($q81 === 0) {
+    dic_need_sino('8.2', {q_8_2_piano_iso45001}, $missing);
+    dic_need_sino('8.3', {q_8_3_politica_sicurezza}, $missing);
+    dic_need_sino('8.5', {q_8_5_infortuni}, $missing);
+    dic_need_sino('8.6', {q_8_6_verbali_autisti}, $missing);
+    dic_need_sino('8.7', {q_8_7_dvr_dpi}, $missing);
+    dic_need_sino('8.8', {q_8_8_schede_dpi}, $missing);
+    dic_need_sino('8.9', {q_8_9_attestato_mansione}, $missing);
+    dic_need_sino('8.10', {q_8_10_dpi_iii_categoria}, $missing);
+    dic_need_sino('8.11', {q_8_11_norme_siti}, $missing);
+    dic_need_sino('8.12', {q_8_12_protocollo_sanitario}, $missing);
+}
+if (dic_si_no({q_8_4_dl_rspp}) === 1) {
+    dic_need_text('Datore di lavoro', {dl_nome}, $missing);
+    dic_need_text('Tel. datore di lavoro', {dl_tel}, $missing);
+    dic_need_text('RSPP', {rspp_nome}, $missing);
+    dic_need_text('Tel. RSPP', {rspp_tel}, $missing);
+}
+
+dic_need_sino('9.1', {q_9_1_sqas}, $missing);
+dic_need_sino('9.2', {q_9_2_diagnosi_energetica}, $missing);
+
+$q101 = dic_si_no({q_10_1_gmp});
+dic_need_sino('10.1', {q_10_1_gmp}, $missing);
+dic_need_sino('10.4', {q_10_4_resp_alimentare}, $missing);
+if ($q101 === 0) {
+    dic_need_sino('10.2', {q_10_2_sicurezza_alimentare}, $missing);
+    dic_need_sino('10.3', {q_10_3_politica_alimentare}, $missing);
+    dic_need_sino('10.5', {q_10_5_scia_asl}, $missing);
+    dic_need_sino('10.6', {q_10_6_tracciabilita}, $missing);
+    dic_need_sino('10.7', {q_10_7_audit_tracciabilita}, $missing);
+    dic_need_sino('10.8', {q_10_8_pcc_poa}, $missing);
+    dic_need_sino('10.9', {q_10_9_manuale_autocontrollo}, $missing);
+    dic_need_sino('10.10', {q_10_10_haccp_autisti}, $missing);
+    dic_need_sino('10.11', {q_10_11_mezzi_alimentari}, $missing);
+}
+if (dic_si_no({q_10_4_resp_alimentare}) === 1) {
+    dic_need_text('Responsabile sicurezza alimentare', {resp_haccp}, $missing);
+    dic_need_text('Tel. responsabile sicurezza alimentare', {resp_haccp_tel}, $missing);
+}
+
+if (!empty($missing)) {
+    sc_error_message(
+        "Compilare tutti i campi della dichiarazione:\n- "
+        . implode("\n- ", $missing)
+    );
+} else {
+    $statoOra = isset({stato}) ? strtolower(trim((string){stato})) : '';
+    if ($statoOra !== 'firmata') {
+        {stato} = 'compilata';
+    }
+}

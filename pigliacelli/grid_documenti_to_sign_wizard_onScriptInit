@@ -13,7 +13,7 @@
  *     WHERE td.is_readonly = 1 AND d.subvettore_id = [subvettoreId]
  * - Campi SC: {d.id}, {d.tipo_documento_id}, {d.file}, {d.firmato_il},
  *   {d.subvettore_id}, {td_nome}  (punto sull'alias; td_nome perché ha AS)
- * - Action Bar Ajax: open_pdf_btn, sign_doc_btn
+ * - Action Bar Ajax: open_pdf_btn, sign_doc_btn, compila_dichiarazione_btn
  * - Toolbar: send_for_activation
  * - Security: group 2
  *
@@ -153,6 +153,27 @@ if (!$fromFirma) {
 }
 
 wiz_verdi_ensure_documenti($subId, $loginSub !== '' ? $loginSub : $usrLogin);
+
+// Dichiarazione dell'anno: la firma sulla riga dichiarazioni resta nascosta
+// finche' stato non e' compilata o firmata (onRecord legge la sessione).
+$annoDic = (int)date('Y');
+$_SESSION['wizard_dichiarazione_anno'] = $annoDic;
+$_SESSION['wizard_dichiarazione_id'] = 0;
+$_SESSION['wizard_dichiarazione_pronta'] = 0;
+sc_lookup(rsWizDic, "
+    SELECT id, LOWER(TRIM(COALESCE(stato, '')))
+    FROM subvettori_dichiarazioni
+    WHERE subvettore_id = $subId
+      AND anno = $annoDic
+    LIMIT 1
+", 'pigliacelli');
+if (!empty({rsWizDic[0][0]})) {
+    $_SESSION['wizard_dichiarazione_id'] = (int){rsWizDic[0][0]};
+    $stDic = isset({rsWizDic[0][1]}) ? trim((string){rsWizDic[0][1]}) : '';
+    if ($stDic === 'compilata' || $stDic === 'firmata') {
+        $_SESSION['wizard_dichiarazione_pronta'] = 1;
+    }
+}
 
 // Ritorno da EasyGN (redirect_url): marca firmato_il sul documento firmato
 if (isset($_GET['from']) && strtolower(trim((string)$_GET['from'])) === 'firma') {

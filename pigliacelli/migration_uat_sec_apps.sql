@@ -1,0 +1,81 @@
+-- Allinea sec_apps e sec_groups_apps di UAT a DEV (pigliacelli_2026-09-24).
+-- Chiave sec_apps: app_name. Chiave sec_groups_apps: group_id + app_name.
+-- I gruppi 1-4 sono gia' gli stessi su entrambi i db.
+
+INSERT INTO `sec_apps` (`app_name`, `app_type`, `description`) VALUES
+('blank_wizard_firma_documenti', 'blank', ''),
+('diag_doc_path', 'blank', ''),
+('easygn_start_wf_docs', 'blank', ''),
+('form_subvettori_mezzi_for_subvectors', 'form', ''),
+('generate_doc_to_sign', 'blank', ''),
+('grid_subvettori_autisti_by_subvettoreId', 'cons', ''),
+('grid_subvettori_mezzi_by_subvettoreId', 'cons', ''),
+('placeholder_docs_firma', 'reportpdf', '')
+ON DUPLICATE KEY UPDATE
+    `app_type` = VALUES(`app_type`),
+    `description` = VALUES(`description`);
+
+INSERT INTO `sec_groups_apps`
+    (`group_id`, `app_name`, `priv_access`, `priv_insert`, `priv_delete`, `priv_update`, `priv_export`, `priv_print`)
+VALUES
+(1, 'blank_magic_link_review_inviato', 'Y', '', '', '', '', ''),
+(1, 'blank_wizard_firma_documenti', 'Y', '', '', '', '', ''),
+(1, 'dashboard_dettaglio_subvettore', 'Y', '', '', '', '', ''),
+(1, 'diag_doc_path', NULL, NULL, NULL, NULL, NULL, NULL),
+(1, 'easygn_start_wf_docs', 'Y', '', '', '', '', ''),
+(1, 'form_subvettori_autisti_wizard', '', '', '', '', '', ''),
+(1, 'form_subvettori_mezzi', '', '', '', '', '', ''),
+(1, 'form_subvettori_mezzi_for_subvectors', NULL, NULL, NULL, NULL, NULL, NULL),
+(1, 'generate_doc_to_sign', 'Y', '', '', '', '', ''),
+(1, 'grid_contratti_tratte_by_subvettore_id', 'Y', '', '', '', 'Y', 'Y'),
+(1, 'grid_documenti_by_subvettore_id', 'Y', '', '', '', 'Y', 'Y'),
+(1, 'grid_subvettori_autisti_by_subvettoreId', 'Y', '', '', '', 'Y', 'Y'),
+(1, 'grid_subvettori_autisti_for_subvectors', '', '', '', '', '', ''),
+(1, 'grid_subvettori_contratti_by_subvector_id', 'Y', '', '', '', 'Y', 'Y'),
+(1, 'grid_subvettori_mezzi', 'Y', '', '', '', 'Y', 'Y'),
+(1, 'grid_subvettori_mezzi_by_subvettoreId', 'Y', '', '', '', 'Y', 'Y'),
+(1, 'placeholder_docs_firma', NULL, NULL, NULL, NULL, NULL, NULL),
+(2, 'blank_wizard_firma_documenti', 'Y', '', '', '', '', ''),
+(2, 'diag_doc_path', NULL, NULL, NULL, NULL, NULL, NULL),
+(2, 'easygn_start_wf_docs', 'Y', '', '', '', '', ''),
+(2, 'form_documenti_wizard_inline', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y'),
+(2, 'form_subvettori_autisti_wizard_inline', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y'),
+(2, 'form_subvettori_mezzi_for_subvectors', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y'),
+(2, 'form_subvettori_mezzi_inline', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y'),
+(2, 'generate_doc_to_sign', 'Y', '', '', '', '', ''),
+(2, 'grid_subvettori_autisti', '', '', '', '', '', ''),
+(2, 'grid_subvettori_autisti_by_subvettoreId', NULL, NULL, NULL, NULL, NULL, NULL),
+(2, 'grid_subvettori_mezzi', '', '', '', '', '', ''),
+(2, 'grid_subvettori_mezzi_by_subvettoreId', NULL, NULL, NULL, NULL, NULL, NULL),
+(2, 'placeholder_docs_firma', NULL, NULL, NULL, NULL, NULL, NULL),
+(3, 'blank_wizard_firma_documenti', 'Y', '', '', '', '', ''),
+(3, 'dashboard_dettaglio_subvettore', 'Y', '', '', '', '', ''),
+(3, 'diag_doc_path', NULL, NULL, NULL, NULL, NULL, NULL),
+(3, 'easygn_start_wf_docs', 'Y', '', '', '', '', ''),
+(3, 'form_subvettori_autisti_wizard', '', '', '', '', '', ''),
+(3, 'form_subvettori_mezzi', '', '', '', '', '', ''),
+(3, 'form_subvettori_mezzi_for_subvectors', NULL, NULL, NULL, NULL, NULL, NULL),
+(3, 'generate_doc_to_sign', 'Y', '', '', '', '', ''),
+(3, 'grid_contratti_tratte_by_subvettore_id', 'Y', '', '', '', 'Y', 'Y'),
+(3, 'grid_documenti_by_subvettore_id', 'Y', '', '', '', 'Y', 'Y'),
+(3, 'grid_subvettori_autisti_by_subvettoreId', 'Y', '', '', '', 'Y', 'Y'),
+(3, 'grid_subvettori_autisti_for_subvectors', '', '', '', '', '', ''),
+(3, 'grid_subvettori_contratti_by_subvector_id', 'Y', '', '', '', 'Y', 'Y'),
+(3, 'grid_subvettori_mezzi', 'Y', '', '', '', 'Y', 'Y'),
+(3, 'grid_subvettori_mezzi_by_subvettoreId', 'Y', '', '', '', 'Y', 'Y'),
+(3, 'placeholder_docs_firma', NULL, NULL, NULL, NULL, NULL, NULL),
+(4, 'blank_wizard_firma_documenti', NULL, NULL, NULL, NULL, NULL, NULL),
+(4, 'diag_doc_path', NULL, NULL, NULL, NULL, NULL, NULL),
+(4, 'easygn_start_wf_docs', NULL, NULL, NULL, NULL, NULL, NULL),
+(4, 'form_subvettori_mezzi_for_subvectors', NULL, NULL, NULL, NULL, NULL, NULL),
+(4, 'generate_doc_to_sign', NULL, NULL, NULL, NULL, NULL, NULL),
+(4, 'grid_subvettori_autisti_by_subvettoreId', NULL, NULL, NULL, NULL, NULL, NULL),
+(4, 'grid_subvettori_mezzi_by_subvettoreId', NULL, NULL, NULL, NULL, NULL, NULL),
+(4, 'placeholder_docs_firma', NULL, NULL, NULL, NULL, NULL, NULL)
+ON DUPLICATE KEY UPDATE
+    `priv_access` = VALUES(`priv_access`),
+    `priv_insert` = VALUES(`priv_insert`),
+    `priv_delete` = VALUES(`priv_delete`),
+    `priv_update` = VALUES(`priv_update`),
+    `priv_export` = VALUES(`priv_export`),
+    `priv_print` = VALUES(`priv_print`);

@@ -127,6 +127,22 @@ $docSub = (int){rsSignOk[0][1]};
 $tipoNome = trim((string){rsSignOk[0][3]});
 $subId = $docSub > 0 ? $docSub : $subId;
 
+if (stripos($tipoNome, 'dichiaraz') !== false) {
+    $annoDic = (int)date('Y');
+    sc_lookup(rsDicFirma, "
+        SELECT LOWER(TRIM(COALESCE(stato, '')))
+        FROM subvettori_dichiarazioni
+        WHERE subvettore_id = $subId
+          AND anno = $annoDic
+        LIMIT 1
+    ", 'pigliacelli');
+    $stDic = !empty({rsDicFirma[0][0]}) ? trim((string){rsDicFirma[0][0]}) : '';
+    if ($stDic !== 'compilata' && $stDic !== 'firmata') {
+        sc_ajax_message('Compila la dichiarazione prima di firmarla.');
+        sc_error_exit();
+    }
+}
+
 [documentoId] = $documentoId;
 [subvettoreId] = $subId;
 $_SESSION['documentoId'] = $documentoId;

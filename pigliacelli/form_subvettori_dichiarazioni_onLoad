@@ -1,0 +1,76 @@
+/**
+ * form_subvettori_dichiarazioni → onLoad
+ *
+ * Form single record su subvettori_dichiarazioni.
+ * WHERE id = [dichiarazioneId]
+ *
+ * I q_* sono radio orizzontali: 1 = Sì, 0 = No, senza default.
+ * Label a sinistra (larga). Il testo della domanda sta qui, non in tabella.
+ * sc_label(campo) senza apici e senza graffe.
+ */
+
+sc_label(q_5_1_iso9001) = '5.1 - Siete certificati ISO 9001? (Se sì, allegare una copia del certificato senza rispondere alle domande a seguito tranne il punto 5.4 che va compilato; se no, rispondere alle domande successive)';
+sc_label(q_5_2_piano_iso9001) = '5.2 - Esiste un piano di certificazione ISO 9001';
+sc_label(q_5_3_politica_qualita) = '5.3 - La vostra azienda ha provveduto a definire, per iscritto, una Politica per la Qualità';
+sc_label(q_5_4_resp_qualita) = '5.4 - È stato nominato un Responsabile Qualità? (Se sì, indicare a seguito le sue generalità ed il suo numero di telefono)';
+sc_label(q_5_5_responsabilita) = '5.5 - In azienda sono definite formalmente le responsabilità';
+sc_label(q_5_6_audit_interni) = '5.6 - Vengono effettuati audit interni periodici';
+sc_label(q_5_7_riunione_coord) = '5.7 - Viene svolta annualmente la riunione di coordinamento periodica';
+sc_label(q_5_8_procedure_generali) = '5.8 - Esistono delle procedure e istruzioni operative scritte generali';
+sc_label(q_5_9_rimorchi_cassonati) = '5.9 - Esistono delle procedure e istruzioni operative scritte inerenti l\'utilizzo dei rimorchi cassonati';
+sc_label(q_5_10_rimorchi_vasche) = '5.10 - Esistono delle procedure e istruzioni operative scritte inerenti l\'utilizzo dei rimorchi vasche';
+sc_label(q_5_11_rimorchi_centinati) = '5.11 - Esistono delle procedure e istruzioni operative scritte inerenti l\'utilizzo dei rimorchi centinati';
+sc_label(q_5_12_rimorchi_silos) = '5.12 - Esistono delle procedure e istruzioni operative scritte inerenti l\'utilizzo dei rimorchi silos';
+sc_label(q_5_13_manichette_silos) = '5.13 - Esistono delle procedure e istruzioni operative scritte inerenti il controllo delle manichette aria/scarico silos';
+sc_label(q_5_14_manutenzione_mezzi) = '5.14 - Esiste un programma di controllo e di manutenzione dei macchinari e degli automezzi';
+sc_label(q_5_15_no_subvezione_terzi) = '5.15 - Il vostro sistema garantisce che i viaggi affidati in sub-vezione, non vengano affidati a terzi';
+
+sc_label(q_6_1_resp_acquisti) = '6.1 - Esiste un Responsabile Acquisti';
+sc_label(q_6_2_procedure_acquisti) = '6.2 - Esistono procedure per gli acquisti';
+sc_label(q_6_3_conformita_acquisti) = '6.3 - Esistono procedure per garantire la conformità dei prodotti acquistati ai documenti d\'acquisto';
+sc_label(q_6_4a_selezione_fornitori) = '6.4a - Le procedure comprendono: metodi di valutazione e selezione dei fornitori';
+sc_label(q_6_4b_sorveglianza_forniture) = '6.4b - Le procedure comprendono: metodi di sorveglianza durante le forniture';
+sc_label(q_6_4c_ispezione_ricevimento) = '6.4c - Le procedure comprendono: metodi di ispezione al ricevimento';
+sc_label(q_6_5_elenco_fornitori) = '6.5 - Esiste un elenco di fornitori qualificati';
+sc_label(q_6_6_certificati_fornitori) = '6.6 - I certificati dei fornitori vengono controllati ed archiviati';
+
+sc_label(q_7_1_iso14001) = '7.1 - Siete certificati ISO 14001 (Se sì, allegare una copia del certificato senza rispondere alle domande a seguito tranne il punto 7.4 che va compilato; se no, rispondere alle domande successive)';
+sc_label(q_7_2_piano_iso14001) = '7.2 - Esiste un piano di certificazione ISO 14001';
+sc_label(q_7_3_politica_ambiente) = '7.3 - La vostra azienda ha provveduto a definire, per iscritto, una Politica per l\'Ambiente';
+sc_label(q_7_4_resp_ambientale) = '7.4 - È stato nominato un Responsabile Ambientale (Se sì, indicare le sue generalità ed il suo numero di telefono)';
+sc_label(q_7_5_analisi_ambientale) = '7.5 - È stata svolta un\'analisi ambientale';
+sc_label(q_7_6_formazione_rifiuti) = '7.6 - Il personale (autisti e/o impiegati), sono stati formati sul trasporto di rifiuti';
+sc_label(q_7_7_kit_antisversamento) = '7.7 - I veicoli che trasportano i rifiuti, hanno in dotazione un kit antisversamento';
+sc_label(q_7_8_pronto_intervento) = '7.8 - La vostra azienda, ha un contratto con società di pronto intervento ambientale';
+sc_label(q_7_9_verifica_trasporti) = '7.9 - Sono verificati i trasporti di rifiuti eseguiti, se possono essere svolti dall\'azienda';
+sc_label(q_7_10_mezzi_autorizzati_anga) = '7.10 - I veicoli utilizzati per il trasporto di rifiuti, sono sempre autorizzati per le categorie ANGA';
+sc_label(q_7_11_quantitativi_anga) = '7.11 - Vengono controllati i quantitativi di rifiuti trasportati, in relazione alle classi ANGA di appartenenza';
+sc_label(q_7_12_mud_152) = '7.12 - I rifiuti prodotti e trasportati sono gestiti secondo quanto stabilito dal D.lgs. 152/2006 con evidenza MUD';
+
+sc_label(q_8_1_iso45001) = '8.1 - Siete certificati OHSAS 18001 / ISO 45001 (Se sì, allegare una copia del certificato senza rispondere alle domande a seguito tranne il punto 8.4 che va compilato; se no, rispondere alle domande successive)';
+sc_label(q_8_2_piano_iso45001) = '8.2 - Esiste un piano di certificazione OHSAS 18001 / ISO 45001';
+sc_label(q_8_3_politica_sicurezza) = '8.3 - La vostra azienda ha provveduto a definire, per iscritto, una Politica per la Sicurezza';
+sc_label(q_8_4_dl_rspp) = '8.4 - È stato nominato il Datore di Lavoro e un RSPP (Se sì, indicare le generalità ed il suo numero di telefono)';
+sc_label(q_8_5_infortuni) = '8.5 - Gli infortuni, se presenti, sono monitorati per verificare tutte le condizioni per evitarli';
+sc_label(q_8_6_verbali_autisti) = '8.6 - I verbali agli autisti, se presenti, sono monitorati per verificare tutte le condizioni per evitarli';
+sc_label(q_8_7_dvr_dpi) = '8.7 - Nel DVR sono valutati tutti i possibili rischi, in modo da prevedere e consegnare gli idonei DPI';
+sc_label(q_8_8_schede_dpi) = '8.8 - Sono presenti le schede di distribuzione DPI per tutti i dipendenti';
+sc_label(q_8_9_attestato_mansione) = '8.9 - Il personale ha conseguito l\'attestato Generale e specifico per la mansione svolta';
+sc_label(q_8_10_dpi_iii_categoria) = '8.10 - Il personale ha conseguito l\'attestato per i DPI di III categoria';
+sc_label(q_8_11_norme_siti) = '8.11 - Il personale è formato/informato sulle Norme Comportamentali da tenere all\'interno dei siti carico/scarico';
+sc_label(q_8_12_protocollo_sanitario) = '8.12 - Annualmente è svolto il protocollo sanitario, con relative visite mediche a tutti i dipendenti';
+
+sc_label(q_9_1_sqas) = '9.1 - Siete certificati SQAS (Se sì, allegate copia del vostro certificato)';
+sc_label(q_9_2_diagnosi_energetica) = '9.2 - Diagnosi energetica (Se sì, allegate copia e attestazione di invio all\'ENEA)';
+
+sc_label(q_10_1_gmp) = '10.1 - Siete certificati GMP+ (Se sì, allegare una copia del certificato senza rispondere alle domande a seguito tranne il punto 10.4 che va compilato; se no, rispondere alle domande successive)';
+sc_label(q_10_2_sicurezza_alimentare) = '10.2 - Esiste un sistema di sicurezza alimentare – alimentare zootecnico';
+sc_label(q_10_3_politica_alimentare) = '10.3 - La vostra azienda ha provveduto a definire, per iscritto, una Politica per la Sicurezza Alimentare';
+sc_label(q_10_4_resp_alimentare) = '10.4 - È stato nominato un responsabile sulla sicurezza alimentare (Se sì, indicare le sue generalità ed il suo numero di telefono)';
+sc_label(q_10_5_scia_asl) = '10.5 - È presente la SCIA per l\'ottenimento dell\'autorizzazione sanitaria rilasciata dalla ASL competente';
+sc_label(q_10_6_tracciabilita) = '10.6 - Esiste un controllo elettronico per la tracciabilità degli alimenti trasportati';
+sc_label(q_10_7_audit_tracciabilita) = '10.7 - Sono svolti audit per la verifica della tracciabilità e la rintracciabilità alimentare';
+sc_label(q_10_8_pcc_poa) = '10.8 - Sono valutati tutti i PCC e/o i POA';
+sc_label(q_10_9_manuale_autocontrollo) = '10.9 - Esistono il Manuale dell\'autocontrollo alimentare';
+sc_label(q_10_10_haccp_autisti) = '10.10 - Gli autisti ha conseguito l\'attestato HACCP per la mansione svolta';
+sc_label(q_10_11_mezzi_alimentari) = '10.11 - I veicoli utilizzati per il trasporto alimentare, sono sempre autorizzati per lo svolgimento del servizio';
