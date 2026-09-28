@@ -1,0 +1,82 @@
+/**
+ * grid_dichiarazioni_subvettore → Action Bar compila_dichiarazione_btn (Ajax)
+ *
+ * Apre la bozza o la compilata di questa riga.
+ * Non crea un anno nuovo: la riga la inserisce il job di scadenza.
+ *
+ * Form: WHERE id = [dichiarazioneId]
+ * Globali form: dichiarazioneId, subvettoreId. Integer OUT, non IN.
+ */
+
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    @session_start();
+}
+
+$dicId = isset({dic_id}) ? (int){dic_id} : 0;
+$documentoId = isset({dic_doc}) ? (int){dic_doc} : 0;
+$subId = isset({dic_sub}) ? (int){dic_sub} : 0;
+$stato = isset({dic_stato}) ? strtolower(trim((string){dic_stato})) : '';
+
+if ($subId <= 0) {
+    $subId = (int)[subvettoreId];
+}
+
+$usrLogin = trim((string)[usr_login]);
+if ($usrLogin !== '' && strcasecmp($usrLogin, 'Guest') !== 0) {
+    $loginSql = str_replace("'", "''", $usrLogin);
+    sc_lookup(rsDicCompSub, "
+        SELECT COALESCE(su.subvettore_id, 0)
+        FROM sec_users su
+        INNER JOIN sec_users_groups sug
+            ON sug.login = su.login
+           AND sug.group_id = 2
+        WHERE su.login = '$loginSql'
+        LIMIT 1
+    ", 'pigliacelli');
+    $loginSub = !empty({rsDicCompSub[0][0]}) ? (int){rsDicCompSub[0][0]} : 0;
+    if ($loginSub > 0) {
+        $subId = $loginSub;
+    }
+}
+
+if ($dicId <= 0 || $subId <= 0) {
+    sc_ajax_message('Dichiarazione non identificata. Ricaricare l\'elenco.');
+    sc_error_exit();
+}
+if ($stato === 'firmata') {
+    sc_ajax_message('La dichiarazione firmata non si modifica. Usa Apri per il PDF.');
+    sc_error_exit();
+}
+
+sc_lookup(rsDicCompRow, "
+    SELECT id, COALESCE(documento_id, 0), LOWER(TRIM(COALESCE(stato, '')))
+    FROM subvettori_dichiarazioni
+    WHERE id = $dicId
+      AND subvettore_id = $subId
+    LIMIT 1
+", 'pigliacelli');
+if (empty({rsDicCompRow[0][0]})) {
+    sc_ajax_message('Dichiarazione non trovata per questo subvettore.');
+    sc_error_exit();
+}
+
+$dicId = (int){rsDicCompRow[0][0]};
+$documentoId = (int){rsDicCompRow[0][1]};
+$stato = trim((string){rsDicCompRow[0][2]});
+if ($stato === 'firmata') {
+    sc_ajax_message('La dichiarazione firmata non si modifica. Usa Apri per il PDF.');
+    sc_error_exit();
+}
+if ($documentoId <= 0) {
+    sc_ajax_message('Manca il documento collegato a questa dichiarazione.');
+    sc_error_exit();
+}
+
+[dichiarazioneId] = $dicId;
+[subvettoreId] = $subId;
+$_SESSION['wizard_dichiarazione_id'] = $dicId;
+$_SESSION['wizard_dichiarazione_documento_id'] = $documentoId;
+$_SESSION['wizard_subvettore_id'] = $subId;
+$_SESSION['dic_return_to'] = 'grid_dichiarazioni_subvettore';
+
+sc_redir('form_subvettori_dichiarazioni', dichiarazioneId=[dichiarazioneId];subvettoreId=[subvettoreId]);

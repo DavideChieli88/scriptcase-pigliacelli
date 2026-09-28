@@ -1,0 +1,29 @@
+/**
+ * grid_dichiarazioni_subvettore → onRecord
+ *
+ * bozza:     Compila
+ * compilata: Compila + Firma
+ * firmata:   Apri
+ */
+
+$stato = isset({dic_stato}) ? strtolower(trim((string){dic_stato})) : '';
+$firmatoIl = isset({doc_firmato_il}) ? trim((string){doc_firmato_il}) : '';
+$firmato = (
+    $firmatoIl !== ''
+    && strcasecmp($firmatoIl, 'null') !== 0
+    && strpos($firmatoIl, '0000-00-00') !== 0
+);
+
+if ($stato === 'firmata' || $firmato) {
+    sc_actionbar_hide('compila_dichiarazione_btn');
+    sc_actionbar_hide('sign_doc_btn');
+    sc_actionbar_show('open_pdf_btn');
+} elseif ($stato === 'compilata') {
+    sc_actionbar_show('compila_dichiarazione_btn');
+    sc_actionbar_show('sign_doc_btn');
+    sc_actionbar_hide('open_pdf_btn');
+} else {
+    sc_actionbar_show('compila_dichiarazione_btn');
+    sc_actionbar_hide('sign_doc_btn');
+    sc_actionbar_hide('open_pdf_btn');
+}

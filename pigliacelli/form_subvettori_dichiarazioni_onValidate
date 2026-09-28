@@ -73,6 +73,11 @@ if (!function_exists('dic_need_text')) {
     }
 }
 
+$statoBlocco = isset({stato}) ? strtolower(trim((string){stato})) : '';
+if ($statoBlocco === 'firmata') {
+    sc_error_message('La dichiarazione firmata non si modifica.');
+} else {
+
 $missing = array();
 
 dic_need_text('Capitale sociale', {capitale_sociale}, $missing);
@@ -245,4 +250,33 @@ if (!empty($missing)) {
     if ($statoOra !== 'firmata') {
         {stato} = 'compilata';
     }
+    $docLink = isset({documento_id}) ? (int){documento_id} : 0;
+    if ($docLink <= 0 && !empty($_SESSION['wizard_dichiarazione_documento_id'])) {
+        $docLink = (int)$_SESSION['wizard_dichiarazione_documento_id'];
+    }
+    if ($docLink <= 0) {
+        $subLink = isset({subvettore_id}) ? (int){subvettore_id} : 0;
+        if ($subLink <= 0 && !empty($_SESSION['wizard_subvettore_id'])) {
+            $subLink = (int)$_SESSION['wizard_subvettore_id'];
+        }
+        if ($subLink > 0) {
+            sc_lookup(rsDicDoc, "
+                SELECT d.id
+                FROM documenti d
+                INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+                WHERE d.subvettore_id = $subLink
+                  AND LOWER(td.nome) LIKE '%dichiaraz%'
+                  AND (d.subvettore_autista_id IS NULL OR d.subvettore_autista_id = 0)
+                  AND (d.subvettore_mezzo_id IS NULL OR d.subvettore_mezzo_id = 0)
+                  AND (d.firmato_il IS NULL OR d.firmato_il = '0000-00-00 00:00:00')
+                ORDER BY d.id DESC
+                LIMIT 1
+            ", 'pigliacelli');
+            $docLink = !empty({rsDicDoc[0][0]}) ? (int){rsDicDoc[0][0]} : 0;
+        }
+    }
+    if ($docLink > 0) {
+        {documento_id} = $docLink;
+    }
+}
 }

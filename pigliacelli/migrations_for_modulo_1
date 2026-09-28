@@ -807,3 +807,43 @@ CREATE TABLE IF NOT EXISTS `subvettori_dichiarazioni` (
   KEY `idx_dichiarazioni_documento` (`documento_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Utenti solo gruppo 2: si cancella l'account.
+-- sec_users_groups gruppo 2: si toglie sempre.
+-- Tratte, localita, contratti e collegamenti: svuotamento intero.
+CREATE TEMPORARY TABLE tmp_logins_g2 AS
+SELECT g.login
+FROM sec_users_groups g
+WHERE g.group_id = 2
+  AND NOT EXISTS (
+      SELECT 1
+      FROM sec_users_groups g2
+      WHERE g2.login = g.login
+        AND g2.group_id <> 2
+  );
+
+SET FOREIGN_KEY_CHECKS = 0;
+
+DELETE d
+FROM documenti d
+INNER JOIN tmp_logins_g2 t ON t.login = d.login;
+
+DELETE FROM sec_users_groups WHERE group_id = 2;
+
+DELETE su
+FROM sec_users su
+INNER JOIN tmp_logins_g2 t ON t.login = su.login;
+
+TRUNCATE TABLE subvettori_autisti_mezzi;
+TRUNCATE TABLE subvettori_autisti;
+TRUNCATE TABLE subvettori_mezzi;
+TRUNCATE TABLE contratti_tratte;
+TRUNCATE TABLE tratte_localita;
+TRUNCATE TABLE subvettori_contratti;
+TRUNCATE TABLE contratti;
+TRUNCATE TABLE tratte;
+TRUNCATE TABLE subvettori_dichiarazioni;
+TRUNCATE TABLE subvettori;
+SET FOREIGN_KEY_CHECKS = 1;
+
+DROP TEMPORARY TABLE tmp_logins_g2;
+

@@ -352,6 +352,16 @@ if (!function_exists('dea_build_mails')) {
                 . '</strong> è in scadenza. Verificare in griglia documenti.';
         }
 
+        if (stripos((string)$nome_documento, 'dichiaraz') !== false) {
+            if ($isExpiryDay) {
+                $introSub = 'la dichiarazione è scaduta. '
+                    . 'Dal menu <strong>Dichiarazioni</strong> può ricompilarla e firmarla per l\'anno nuovo.';
+            } else {
+                $introSub = 'la dichiarazione è in scadenza. '
+                    . 'Dal menu <strong>Dichiarazioni</strong> può ricompilarla e firmarla per l\'anno nuovo.';
+            }
+        }
+
         $subjectOp = $subjectSub;
 
         $textSub = $salutoSub . ",\n\n"
@@ -641,6 +651,153 @@ if ({dsDea} === false) {
     {dsDea}->Close();
 }
 
+// Dichiarazioni: entro 7 giorni dalla scadenza (o già scadute) apre la bozza dell'anno dopo.
+// La mail resta sul match esatto. La bozza non ha data_scadenza, quindi non rientra qui.
+$statRinnovi = 0;
+sc_lookup(rsDicRinnovo, "
+    SELECT
+        d.id,
+        d.tipo_documento_id,
+        d.subvettore_id,
+        COALESCE(d.login, ''),
+        sd.id,
+        sd.anno
+    FROM documenti d
+    INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+    INNER JOIN subvettori_dichiarazioni sd ON sd.documento_id = d.id
+    WHERE LOWER(td.nome) LIKE '%dichiaraz%'
+      AND d.stato_documento_id IN (2, 3)
+      AND d.file IS NOT NULL AND TRIM(d.file) <> ''
+      AND d.data_scadenza IS NOT NULL
+      AND d.data_scadenza <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)
+      AND LOWER(TRIM(sd.stato)) = 'firmata'
+      AND NOT EXISTS (
+          SELECT 1
+          FROM subvettori_dichiarazioni nx
+          WHERE nx.subvettore_id = sd.subvettore_id
+            AND nx.anno = sd.anno + 1
+      )
+    ORDER BY d.data_scadenza, d.id
+", 'pigliacelli');
+
+if (!empty({rsDicRinnovo})) {
+    foreach ({rsDicRinnovo} as $rn) {
+        $docOld = (int)$rn[0];
+        $tipoId = (int)$rn[1];
+        $subId = (int)$rn[2];
+        $loginSql = str_replace("'", "''", trim((string)$rn[3]));
+        $dicOld = (int)$rn[4];
+        $annoNew = (int)$rn[5] + 1;
+        if ($docOld <= 0 || $tipoId <= 0 || $subId <= 0 || $dicOld <= 0 || $annoNew <= 0) {
+            continue;
+        }
+        sc_lookup(rsDicRinnovoDup, "
+            SELECT id
+            FROM subvettori_dichiarazioni
+            WHERE subvettore_id = $subId
+              AND anno = $annoNew
+            LIMIT 1
+        ", 'pigliacelli');
+        if (!empty({rsDicRinnovoDup[0][0]})) {
+            continue;
+        }
+        sc_exec_sql("
+            INSERT INTO documenti (
+                tipo_documento_id, subvettore_id, login, stato_documento_id, file, data_scadenza
+            ) VALUES (
+                $tipoId, $subId, '$loginSql', 1, NULL, NULL
+            )
+        ", 'pigliacelli');
+        sc_lookup(rsDicRinnovoNewDoc, "SELECT LAST_INSERT_ID()", 'pigliacelli');
+        $docNew = !empty({rsDicRinnovoNewDoc[0][0]}) ? (int){rsDicRinnovoNewDoc[0][0]} : 0;
+        if ($docNew <= 0) {
+            sc_log_add('MAIL_DOCS_ALERT', "rinnovo dichiarazione SKIP doc nuovo assente old=$docOld sub=$subId");
+            continue;
+        }
+        sc_exec_sql("
+            INSERT INTO subvettori_dichiarazioni (
+                subvettore_id, anno, stato, documento_id,
+                capitale_sociale, capitale_iv, anno_inizio_attivita, sede_amministrativa, fax, ren,
+                num_albo_gestori, anga_cat1, anga_cat1_data, anga_cat4, anga_cat4_data, anga_cat5, anga_cat5_data,
+                attivita_svolta,
+                resp_contabilita, resp_contabilita_tel, resp_contabilita_cell,
+                resp_commerciale, resp_commerciale_tel, resp_commerciale_cell,
+                resp_logistica, resp_logistica_tel, resp_logistica_cell, resp_amministrativo,
+                mercato_nazionale, mercato_internazionale, nazioni,
+                n_personale, n_dirigenti, n_impiegati, n_operai,
+                fatturato_anno_1, fatturato_importo_1,
+                fatturato_anno_2, fatturato_importo_2,
+                fatturato_anno_3, fatturato_importo_3,
+                cliente_1, prodotto_1, perc_fatturato_1,
+                cliente_2, prodotto_2, perc_fatturato_2,
+                cliente_3, prodotto_3, perc_fatturato_3,
+                massimale_vettoriale, massimale_rc_auto, massimale_rct_rco,
+                resp_qualita, resp_qualita_tel, resp_ambientale, resp_ambientale_tel,
+                dl_nome, dl_tel, rspp_nome, rspp_tel, resp_haccp, resp_haccp_tel,
+                q_5_1_iso9001, q_5_2_piano_iso9001, q_5_3_politica_qualita, q_5_4_resp_qualita,
+                q_5_5_responsabilita, q_5_6_audit_interni, q_5_7_riunione_coord, q_5_8_procedure_generali,
+                q_5_9_rimorchi_cassonati, q_5_10_rimorchi_vasche, q_5_11_rimorchi_centinati, q_5_12_rimorchi_silos,
+                q_5_13_manichette_silos, q_5_14_manutenzione_mezzi, q_5_15_no_subvezione_terzi,
+                q_6_1_resp_acquisti, q_6_2_procedure_acquisti, q_6_3_conformita_acquisti,
+                q_6_4a_selezione_fornitori, q_6_4b_sorveglianza_forniture, q_6_4c_ispezione_ricevimento,
+                q_6_5_elenco_fornitori, q_6_6_certificati_fornitori,
+                q_7_1_iso14001, q_7_2_piano_iso14001, q_7_3_politica_ambiente, q_7_4_resp_ambientale,
+                q_7_5_analisi_ambientale, q_7_6_formazione_rifiuti, q_7_7_kit_antisversamento, q_7_8_pronto_intervento,
+                q_7_9_verifica_trasporti, q_7_10_mezzi_autorizzati_anga, q_7_11_quantitativi_anga, q_7_12_mud_152,
+                q_8_1_iso45001, q_8_2_piano_iso45001, q_8_3_politica_sicurezza, q_8_4_dl_rspp,
+                q_8_5_infortuni, q_8_6_verbali_autisti, q_8_7_dvr_dpi, q_8_8_schede_dpi,
+                q_8_9_attestato_mansione, q_8_10_dpi_iii_categoria, q_8_11_norme_siti, q_8_12_protocollo_sanitario,
+                q_9_1_sqas, q_9_2_diagnosi_energetica,
+                q_10_1_gmp, q_10_2_sicurezza_alimentare, q_10_3_politica_alimentare, q_10_4_resp_alimentare,
+                q_10_5_scia_asl, q_10_6_tracciabilita, q_10_7_audit_tracciabilita, q_10_8_pcc_poa,
+                q_10_9_manuale_autocontrollo, q_10_10_haccp_autisti, q_10_11_mezzi_alimentari
+            )
+            SELECT
+                subvettore_id, $annoNew, 'bozza', $docNew,
+                capitale_sociale, capitale_iv, anno_inizio_attivita, sede_amministrativa, fax, ren,
+                num_albo_gestori, anga_cat1, anga_cat1_data, anga_cat4, anga_cat4_data, anga_cat5, anga_cat5_data,
+                attivita_svolta,
+                resp_contabilita, resp_contabilita_tel, resp_contabilita_cell,
+                resp_commerciale, resp_commerciale_tel, resp_commerciale_cell,
+                resp_logistica, resp_logistica_tel, resp_logistica_cell, resp_amministrativo,
+                mercato_nazionale, mercato_internazionale, nazioni,
+                n_personale, n_dirigenti, n_impiegati, n_operai,
+                fatturato_anno_2, fatturato_importo_2,
+                fatturato_anno_3, fatturato_importo_3,
+                IF(fatturato_anno_3 IS NULL, NULL, fatturato_anno_3 + 1), NULL,
+                cliente_1, prodotto_1, perc_fatturato_1,
+                cliente_2, prodotto_2, perc_fatturato_2,
+                cliente_3, prodotto_3, perc_fatturato_3,
+                massimale_vettoriale, massimale_rc_auto, massimale_rct_rco,
+                resp_qualita, resp_qualita_tel, resp_ambientale, resp_ambientale_tel,
+                dl_nome, dl_tel, rspp_nome, rspp_tel, resp_haccp, resp_haccp_tel,
+                q_5_1_iso9001, q_5_2_piano_iso9001, q_5_3_politica_qualita, q_5_4_resp_qualita,
+                q_5_5_responsabilita, q_5_6_audit_interni, q_5_7_riunione_coord, q_5_8_procedure_generali,
+                q_5_9_rimorchi_cassonati, q_5_10_rimorchi_vasche, q_5_11_rimorchi_centinati, q_5_12_rimorchi_silos,
+                q_5_13_manichette_silos, q_5_14_manutenzione_mezzi, q_5_15_no_subvezione_terzi,
+                q_6_1_resp_acquisti, q_6_2_procedure_acquisti, q_6_3_conformita_acquisti,
+                q_6_4a_selezione_fornitori, q_6_4b_sorveglianza_forniture, q_6_4c_ispezione_ricevimento,
+                q_6_5_elenco_fornitori, q_6_6_certificati_fornitori,
+                q_7_1_iso14001, q_7_2_piano_iso14001, q_7_3_politica_ambiente, q_7_4_resp_ambientale,
+                q_7_5_analisi_ambientale, q_7_6_formazione_rifiuti, q_7_7_kit_antisversamento, q_7_8_pronto_intervento,
+                q_7_9_verifica_trasporti, q_7_10_mezzi_autorizzati_anga, q_7_11_quantitativi_anga, q_7_12_mud_152,
+                q_8_1_iso45001, q_8_2_piano_iso45001, q_8_3_politica_sicurezza, q_8_4_dl_rspp,
+                q_8_5_infortuni, q_8_6_verbali_autisti, q_8_7_dvr_dpi, q_8_8_schede_dpi,
+                q_8_9_attestato_mansione, q_8_10_dpi_iii_categoria, q_8_11_norme_siti, q_8_12_protocollo_sanitario,
+                q_9_1_sqas, q_9_2_diagnosi_energetica,
+                q_10_1_gmp, q_10_2_sicurezza_alimentare, q_10_3_politica_alimentare, q_10_4_resp_alimentare,
+                q_10_5_scia_asl, q_10_6_tracciabilita, q_10_7_audit_tracciabilita, q_10_8_pcc_poa,
+                q_10_9_manuale_autocontrollo, q_10_10_haccp_autisti, q_10_11_mezzi_alimentari
+            FROM subvettori_dichiarazioni
+            WHERE id = $dicOld
+              AND stato = 'firmata'
+            LIMIT 1
+        ", 'pigliacelli');
+        $statRinnovi++;
+        sc_log_add('MAIL_DOCS_ALERT', "rinnovo dichiarazione sub=$subId anno=$annoNew doc=$docNew da=$dicOld");
+    }
+}
+
 sc_log_add(
     'MAIL_DOCS_ALERT',
     'END letti=' . $statLetti
@@ -650,4 +807,5 @@ sc_log_add(
     . ' notif_sub=' . $statNotifSub
     . ' notif_op=' . $statNotifOp
     . ' operatori=' . count($operatorLogins)
+    . ' rinnovi=' . (isset($statRinnovi) ? (int)$statRinnovi : 0)
 );

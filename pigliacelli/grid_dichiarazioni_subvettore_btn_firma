@@ -1,0 +1,94 @@
+/**
+ * grid_dichiarazioni_subvettore → Action Bar sign_doc_btn (Ajax)
+ *
+ * Firma il documento di questa riga (documento_id), solo se stato = compilata.
+ * Il ritorno EasyGN è grid_dichiarazioni_subvettore.
+ */
+
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    @session_start();
+}
+
+$dicId = isset({dic_id}) ? (int){dic_id} : 0;
+$documentoId = isset({dic_doc}) ? (int){dic_doc} : 0;
+$subId = isset({dic_sub}) ? (int){dic_sub} : 0;
+
+$usrLogin = trim((string)[usr_login]);
+if ($usrLogin !== '' && strcasecmp($usrLogin, 'Guest') !== 0) {
+    $loginSql = str_replace("'", "''", $usrLogin);
+    sc_lookup(rsDicFirmaSub, "
+        SELECT COALESCE(su.subvettore_id, 0)
+        FROM sec_users su
+        INNER JOIN sec_users_groups sug
+            ON sug.login = su.login
+           AND sug.group_id = 2
+        WHERE su.login = '$loginSql'
+        LIMIT 1
+    ", 'pigliacelli');
+    $loginSub = !empty({rsDicFirmaSub[0][0]}) ? (int){rsDicFirmaSub[0][0]} : 0;
+    if ($loginSub > 0) {
+        $subId = $loginSub;
+    }
+}
+
+if ($dicId <= 0 || $documentoId <= 0 || $subId <= 0) {
+    sc_ajax_message('Documento non identificato. Ricaricare l\'elenco.');
+    sc_error_exit();
+}
+
+sc_lookup(rsDicFirmaOk, "
+    SELECT
+        sd.id,
+        LOWER(TRIM(COALESCE(sd.stato, ''))),
+        d.id
+    FROM subvettori_dichiarazioni sd
+    INNER JOIN documenti d ON d.id = sd.documento_id
+    INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+    WHERE sd.id = $dicId
+      AND sd.subvettore_id = $subId
+      AND d.id = $documentoId
+      AND d.subvettore_id = $subId
+      AND LOWER(td.nome) LIKE '%dichiaraz%'
+      AND (d.firmato_il IS NULL OR d.firmato_il = '0000-00-00 00:00:00')
+    LIMIT 1
+", 'pigliacelli');
+
+if (empty({rsDicFirmaOk[0][0]})) {
+    sc_ajax_message('Dichiarazione non firmabile (gia firmata o non di questo subvettore).');
+    sc_error_exit();
+}
+
+$stato = trim((string){rsDicFirmaOk[0][1]});
+if ($stato !== 'compilata') {
+    sc_ajax_message('Compila la dichiarazione prima di firmarla.');
+    sc_error_exit();
+}
+
+$documentoId = (int){rsDicFirmaOk[0][2]};
+[documentoId] = $documentoId;
+[subvettoreId] = $subId;
+$_SESSION['documentoId'] = $documentoId;
+$_SESSION['wizard_subvettore_id'] = $subId;
+$_SESSION['pdf_next'] = 'sign';
+$_SESSION['documento_verde_return_to'] = 'grid_dichiarazioni_subvettore';
+if (!isset($_SESSION['docs_pdf_force_regen']) || !is_array($_SESSION['docs_pdf_force_regen'])) {
+    $_SESSION['docs_pdf_force_regen'] = array();
+}
+$_SESSION['docs_pdf_force_regen'][$documentoId] = time();
+
+if (function_exists('sc_log_add')) {
+    sc_log_add('DIC_FIRMA', "btn_firma dic=$dicId doc=$documentoId sub=$subId");
+}
+
+$genUrl = '../generate_doc_to_sign/'
+    . '?documentoId=' . (int)$documentoId
+    . '&subvettoreId=' . (int)$subId
+    . '&next=sign'
+    . '&force=1'
+    . '&return_to=' . rawurlencode('grid_dichiarazioni_subvettore');
+
+if (function_exists('sc_ajax_javascript')) {
+    sc_ajax_javascript('window.open(' . json_encode($genUrl) . ',"_blank")');
+} else {
+    sc_redir('generate_doc_to_sign', documentoId=[documentoId];subvettoreId=[subvettoreId], "_blank");
+}

@@ -1,0 +1,45 @@
+/**
+ * grid_dichiarazioni_subvettore → onApplicationInit
+ *
+ * Prima della SQL. Niente sc_lookup.
+ * [subvettoreId] arriva da app_menu (onLoad) o dal link.
+ * Globale Integer OUT, non IN. Non assegnare 0 se il valore c'è già.
+ *
+ * SQL della griglia:
+ *   SELECT
+ *       sd.id            AS dic_id,
+ *       sd.subvettore_id AS dic_sub,
+ *       sd.anno          AS dic_anno,
+ *       sd.stato         AS dic_stato,
+ *       sd.documento_id  AS dic_doc,
+ *       d.firmato_il     AS doc_firmato_il,
+ *       d.data_scadenza  AS doc_scadenza,
+ *       d.file           AS doc_file
+ *   FROM subvettori_dichiarazioni sd
+ *   LEFT JOIN documenti d ON d.id = sd.documento_id
+ *   WHERE sd.subvettore_id = [subvettoreId]
+ *   ORDER BY sd.anno DESC
+ *
+ * Campi negli eventi: {dic_id} {dic_sub} {dic_anno} {dic_stato} {dic_doc}
+ *   {doc_firmato_il} {doc_scadenza} {doc_file}
+ * Action Bar Ajax: compila_dichiarazione_btn, sign_doc_btn, open_pdf_btn
+ * Menu: voce Dichiarazioni, gruppo 2, applicazione grid_dichiarazioni_subvettore.
+ *   Parametro: subvettoreId = [subvettoreId]
+ */
+
+if (!isset([subvettoreId]) || (string)[subvettoreId] === '' || (int)[subvettoreId] < 0) {
+    [subvettoreId] = 0;
+}
+
+$subId = 0;
+if (isset($_GET['subvettoreId']) && (int)$_GET['subvettoreId'] > 0) {
+    $subId = (int)$_GET['subvettoreId'];
+} elseif (isset($_REQUEST['subvettoreId']) && (int)$_REQUEST['subvettoreId'] > 0) {
+    $subId = (int)$_REQUEST['subvettoreId'];
+} elseif ((int)[subvettoreId] > 0) {
+    $subId = (int)[subvettoreId];
+}
+
+if ($subId > 0) {
+    [subvettoreId] = $subId;
+}

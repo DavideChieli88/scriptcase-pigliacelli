@@ -185,14 +185,65 @@ if (isset($_GET['from']) && strtolower(trim((string)$_GET['from'])) === 'firma')
     }
     if ($didRet > 0) {
         sc_exec_sql("
-            UPDATE documenti
-            SET firmato_il = NOW(),
-                stato_documento_id = 2,
-                updated_at = NOW()
-            WHERE id = $didRet
-              AND subvettore_id = $subId
-              AND (firmato_il IS NULL OR firmato_il = '0000-00-00 00:00:00')
+            UPDATE documenti d
+            INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+            SET d.firmato_il = NOW(),
+                d.stato_documento_id = 2,
+                d.data_scadenza = IF(
+                    LOWER(td.nome) LIKE '%dichiaraz%'
+                    AND (d.data_scadenza IS NULL OR d.data_scadenza = '0000-00-00'),
+                    DATE_ADD(DATE(NOW()), INTERVAL 1 YEAR),
+                    d.data_scadenza
+                ),
+                d.updated_at = NOW()
+            WHERE d.id = $didRet
+              AND d.subvettore_id = $subId
+              AND (d.firmato_il IS NULL OR d.firmato_il = '0000-00-00 00:00:00')
         ", 'pigliacelli');
+        sc_exec_sql("
+            UPDATE documenti d
+            INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+            SET d.data_scadenza = DATE_ADD(DATE(d.firmato_il), INTERVAL 1 YEAR),
+                d.updated_at = NOW()
+            WHERE d.id = $didRet
+              AND d.subvettore_id = $subId
+              AND LOWER(td.nome) LIKE '%dichiaraz%'
+              AND (d.data_scadenza IS NULL OR d.data_scadenza = '0000-00-00')
+              AND d.firmato_il IS NOT NULL
+              AND d.firmato_il <> '0000-00-00 00:00:00'
+        ", 'pigliacelli');
+        sc_exec_sql("
+            UPDATE subvettori_dichiarazioni
+            SET stato = 'firmata',
+                documento_id = $didRet
+            WHERE documento_id = $didRet
+              AND subvettore_id = $subId
+              AND stato <> 'firmata'
+        ", 'pigliacelli');
+        sc_lookup(rsDicFirmaRet, "
+            SELECT sd.id
+            FROM subvettori_dichiarazioni sd
+            INNER JOIN documenti d ON d.subvettore_id = sd.subvettore_id
+            INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+            WHERE d.id = $didRet
+              AND d.subvettore_id = $subId
+              AND LOWER(td.nome) LIKE '%dichiaraz%'
+              AND sd.stato = 'compilata'
+              AND (sd.documento_id IS NULL OR sd.documento_id = 0)
+            ORDER BY sd.anno DESC, sd.id DESC
+            LIMIT 1
+        ", 'pigliacelli');
+        if (!empty({rsDicFirmaRet[0][0]})) {
+            $dicFirmaRet = (int){rsDicFirmaRet[0][0]};
+            sc_exec_sql("
+                UPDATE subvettori_dichiarazioni
+                SET stato = 'firmata',
+                    documento_id = $didRet
+                WHERE id = $dicFirmaRet
+                  AND subvettore_id = $subId
+                  AND stato <> 'firmata'
+            ", 'pigliacelli');
+        }
         if (function_exists('sc_log_add')) {
             sc_log_add('WIZ_FIRMA', "from=firma → firmato_il+stato=2 documentoId=$didRet sub=$subId");
         }
@@ -311,14 +362,65 @@ if (!function_exists('wiz_verdi_sync_firmato_easygn')) {
             }
             if (in_array($st, $doneStatuses, true) || $allSignersDone) {
                 sc_exec_sql("
-                    UPDATE documenti
-                    SET firmato_il = NOW(),
-                        stato_documento_id = 2,
-                        updated_at = NOW()
-                    WHERE id = $docId
-                      AND subvettore_id = $subvettore_id
-                      AND (firmato_il IS NULL OR firmato_il = '0000-00-00 00:00:00')
+                    UPDATE documenti d
+                    INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+                    SET d.firmato_il = NOW(),
+                        d.stato_documento_id = 2,
+                        d.data_scadenza = IF(
+                            LOWER(td.nome) LIKE '%dichiaraz%'
+                            AND (d.data_scadenza IS NULL OR d.data_scadenza = '0000-00-00'),
+                            DATE_ADD(DATE(NOW()), INTERVAL 1 YEAR),
+                            d.data_scadenza
+                        ),
+                        d.updated_at = NOW()
+                    WHERE d.id = $docId
+                      AND d.subvettore_id = $subvettore_id
+                      AND (d.firmato_il IS NULL OR d.firmato_il = '0000-00-00 00:00:00')
                 ", 'pigliacelli');
+                sc_exec_sql("
+                    UPDATE documenti d
+                    INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+                    SET d.data_scadenza = DATE_ADD(DATE(d.firmato_il), INTERVAL 1 YEAR),
+                        d.updated_at = NOW()
+                    WHERE d.id = $docId
+                      AND d.subvettore_id = $subvettore_id
+                      AND LOWER(td.nome) LIKE '%dichiaraz%'
+                      AND (d.data_scadenza IS NULL OR d.data_scadenza = '0000-00-00')
+                      AND d.firmato_il IS NOT NULL
+                      AND d.firmato_il <> '0000-00-00 00:00:00'
+                ", 'pigliacelli');
+                sc_exec_sql("
+                    UPDATE subvettori_dichiarazioni
+                    SET stato = 'firmata',
+                        documento_id = $docId
+                    WHERE documento_id = $docId
+                      AND subvettore_id = $subvettore_id
+                      AND stato <> 'firmata'
+                ", 'pigliacelli');
+                sc_lookup(rsDicFirmaSync, "
+                    SELECT sd.id
+                    FROM subvettori_dichiarazioni sd
+                    INNER JOIN documenti d ON d.subvettore_id = sd.subvettore_id
+                    INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+                    WHERE d.id = $docId
+                      AND d.subvettore_id = $subvettore_id
+                      AND LOWER(td.nome) LIKE '%dichiaraz%'
+                      AND sd.stato = 'compilata'
+                      AND (sd.documento_id IS NULL OR sd.documento_id = 0)
+                    ORDER BY sd.anno DESC, sd.id DESC
+                    LIMIT 1
+                ", 'pigliacelli');
+                if (!empty({rsDicFirmaSync[0][0]})) {
+                    $dicFirmaSync = (int){rsDicFirmaSync[0][0]};
+                    sc_exec_sql("
+                        UPDATE subvettori_dichiarazioni
+                        SET stato = 'firmata',
+                            documento_id = $docId
+                        WHERE id = $dicFirmaSync
+                          AND subvettore_id = $subvettore_id
+                          AND stato <> 'firmata'
+                    ", 'pigliacelli');
+                }
                 $updated++;
                 if (function_exists('sc_log_add')) {
                     sc_log_add('WIZ_FIRMA', "sync EasyGN firmato_il+stato=2 doc=$docId wf=$wfId status=$st");

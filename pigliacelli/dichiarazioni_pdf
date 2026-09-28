@@ -852,29 +852,68 @@ if ($canFpdi && $pageCount > 0) {
     // ---------- Allegato E ----------
     $newPage(array(14, 10, 14));
     $cw = 182.0;
-    // Header brand
-    $pdf->SetTextColor($brand[0], $brand[1], $brand[2]);
-    $pdf->SetFont('times', 'B', 16);
-    $pdf->Cell(120, 7, 'Autotrasporti Pigliacelli S.p.A.', 0, 0, 'L');
-    $pdf->SetTextColor(0, 0, 0);
-    $pdf->SetFont('helvetica', '', 7);
-    $pdf->Cell(62, 7, 'GMP+  |  SQAS  |  ISO 9001/14001/45001', 0, 1, 'R');
-    $pdf->SetFont('helvetica', '', 6.8);
-    $pdf->MultiCell(
-        130,
-        3.1,
-        "Sede Legale: Via S. Anna, 80 - 03029 Veroli (FR)    Sede Amministrativa: Via Maria, 308 – 03029 Veroli (FR)\n"
-        . "Tel. 0775 8121 / Fax 0775 812360 – 812370    www.pigliacelli.it    pigliacelli@pigliacelli.it\n"
-        . "PEC: pigliacelli@pec.pigliacelli.it    Cod. Fis. e Part. Iva n° 00169560604 - R.E.A. FR 59333\n"
-        . "Iscrizione Albo Nazionale Gestori Ambientali n° IT08010",
-        0,
-        'L'
+    $logoDich = '';
+    $logoNomi = array(
+        'grp__NM__img__NM__logo_dichiarazioni_pigliacelli.png',
+        'logo_dichiarazioni_pigliacelli.png',
     );
-    $pdf->SetDrawColor(0, 0, 0);
-    $pdf->SetLineWidth(0.4);
-    $yLine = $pdf->GetY() + 1;
-    $pdf->Line(14, $yLine, 14 + $cw, $yLine);
-    $pdf->Ln(6);
+    $logoBasi = array();
+    if (isset($this->Ini->path_imagens) && $this->Ini->path_imagens !== '') {
+        $logoBasi[] = rtrim(str_replace('\\', '/', $this->Ini->path_imagens), '/');
+    }
+    $logoDir = realpath(dirname(__FILE__));
+    for ($li = 0; $li < 8 && $logoDir; $li++) {
+        $logoBasi[] = str_replace('\\', '/', $logoDir) . '/_lib/img';
+        $up = dirname($logoDir);
+        if ($up === $logoDir) {
+            break;
+        }
+        $logoDir = $up;
+    }
+    $logoCands = array();
+    foreach ($logoBasi as $logoBase) {
+        foreach ($logoNomi as $logoNome) {
+            $logoCands[] = $logoBase . '/' . $logoNome;
+        }
+    }
+    foreach ($logoCands as $logoTry) {
+        if ($logoTry !== '' && is_readable($logoTry)) {
+            $logoDich = $logoTry;
+            break;
+        }
+    }
+    if ($logoDich !== '') {
+        $imgH = 28;
+        $imgInfo = @getimagesize($logoDich);
+        if (is_array($imgInfo) && !empty($imgInfo[0])) {
+            $imgH = $cw * ($imgInfo[1] / $imgInfo[0]);
+        }
+        $pdf->Image($logoDich, 14, 8, $cw, $imgH, 'PNG');
+        $pdf->SetY(8 + $imgH + 4);
+    } else {
+        $pdf->SetTextColor($brand[0], $brand[1], $brand[2]);
+        $pdf->SetFont('times', 'B', 16);
+        $pdf->Cell(120, 7, 'Autotrasporti Pigliacelli S.p.A.', 0, 0, 'L');
+        $pdf->SetTextColor(0, 0, 0);
+        $pdf->SetFont('helvetica', '', 7);
+        $pdf->Cell(62, 7, 'GMP+  |  SQAS  |  ISO 9001/14001/45001', 0, 1, 'R');
+        $pdf->SetFont('helvetica', '', 6.8);
+        $pdf->MultiCell(
+            130,
+            3.1,
+            "Sede Legale: Via S. Anna, 80 - 03029 Veroli (FR)    Sede Amministrativa: Via Maria, 308 – 03029 Veroli (FR)\n"
+            . "Tel. 0775 8121 / Fax 0775 812360 – 812370    www.pigliacelli.it    pigliacelli@pigliacelli.it\n"
+            . "PEC: pigliacelli@pec.pigliacelli.it    Cod. Fis. e Part. Iva n° 00169560604 - R.E.A. FR 59333\n"
+            . "Iscrizione Albo Nazionale Gestori Ambientali n° IT08010",
+            0,
+            'L'
+        );
+        $pdf->SetDrawColor(0, 0, 0);
+        $pdf->SetLineWidth(0.4);
+        $yLine = $pdf->GetY() + 1;
+        $pdf->Line(14, $yLine, 14 + $cw, $yLine);
+        $pdf->Ln(6);
+    }
     $pdf->SetFont('times', '', 12);
     $pdf->Cell($cw, 6, 'Allegato E', 0, 1, 'C');
     $pdf->Ln(1);
@@ -1679,6 +1718,14 @@ $nextSign = (
 );
 if ($nextSign && $documentoId > 0) {
     unset($_SESSION['pdf_next']);
+    $returnToSign = '';
+    if (isset($_GET['return_to']) && trim((string)$_GET['return_to']) !== '') {
+        $returnToSign = preg_replace('/[^a-zA-Z0-9_\\-]/', '', (string)$_GET['return_to']);
+    } elseif (!empty($_SESSION['documento_verde_return_to'])) {
+        $returnToSign = preg_replace('/[^a-zA-Z0-9_\\-]/', '', (string)$_SESSION['documento_verde_return_to']);
+    } elseif (!empty($_SESSION['dichiarazioni_return_to'])) {
+        $returnToSign = preg_replace('/[^a-zA-Z0-9_\\-]/', '', (string)$_SESSION['dichiarazioni_return_to']);
+    }
     unset($_SESSION['dichiarazioni_return_to']);
     unset($_SESSION['documento_verde_return_to']);
     $egUrl = '../easygn_start_wf_docs/'
@@ -1686,6 +1733,9 @@ if ($nextSign && $documentoId > 0) {
         . '&subvettoreId=' . (int)$subvector
         . '&from_generate=1'
         . '&pdf_abs=' . rawurlencode($fullPath);
+    if ($returnToSign !== '') {
+        $egUrl .= '&return_to=' . rawurlencode($returnToSign);
+    }
     if (function_exists('sc_log_add')) {
         sc_log_add('PDF_SAVE', '[documentoId=' . (int)$documentoId . '][subvettoreId=' . (int)$subvector . '] redirect EasyGN ' . $egUrl);
     }

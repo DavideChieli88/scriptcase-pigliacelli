@@ -1295,12 +1295,19 @@ function webhook_update_documento_firmato_il($documentoId)
     }
    
     sc_exec_sql("
-        UPDATE documenti
-        SET firmato_il = NOW(),
-            stato_documento_id = 2,
-            updated_at = NOW()
-        WHERE id = $documentoId
-          AND (firmato_il IS NULL OR firmato_il = '0000-00-00 00:00:00')
+        UPDATE documenti d
+        INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+        SET d.firmato_il = NOW(),
+            d.stato_documento_id = 2,
+            d.data_scadenza = IF(
+                LOWER(td.nome) LIKE '%dichiaraz%'
+                AND (d.data_scadenza IS NULL OR d.data_scadenza = '0000-00-00'),
+                DATE_ADD(DATE(NOW()), INTERVAL 1 YEAR),
+                d.data_scadenza
+            ),
+            d.updated_at = NOW()
+        WHERE d.id = $documentoId
+          AND (d.firmato_il IS NULL OR d.firmato_il = '0000-00-00 00:00:00')
     ");
     webhook_sc_log('UPDATE documento_id=' . $documentoId . ' stato=2');
     // Se firmato_il era gia' valorizzato, aggiorna comunque lo stato a caricato
@@ -1313,6 +1320,47 @@ function webhook_update_documento_firmato_il($documentoId)
           AND firmato_il IS NOT NULL
           AND firmato_il <> '0000-00-00 00:00:00'
     ");
+    sc_exec_sql("
+        UPDATE documenti d
+        INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+        SET d.data_scadenza = DATE_ADD(DATE(d.firmato_il), INTERVAL 1 YEAR),
+            d.updated_at = NOW()
+        WHERE d.id = $documentoId
+          AND LOWER(td.nome) LIKE '%dichiaraz%'
+          AND (d.data_scadenza IS NULL OR d.data_scadenza = '0000-00-00')
+          AND d.firmato_il IS NOT NULL
+          AND d.firmato_il <> '0000-00-00 00:00:00'
+    ");
+    sc_exec_sql("
+        UPDATE subvettori_dichiarazioni
+        SET stato = 'firmata',
+            documento_id = $documentoId
+        WHERE documento_id = $documentoId
+          AND stato <> 'firmata'
+    ");
+    sc_lookup(rsDicFirmaWh, "
+        SELECT sd.id
+        FROM subvettori_dichiarazioni sd
+        INNER JOIN documenti d ON d.subvettore_id = sd.subvettore_id
+        INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+        WHERE d.id = $documentoId
+          AND LOWER(td.nome) LIKE '%dichiaraz%'
+          AND sd.stato = 'compilata'
+          AND (sd.documento_id IS NULL OR sd.documento_id = 0)
+        ORDER BY sd.anno DESC, sd.id DESC
+        LIMIT 1
+    ");
+    if (!empty({rsDicFirmaWh[0][0]})) {
+        $dicFirmaId = (int){rsDicFirmaWh[0][0]};
+        sc_exec_sql("
+            UPDATE subvettori_dichiarazioni
+            SET stato = 'firmata',
+                documento_id = $documentoId
+            WHERE id = $dicFirmaId
+              AND stato <> 'firmata'
+        ");
+        webhook_sc_log('dichiarazione firmata id=' . $dicFirmaId . ' doc=' . $documentoId);
+    }
     return true;
 }
 

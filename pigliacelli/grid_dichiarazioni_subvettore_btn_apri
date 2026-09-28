@@ -1,0 +1,59 @@
+/**
+ * grid_dichiarazioni_subvettore → Action Bar open_pdf_btn (Ajax)
+ *
+ * Apre il PDF della dichiarazione firmata di questa riga.
+ */
+
+$dicId = isset({dic_id}) ? (int){dic_id} : 0;
+$documentoId = isset({dic_doc}) ? (int){dic_doc} : 0;
+$subId = isset({dic_sub}) ? (int){dic_sub} : 0;
+if ($subId <= 0) {
+    $subId = (int)[subvettoreId];
+}
+
+if ($dicId <= 0 || $documentoId <= 0 || $subId <= 0) {
+    sc_ajax_message('PDF non identificato. Ricaricare l\'elenco.');
+    sc_error_exit();
+}
+
+sc_lookup(rsDicApri, "
+    SELECT d.id
+    FROM subvettori_dichiarazioni sd
+    INNER JOIN documenti d ON d.id = sd.documento_id
+    INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+    WHERE sd.id = $dicId
+      AND sd.subvettore_id = $subId
+      AND d.id = $documentoId
+      AND d.subvettore_id = $subId
+      AND LOWER(td.nome) LIKE '%dichiaraz%'
+      AND (
+          LOWER(TRIM(COALESCE(sd.stato, ''))) = 'firmata'
+          OR (
+              d.firmato_il IS NOT NULL
+              AND d.firmato_il <> '0000-00-00 00:00:00'
+          )
+      )
+    LIMIT 1
+", 'pigliacelli');
+
+if (empty({rsDicApri[0][0]})) {
+    sc_ajax_message('Il PDF e\' disponibile dopo la firma.');
+    sc_error_exit();
+}
+
+$documentoId = (int){rsDicApri[0][0]};
+[documentoId] = $documentoId;
+[subvettoreId] = $subId;
+[subvector] = $subId;
+$_SESSION['documentoId'] = $documentoId;
+
+$openUrl = '../dichiarazioni_pdf/'
+    . '?documentoId=' . (int)$documentoId
+    . '&subvettoreId=' . (int)$subId
+    . '&subvector=' . (int)$subId;
+
+if (function_exists('sc_ajax_javascript')) {
+    sc_ajax_javascript('window.open(' . json_encode($openUrl) . ', "_blank");');
+} else {
+    sc_redir('dichiarazioni_pdf', subvector=[subvector];subvettoreId=[subvettoreId];documentoId=[documentoId], "_blank");
+}

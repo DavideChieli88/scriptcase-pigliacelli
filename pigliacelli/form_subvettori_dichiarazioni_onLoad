@@ -7,7 +7,15 @@
  * I q_* sono radio orizzontali: 1 = Sì, 0 = No, senza default.
  * Label a sinistra (larga). Il testo della domanda sta qui, non in tabella.
  * sc_label(campo) senza apici e senza graffe.
+ * Dichiarazione firmata: niente salvataggio.
  */
+
+$statoForm = isset({stato}) ? strtolower(trim((string){stato})) : '';
+if ($statoForm === 'firmata') {
+    sc_btn_display('insert', 'off');
+    sc_btn_display('update', 'off');
+    sc_btn_display('delete', 'off');
+}
 
 sc_label(q_5_1_iso9001) = '5.1 - Siete certificati ISO 9001? (Se sì, allegare una copia del certificato senza rispondere alle domande a seguito tranne il punto 5.4 che va compilato; se no, rispondere alle domande successive)';
 sc_label(q_5_2_piano_iso9001) = '5.2 - Esiste un piano di certificazione ISO 9001';

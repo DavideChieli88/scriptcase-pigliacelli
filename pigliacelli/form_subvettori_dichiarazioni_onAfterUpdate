@@ -1,0 +1,24 @@
+/**
+ * form_subvettori_dichiarazioni → onAfterUpdate
+ *
+ * Se la form è stata aperta dalla griglia annuale, torna lì.
+ * Lo step 5 non imposta dic_return_to e resta com'è.
+ */
+
+$back = '';
+if (!empty($_SESSION['dic_return_to'])) {
+    $back = preg_replace('/[^a-zA-Z0-9_\\-]/', '', (string)$_SESSION['dic_return_to']);
+}
+if ($back === 'grid_dichiarazioni_subvettore') {
+    unset($_SESSION['dic_return_to']);
+    $subId = 0;
+    if (isset({subvettore_id}) && (int){subvettore_id} > 0) {
+        $subId = (int){subvettore_id};
+    } elseif (isset([subvettoreId]) && (int)[subvettoreId] > 0) {
+        $subId = (int)[subvettoreId];
+    }
+    if ($subId > 0) {
+        [subvettoreId] = $subId;
+        sc_redir('grid_dichiarazioni_subvettore', subvettoreId=[subvettoreId]);
+    }
+}

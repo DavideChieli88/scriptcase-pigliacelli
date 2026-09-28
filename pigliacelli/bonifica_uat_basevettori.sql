@@ -4,7 +4,12 @@
 -- Scopo: pulizia dati legacy BaCliFor prima re-import T2BaseVettori
 --
 -- NON tocca: stati_contratti, tipo_contratti, tipo_tariffe, societa, fornitori,
---            operatori sec_users (subvettore_id IS NULL), sec_settings (salvo sync_date)
+--            sec_users che appartengono anche a un gruppo diverso da 2,
+--            sec_settings (salvo sync_date)
+--
+-- Utenti: si toglie sempre sec_users_groups.group_id = 2.
+-- L'account sec_users si cancella solo se non ha altri gruppi.
+-- Se ha altri gruppi, resta e subvettore_id viene messo a NULL.
 --
 -- Dopo questo script, ordine job consigliato:
 --   1) upsert_subvectors_basevettori (+ bootstrap documenti preset)
@@ -28,42 +33,55 @@ START TRANSACTION;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- ---------------------------------------------------------------------------
--- 1) Documenti (UAT: azzera tutto) — possono FK su subvettori/autisti/mezzi
+-- 1) Figlie che puntano a subvettori / autisti / mezzi / contratti / tratte
 -- ---------------------------------------------------------------------------
 DELETE FROM documenti;
-
--- ---------------------------------------------------------------------------
--- 2) Join / figlie prima, poi genitori (evita #1701 / #1451)
--- ---------------------------------------------------------------------------
-DELETE FROM subvettori_autisti_mezzi;   -- FK → autisti, mezzi
+DELETE FROM subvettori_dichiarazioni;
+DELETE FROM subvettori_autisti_mezzi;
+DELETE FROM subvettori_autisti;
 DELETE FROM subvettori_mezzi;
-DELETE FROM subvettori_autisti;        -- FK → subvettori_contratti / subvettori
-DELETE FROM contratti_tratte;          -- FK → contratti, tratte
-DELETE FROM tratte_localita;           -- FK → tratte
-DELETE FROM subvettori_contratti;      -- FK → contratti, subvettori
+DELETE FROM contratti_tratte;
+DELETE FROM tratte_localita;
+DELETE FROM subvettori_contratti;
 DELETE FROM contratti;
 DELETE FROM tratte;
 
 -- ---------------------------------------------------------------------------
--- 3) Utenze subvettore PRIMA di subvettori (sec_users.subvettore_id → subvettori)
+-- 2) Utenti gruppo 2, poi subvettori
+--    Prima gli account che stanno SOLO nel gruppo 2.
+--    Poi tutte le righe sec_users_groups del gruppo 2.
+--    Chi resta in un altro gruppo perde solo il collegamento al subvettore.
 -- ---------------------------------------------------------------------------
-DELETE sug
-FROM sec_users_groups sug
-INNER JOIN sec_users su ON su.login = sug.login
-WHERE su.subvettore_id IS NOT NULL;
+DELETE su
+FROM sec_users su
+INNER JOIN sec_users_groups sug
+    ON sug.login = su.login
+   AND sug.group_id = 2
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM sec_users_groups g
+    WHERE g.login = su.login
+      AND g.group_id <> 2
+);
 
-DELETE FROM sec_users
+DELETE FROM sec_users_groups
+WHERE group_id = 2;
+
+UPDATE sec_users
+SET subvettore_id = NULL
 WHERE subvettore_id IS NOT NULL;
 
 DELETE FROM subvettori;
 
 -- ---------------------------------------------------------------------------
--- 4) Reset AUTO_INCREMENT (equivalente pratico al TRUNCATE)
+-- 3) Reset AUTO_INCREMENT (equivalente pratico al TRUNCATE)
+--    ALTER è DDL: fa commit implicito. Eseguire nello stesso giro, dopo i DELETE.
 -- ---------------------------------------------------------------------------
 ALTER TABLE documenti AUTO_INCREMENT = 1;
+ALTER TABLE subvettori_dichiarazioni AUTO_INCREMENT = 1;
 ALTER TABLE subvettori_autisti_mezzi AUTO_INCREMENT = 1;
-ALTER TABLE subvettori_mezzi AUTO_INCREMENT = 1;
 ALTER TABLE subvettori_autisti AUTO_INCREMENT = 1;
+ALTER TABLE subvettori_mezzi AUTO_INCREMENT = 1;
 ALTER TABLE contratti_tratte AUTO_INCREMENT = 1;
 ALTER TABLE tratte_localita AUTO_INCREMENT = 1;
 ALTER TABLE subvettori_contratti AUTO_INCREMENT = 1;
@@ -94,6 +112,8 @@ UNION ALL SELECT 'contratti_tratte', COUNT(*) FROM contratti_tratte
 UNION ALL SELECT 'subvettori_autisti', COUNT(*) FROM subvettori_autisti
 UNION ALL SELECT 'subvettori_mezzi', COUNT(*) FROM subvettori_mezzi
 UNION ALL SELECT 'subvettori_autisti_mezzi', COUNT(*) FROM subvettori_autisti_mezzi
+UNION ALL SELECT 'subvettori_dichiarazioni', COUNT(*) FROM subvettori_dichiarazioni
+UNION ALL SELECT 'sec_users_g2', COUNT(*) FROM sec_users_groups WHERE group_id = 2
 UNION ALL SELECT 'sec_users_sub', COUNT(*) FROM sec_users WHERE subvettore_id IS NOT NULL
 UNION ALL SELECT 'documenti_sub', COUNT(*) FROM documenti
     WHERE subvettore_id IS NOT NULL

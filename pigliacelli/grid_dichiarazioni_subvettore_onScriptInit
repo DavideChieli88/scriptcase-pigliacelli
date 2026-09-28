@@ -1,0 +1,287 @@
+/**
+ * grid_dichiarazioni_subvettore → onScriptInit
+ *
+ * Dopo la SQL. Gruppo 2 con wizard già concluso.
+ * from=firma: scrive firmato_il, scadenza a un anno e stato firmata.
+ * Poi, se EasyGN ha chiuso il workflow e il webhook non è arrivato, allinea lo stesso.
+ */
+
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    @session_start();
+}
+
+$usrLogin = trim((string)[usr_login]);
+if ($usrLogin === '' || strcasecmp($usrLogin, 'Guest') === 0) {
+    sc_redir('app_Login');
+}
+$loginSql = str_replace("'", "''", $usrLogin);
+$incomingSub = (int)[subvettoreId];
+
+sc_lookup(rsDicGridAuth, "
+    SELECT
+        sug.group_id,
+        COALESCE(s.wizard_complete, 0),
+        COALESCE(s.id, 0)
+    FROM sec_users su
+    INNER JOIN sec_users_groups sug
+        ON sug.login = su.login
+       AND sug.group_id = 2
+    LEFT JOIN subvettori s ON s.id = su.subvettore_id
+    WHERE su.login = '$loginSql'
+      AND su.active = 'Y'
+    LIMIT 1
+", 'pigliacelli');
+
+$groupId = !empty({rsDicGridAuth[0][0]}) ? (int){rsDicGridAuth[0][0]} : 0;
+$wizComplete = isset({rsDicGridAuth[0][1]}) ? (int){rsDicGridAuth[0][1]} : 0;
+$subId = !empty({rsDicGridAuth[0][2]}) ? (int){rsDicGridAuth[0][2]} : 0;
+
+if ($groupId !== 2 || $subId <= 0) {
+    sc_redir('app_menu');
+}
+if ($wizComplete !== 1) {
+    sc_redir('blank_wizard_landing');
+}
+if ($incomingSub > 0 && $incomingSub !== $subId) {
+    sc_redir('app_menu');
+}
+
+[subvettoreId] = $subId;
+$dicHealed = 0;
+
+sc_lookup(rsDicHeal, "
+    SELECT sd.id
+    FROM subvettori_dichiarazioni sd
+    INNER JOIN documenti d ON d.id = sd.documento_id
+    WHERE sd.subvettore_id = $subId
+      AND sd.stato <> 'firmata'
+      AND d.firmato_il IS NOT NULL
+      AND d.firmato_il <> '0000-00-00 00:00:00'
+    LIMIT 1
+", 'pigliacelli');
+if (!empty({rsDicHeal[0][0]})) {
+    $dicHealed = 1;
+    sc_exec_sql("
+        UPDATE subvettori_dichiarazioni sd
+        INNER JOIN documenti d ON d.id = sd.documento_id
+        SET sd.stato = 'firmata'
+        WHERE sd.subvettore_id = $subId
+          AND sd.stato <> 'firmata'
+          AND d.firmato_il IS NOT NULL
+          AND d.firmato_il <> '0000-00-00 00:00:00'
+    ", 'pigliacelli');
+}
+
+$fromFirma = (
+    isset($_GET['from'])
+    && strtolower(trim((string)$_GET['from'])) === 'firma'
+);
+
+if ($fromFirma) {
+    $didRet = 0;
+    if (isset($_GET['documentoId']) && (int)$_GET['documentoId'] > 0) {
+        $didRet = (int)$_GET['documentoId'];
+    } elseif (isset($_REQUEST['documentoId']) && (int)$_REQUEST['documentoId'] > 0) {
+        $didRet = (int)$_REQUEST['documentoId'];
+    }
+    if ($didRet > 0) {
+        sc_exec_sql("
+            UPDATE documenti d
+            INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+            SET d.firmato_il = NOW(),
+                d.stato_documento_id = 2,
+                d.data_scadenza = IF(
+                    (d.data_scadenza IS NULL OR d.data_scadenza = '0000-00-00'),
+                    DATE_ADD(DATE(NOW()), INTERVAL 1 YEAR),
+                    d.data_scadenza
+                ),
+                d.updated_at = NOW()
+            WHERE d.id = $didRet
+              AND d.subvettore_id = $subId
+              AND LOWER(td.nome) LIKE '%dichiaraz%'
+              AND (d.firmato_il IS NULL OR d.firmato_il = '0000-00-00 00:00:00')
+        ", 'pigliacelli');
+        sc_exec_sql("
+            UPDATE documenti d
+            INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+            SET d.data_scadenza = DATE_ADD(DATE(d.firmato_il), INTERVAL 1 YEAR),
+                d.updated_at = NOW()
+            WHERE d.id = $didRet
+              AND d.subvettore_id = $subId
+              AND LOWER(td.nome) LIKE '%dichiaraz%'
+              AND (d.data_scadenza IS NULL OR d.data_scadenza = '0000-00-00')
+              AND d.firmato_il IS NOT NULL
+              AND d.firmato_il <> '0000-00-00 00:00:00'
+        ", 'pigliacelli');
+        sc_exec_sql("
+            UPDATE subvettori_dichiarazioni
+            SET stato = 'firmata'
+            WHERE documento_id = $didRet
+              AND subvettore_id = $subId
+              AND stato <> 'firmata'
+        ", 'pigliacelli');
+        if (function_exists('sc_log_add')) {
+            sc_log_add('DIC_FIRMA', "from=firma doc=$didRet sub=$subId");
+        }
+    }
+}
+
+if (!function_exists('dic_grid_sync_firmato_easygn')) {
+    function dic_grid_sync_firmato_easygn($subvettore_id)
+    {
+        $subvettore_id = (int)$subvettore_id;
+        if ($subvettore_id <= 0 || !function_exists('curl_init')) {
+            return 0;
+        }
+        sc_lookup(rsDicEgBear, "
+            SELECT set_value FROM sec_settings WHERE set_name = 'easygn_bearer' LIMIT 1
+        ", 'pigliacelli');
+        $bearer = !empty({rsDicEgBear[0][0]}) ? trim((string){rsDicEgBear[0][0]}) : '';
+        if ($bearer === '') {
+            return 0;
+        }
+        sc_lookup(rsDicEgBase, "
+            SELECT set_value FROM sec_settings WHERE set_name = 'easygn_base_url' LIMIT 1
+        ", 'pigliacelli');
+        $base = !empty({rsDicEgBase[0][0]})
+            ? rtrim(trim((string){rsDicEgBase[0][0]}), '/')
+            : 'https://easygn.digiwebuno.it/api';
+        if ($base === '') {
+            return 0;
+        }
+        sc_lookup(rsDicEgPend, "
+            SELECT d.id, COALESCE(d.easygn_workflow_id, '')
+            FROM documenti d
+            INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+            INNER JOIN subvettori_dichiarazioni sd ON sd.documento_id = d.id
+            WHERE d.subvettore_id = $subvettore_id
+              AND sd.subvettore_id = $subvettore_id
+              AND LOWER(td.nome) LIKE '%dichiaraz%'
+              AND LOWER(TRIM(COALESCE(sd.stato, ''))) = 'compilata'
+              AND (d.firmato_il IS NULL OR d.firmato_il = '0000-00-00 00:00:00')
+              AND d.easygn_workflow_id IS NOT NULL
+              AND TRIM(d.easygn_workflow_id) <> ''
+            LIMIT 10
+        ", 'pigliacelli');
+        if (empty({rsDicEgPend[0][0]})) {
+            return 0;
+        }
+        $doneStatuses = array(
+            'done', 'signed', 'finished', 'completed', 'complete',
+            'closed', 'archived', 'success',
+        );
+        $updated = 0;
+        foreach ({rsDicEgPend} as $row) {
+            $docId = (int)$row[0];
+            $wfId = trim((string)$row[1]);
+            if ($docId <= 0 || $wfId === '') {
+                continue;
+            }
+            $url = $base . '/workflows/' . rawurlencode($wfId);
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $url);
+            curl_setopt($ch, CURLOPT_HTTPGET, true);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 8);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+                'Accept: application/json',
+                'Authorization: Bearer ' . $bearer,
+            ));
+            $body = curl_exec($ch);
+            $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            if ($http < 200 || $http >= 300 || !is_string($body) || $body === '') {
+                continue;
+            }
+            $data = json_decode($body, true);
+            if (!is_array($data)) {
+                continue;
+            }
+            $st = '';
+            foreach (array('status', 'state', 'workflow_status', 'workflowStatus') as $k) {
+                if (!empty($data[$k]) && is_string($data[$k])) {
+                    $st = strtolower(trim($data[$k]));
+                    break;
+                }
+            }
+            $allSignersDone = false;
+            $signers = null;
+            if (isset($data['files'][0]['signers']) && is_array($data['files'][0]['signers'])) {
+                $signers = $data['files'][0]['signers'];
+            } elseif (isset($data['signers']) && is_array($data['signers'])) {
+                $signers = $data['signers'];
+            }
+            if (is_array($signers) && count($signers) > 0) {
+                $allSignersDone = true;
+                foreach ($signers as $sg) {
+                    if (!is_array($sg)) {
+                        $allSignersDone = false;
+                        break;
+                    }
+                    $sst = '';
+                    foreach (array('status', 'state') as $sk) {
+                        if (!empty($sg[$sk])) {
+                            $sst = strtolower(trim((string)$sg[$sk]));
+                            break;
+                        }
+                    }
+                    if (!in_array($sst, $doneStatuses, true)) {
+                        $allSignersDone = false;
+                        break;
+                    }
+                }
+            }
+            if (!in_array($st, $doneStatuses, true) && !$allSignersDone) {
+                continue;
+            }
+            sc_exec_sql("
+                UPDATE documenti
+                SET firmato_il = NOW(),
+                    stato_documento_id = 2,
+                    data_scadenza = IF(
+                        data_scadenza IS NULL OR data_scadenza = '0000-00-00',
+                        DATE_ADD(DATE(NOW()), INTERVAL 1 YEAR),
+                        data_scadenza
+                    ),
+                    updated_at = NOW()
+                WHERE id = $docId
+                  AND subvettore_id = $subvettore_id
+                  AND (firmato_il IS NULL OR firmato_il = '0000-00-00 00:00:00')
+            ", 'pigliacelli');
+            sc_exec_sql("
+                UPDATE subvettori_dichiarazioni
+                SET stato = 'firmata'
+                WHERE documento_id = $docId
+                  AND subvettore_id = $subvettore_id
+                  AND stato <> 'firmata'
+            ", 'pigliacelli');
+            $updated++;
+            if (function_exists('sc_log_add')) {
+                sc_log_add('DIC_FIRMA', "sync EasyGN doc=$docId wf=$wfId status=$st");
+            }
+        }
+        return $updated;
+    }
+}
+
+$synced = dic_grid_sync_firmato_easygn($subId);
+$needReload = ($incomingSub <= 0 || $synced > 0 || $dicHealed > 0);
+if ($fromFirma && isset($didRet) && (int)$didRet > 0) {
+    $needReload = true;
+    $_SESSION['wizard_flash_msg'] = 'Firma registrata. La riga risulta firmata.';
+} elseif ($synced > 0) {
+    $_SESSION['wizard_flash_msg'] = 'Firma registrata. La riga risulta firmata.';
+}
+
+if ($needReload) {
+    sc_redir('grid_dichiarazioni_subvettore', subvettoreId=[subvettoreId]);
+}
+
+if (!empty($_SESSION['wizard_flash_msg'])) {
+    $flash = trim((string)$_SESSION['wizard_flash_msg']);
+    unset($_SESSION['wizard_flash_msg']);
+    if ($flash !== '') {
+        sc_alert($flash);
+    }
+}

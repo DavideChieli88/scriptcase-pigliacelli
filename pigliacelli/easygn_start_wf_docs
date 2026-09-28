@@ -807,10 +807,23 @@ if ($webhookUrl !== '' && preg_match('#^https?://#i', $webhookUrl) === 1) {
     $log('ATTENZIONE webhook_url assente');
 }
 
+$returnApp = 'grid_documenti_to_sign_wizard';
+if (isset($_GET['return_to']) && trim((string)$_GET['return_to']) !== '') {
+    $candRet = preg_replace('/[^a-zA-Z0-9_\\-]/', '', (string)$_GET['return_to']);
+    if ($candRet !== '') {
+        $returnApp = $candRet;
+    }
+} elseif (!empty($_SESSION['documento_verde_return_to'])) {
+    $candRet = preg_replace('/[^a-zA-Z0-9_\\-]/', '', (string)$_SESSION['documento_verde_return_to']);
+    if ($candRet !== '') {
+        $returnApp = $candRet;
+    }
+}
+
 $mailBaseRet = rtrim(trim($sc_setting('mail_base_url', '')), '/');
 if ($mailBaseRet !== '' && preg_match('#^https?://#i', $mailBaseRet) === 1) {
     $returnGrid = $mailBaseRet
-        . '/grid_documenti_to_sign_wizard/'
+        . '/' . $returnApp . '/'
         . '?from=firma'
         . '&documentoId=' . (int)$documentoId
         . '&subvettoreId=' . (int)$subvettoreId;

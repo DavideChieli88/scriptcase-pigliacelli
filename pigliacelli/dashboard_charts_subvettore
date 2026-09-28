@@ -1,0 +1,347 @@
+/**
+ * Blank dashboard_charts_subvettore → onExecute
+ *
+ * Stesse card di dashboard_charts, solo per il subvettore loggato (gruppo 2).
+ * Tratte e contratti passano da subvettori_contratti.
+ * Card: Tratte, Contratti, Documenti (nuovi del mese), Autisti e Mezzi (totale in anagrafica).
+ *
+ * Security: group 2.
+ * IDE: globale subvettoreId, Integer, OUT. Il login è solo il ripiego se è vuota.
+ */
+
+$subId = 0;
+if (isset([subvettoreId]) && (string)[subvettoreId] !== '' && (int)[subvettoreId] > 0) {
+    $subId = (int)[subvettoreId];
+}
+if ($subId <= 0) {
+    $usrLogin = trim((string)[usr_login]);
+    if ($usrLogin !== '' && strcasecmp($usrLogin, 'Guest') !== 0) {
+        $loginSql = str_replace("'", "''", $usrLogin);
+        sc_lookup(rsDashSub, "
+            SELECT COALESCE(su.subvettore_id, 0)
+            FROM sec_users su
+            INNER JOIN sec_users_groups sug
+                ON sug.login = su.login
+               AND sug.group_id = 2
+            WHERE su.login = '$loginSql'
+            LIMIT 1
+        ");
+        $subId = !empty({rsDashSub[0][0]}) ? (int){rsDashSub[0][0]} : 0;
+    }
+}
+
+if ($subId <= 0) {
+    echo '<p style="font-family:Poppins,Arial,sans-serif;padding:40px;color:#6c3fc5;">Nessun subvettore associato a questo utente.</p>';
+    return;
+}
+
+/* =========================
+   TRATTE
+========================= */
+$mesi_tratte = [];
+$valori_tratte = [];
+
+for ($i = 3; $i >= 0; $i--) {
+    $key = date('Y-m', strtotime("-$i months"));
+    $mesi_tratte[$key] = date('m/y', strtotime("-$i months"));
+    $valori_tratte[$key] = 0;
+}
+
+sc_lookup(rs_tratte, "
+SELECT
+    CONCAT(YEAR(t.created_at), '-', LPAD(MONTH(t.created_at),2,'0')) as mese,
+    COUNT(DISTINCT t.id)
+FROM tratte t
+INNER JOIN contratti_tratte ct ON ct.tratta_id = t.id
+INNER JOIN subvettori_contratti sc ON sc.contratto_id = ct.contratto_id
+WHERE sc.subvettore_id = $subId
+  AND t.created_at >= DATE_SUB(CURDATE(), INTERVAL 4 MONTH)
+GROUP BY YEAR(t.created_at), MONTH(t.created_at)
+ORDER BY YEAR(t.created_at), MONTH(t.created_at)
+");
+
+if (!empty({rs_tratte})) {
+    foreach ({rs_tratte} as $r) {
+        if (isset($valori_tratte[$r[0]])) {
+            $valori_tratte[$r[0]] = (int)$r[1];
+        }
+    }
+}
+
+$mesi_tratte = array_values($mesi_tratte);
+$valori_tratte = array_values($valori_tratte);
+
+
+/* =========================
+   CONTRATTI
+========================= */
+$mesi_contratti = [];
+$valori_contratti = [];
+
+for ($i = 3; $i >= 0; $i--) {
+    $key = date('Y-m', strtotime("-$i months"));
+    $mesi_contratti[$key] = date('m/y', strtotime("-$i months"));
+    $valori_contratti[$key] = 0;
+}
+
+sc_lookup(rs_contratti, "
+SELECT
+    CONCAT(YEAR(c.creato_il), '-', LPAD(MONTH(c.creato_il),2,'0')),
+    COUNT(DISTINCT c.id)
+FROM contratti c
+INNER JOIN subvettori_contratti sc ON sc.contratto_id = c.id
+WHERE sc.subvettore_id = $subId
+  AND c.creato_il >= DATE_SUB(CURDATE(), INTERVAL 4 MONTH)
+GROUP BY YEAR(c.creato_il), MONTH(c.creato_il)
+ORDER BY YEAR(c.creato_il), MONTH(c.creato_il)
+");
+
+if (!empty({rs_contratti})) {
+    foreach ({rs_contratti} as $r) {
+        if (isset($valori_contratti[$r[0]])) {
+            $valori_contratti[$r[0]] = (int)$r[1];
+        }
+    }
+}
+
+$mesi_contratti = array_values($mesi_contratti);
+$valori_contratti = array_values($valori_contratti);
+
+
+/* =========================
+   DOCUMENTI
+========================= */
+$mesi_doc = [];
+$valori_doc = [];
+
+for ($i = 3; $i >= 0; $i--) {
+    $key = date('Y-m', strtotime("-$i months"));
+    $mesi_doc[$key] = date('m/y', strtotime("-$i months"));
+    $valori_doc[$key] = 0;
+}
+
+sc_lookup(rs_doc, "
+SELECT
+    CONCAT(YEAR(d.created_at), '-', LPAD(MONTH(d.created_at),2,'0')),
+    COUNT(*)
+FROM documenti d
+WHERE d.subvettore_id = $subId
+  AND d.created_at >= DATE_SUB(CURDATE(), INTERVAL 4 MONTH)
+GROUP BY YEAR(d.created_at), MONTH(d.created_at)
+ORDER BY YEAR(d.created_at), MONTH(d.created_at)
+");
+
+if (!empty({rs_doc})) {
+    foreach ({rs_doc} as $r) {
+        if (isset($valori_doc[$r[0]])) {
+            $valori_doc[$r[0]] = (int)$r[1];
+        }
+    }
+}
+
+$mesi_doc = array_values($mesi_doc);
+$valori_doc = array_values($valori_doc);
+
+
+/* =========================
+   TREND
+========================= */
+$trend_tratte = 0;
+if (count($valori_tratte) >= 2) {
+    $ultimo = end($valori_tratte);
+    $precedente = prev($valori_tratte);
+    if ($precedente > 0) {
+        $trend_tratte = round((($ultimo - $precedente) / $precedente) * 100);
+    }
+}
+
+$trend_contratti = 0;
+if (count($valori_contratti) >= 2) {
+    $ultimo = end($valori_contratti);
+    $precedente = prev($valori_contratti);
+    if ($precedente > 0) {
+        $trend_contratti = round((($ultimo - $precedente) / $precedente) * 100);
+    }
+}
+
+$trend_doc = 0;
+if (count($valori_doc) >= 2) {
+    $ultimo = end($valori_doc);
+    $precedente = prev($valori_doc);
+    if ($precedente > 0) {
+        $trend_doc = round((($ultimo - $precedente) / $precedente) * 100);
+    }
+}
+
+sc_lookup(rs_aut_n, "SELECT COUNT(*) FROM subvettori_autisti WHERE subvettore_id = $subId");
+$num_autisti = !empty({rs_aut_n[0][0]}) ? (int){rs_aut_n[0][0]} : 0;
+
+sc_lookup(rs_mez_n, "SELECT COUNT(*) FROM subvettori_mezzi WHERE subvettore_id = $subId");
+$num_mezzi = !empty({rs_mez_n[0][0]}) ? (int){rs_mez_n[0][0]} : 0;
+?>
+
+<!-- CHART JS -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+
+body {
+    font-family: 'Poppins', Arial, sans-serif;
+    background: #f6f5fd;
+    margin: 0;
+    padding: 0;
+}
+
+.dashboard {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    align-items: stretch;
+    padding: 40px;
+    flex-wrap: wrap;
+}
+
+.card {
+    background: #ffffff;
+    border-radius: 20px;
+    padding: 22px 24px 18px 24px;
+    width: 260px;
+    box-shadow: 0 4px 20px rgba(100, 60, 180, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.card-header {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: #b0a8c8;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+}
+
+.card-value {
+    font-size: 48px;
+    font-weight: 700;
+    color: #6c3fc5;
+    line-height: 1;
+    margin: 4px 0 2px 0;
+}
+
+.trend {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.trend.up   { color: #7c4dcc; }
+.trend.down { color: #c62828; }
+
+.chart-container {
+    height: 75px;
+    margin-top: 8px;
+}
+</style>
+
+<div class="dashboard">
+
+    <!-- TRATTE -->
+    <div class="card">
+        <div class="card-header">TRATTE</div>
+        <div class="card-value"><?= end($valori_tratte) ?></div>
+        <div class="trend <?= $trend_tratte >= 0 ? 'up' : 'down' ?>">
+            <?= $trend_tratte >= 0 ? '↑' : '↓' ?> <?= abs($trend_tratte) ?>%
+        </div>
+        <div class="chart-container">
+            <canvas id="chartTratte"></canvas>
+        </div>
+    </div>
+
+    <!-- CONTRATTI -->
+    <div class="card">
+        <div class="card-header">CONTRATTI</div>
+        <div class="card-value"><?= end($valori_contratti) ?></div>
+        <div class="trend <?= $trend_contratti >= 0 ? 'up' : 'down' ?>">
+            <?= $trend_contratti >= 0 ? '↑' : '↓' ?> <?= abs($trend_contratti) ?>%
+        </div>
+        <div class="chart-container">
+            <canvas id="chartContratti"></canvas>
+        </div>
+    </div>
+
+    <!-- DOCUMENTI -->
+    <div class="card">
+        <div class="card-header">DOCUMENTI</div>
+        <div class="card-value"><?= end($valori_doc) ?></div>
+        <div class="trend <?= $trend_doc >= 0 ? 'up' : 'down' ?>">
+            <?= $trend_doc >= 0 ? '↑' : '↓' ?> <?= abs($trend_doc) ?>%
+        </div>
+        <div class="chart-container">
+            <canvas id="chartDoc"></canvas>
+        </div>
+    </div>
+
+    <!-- AUTISTI -->
+    <div class="card">
+        <div class="card-header">AUTISTI</div>
+        <div class="card-value"><?= (int)$num_autisti ?></div>
+        <div class="trend up">in anagrafica</div>
+    </div>
+
+    <!-- MEZZI -->
+    <div class="card">
+        <div class="card-header">MEZZI</div>
+        <div class="card-value"><?= (int)$num_mezzi ?></div>
+        <div class="trend up">in anagrafica</div>
+    </div>
+
+</div>
+
+<script>
+function barColors(count) {
+    const colors = [];
+    for (let i = 0; i < count; i++) {
+        const opacity = 0.18 + ((i / (count - 1)) * 0.82);
+        colors.push(`rgba(108, 63, 197, ${opacity.toFixed(2)})`);
+    }
+    return colors;
+}
+
+function creaChart(id, labels, data) {
+    new Chart(document.getElementById(id), {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: data,
+                backgroundColor: barColors(data.length),
+                borderRadius: 5,
+                barThickness: 14
+            }]
+        },
+        options: {
+            plugins: { legend: { display: false } },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: {
+                        font: { size: 10, family: 'Inter' },
+                        color: '#c0b8d8'
+                    },
+                    border: { display: false }
+                },
+                y: { display: false }
+            },
+            responsive: true,
+            maintainAspectRatio: false
+        }
+    });
+}
+
+creaChart('chartTratte',    <?= json_encode($mesi_tratte) ?>,    <?= json_encode($valori_tratte) ?>);
+creaChart('chartContratti', <?= json_encode($mesi_contratti) ?>, <?= json_encode($valori_contratti) ?>);
+creaChart('chartDoc',       <?= json_encode($mesi_doc) ?>,       <?= json_encode($valori_doc) ?>);
+</script>
+<?php

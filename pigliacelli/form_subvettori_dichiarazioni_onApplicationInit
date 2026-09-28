@@ -1,0 +1,25 @@
+/**
+ * form_subvettori_dichiarazioni → onApplicationInit
+ *
+ * Prima della SQL. Niente sc_lookup e niente sc_log_add.
+ * SQL: WHERE id = [dichiarazioneId]
+ * Il redirect di Compila passa già dichiarazioneId e subvettoreId.
+ * Qui si riempie la globale solo se è ancora vuota.
+ * Globali Integer OUT, non IN.
+ */
+
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    @session_start();
+}
+
+if ((!isset([dichiarazioneId]) || (int)[dichiarazioneId] <= 0)
+    && !empty($_SESSION['wizard_dichiarazione_id'])
+) {
+    [dichiarazioneId] = (int)$_SESSION['wizard_dichiarazione_id'];
+}
+
+if ((!isset([subvettoreId]) || (int)[subvettoreId] <= 0)
+    && !empty($_SESSION['wizard_subvettore_id'])
+) {
+    [subvettoreId] = (int)$_SESSION['wizard_subvettore_id'];
+}

@@ -4,12 +4,9 @@
  * Solo sulla riga dichiarazioni (onRecord lo nasconde sulle altre).
  * Crea la bozza dell'anno se manca e apre form_subvettori_dichiarazioni in modale.
  *
- * Setup IDE:
- * - Action Bar, tipo PHP Ajax, Name: compila_dichiarazione_btn
- * - Label: Compila dichiarazione
- * - Form: WHERE id = [dichiarazioneId]
- *   Globali sulla form (non sulla griglia): dichiarazioneId, subvettoreId
- *   Integer OUT, non IN. onApplicationInit legge GET, poi la sessione.
+ * Form SQL: WHERE id = [dichiarazioneId]
+ * Globali form: dichiarazioneId, subvettoreId. Integer OUT, non IN.
+ * Pulsante Ajax, non Run: modal non è disponibile su Run.
  *
  * Macro SC: niente spazi dentro le graffe.
  */
@@ -18,48 +15,42 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     @session_start();
 }
 
+$documentoId = isset({d.id}) ? (int){d.id} : 0;
 $subId = 0;
-$usrLogin = trim((string)[usr_login]);
-if ($usrLogin !== '' && strcasecmp($usrLogin, 'Guest') !== 0) {
-    $loginSql = str_replace("'", "''", $usrLogin);
-    sc_lookup(rsCompSub, "
-        SELECT COALESCE(su.subvettore_id, 0)
-        FROM sec_users su
-        INNER JOIN sec_users_groups sug
-            ON sug.login = su.login
-           AND sug.group_id = 2
-        WHERE su.login = '$loginSql'
+$tipoNome = '';
+if ($documentoId > 0) {
+    sc_lookup(rsCompDoc, "
+        SELECT d.subvettore_id, COALESCE(td.nome, '')
+        FROM documenti d
+        INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+        WHERE d.id = $documentoId
+          AND COALESCE(td.is_readonly, 0) = 1
         LIMIT 1
     ", 'pigliacelli');
-    $subId = !empty({rsCompSub[0][0]}) ? (int){rsCompSub[0][0]} : 0;
-}
-if ($subId <= 0 && !empty($_SESSION['wizard_subvettore_id'])) {
-    $subId = (int)$_SESSION['wizard_subvettore_id'];
+    if (!empty({rsCompDoc[0][0]})) {
+        $subId = (int){rsCompDoc[0][0]};
+        $tipoNome = trim((string){rsCompDoc[0][1]});
+    } else {
+        $documentoId = 0;
+    }
 }
 if ($subId <= 0 && isset({d.subvettore_id}) && (int){d.subvettore_id} > 0) {
     $subId = (int){d.subvettore_id};
 }
-
-$documentoId = 0;
-if (isset({d.id}) && (int){d.id} > 0) {
-    $documentoId = (int){d.id};
-}
-
-$tipoNome = '';
-if ($documentoId > 0 && $subId > 0) {
-    sc_lookup(rsCompTipo, "
-        SELECT COALESCE(td.nome, '')
-        FROM documenti d
-        INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
-        WHERE d.id = $documentoId
-          AND d.subvettore_id = $subId
-          AND COALESCE(td.is_readonly, 0) = 1
-        LIMIT 1
-    ", 'pigliacelli');
-    if (!empty({rsCompTipo[0][0]})) {
-        $tipoNome = trim((string){rsCompTipo[0][0]});
-    } else {
-        $documentoId = 0;
+if ($subId <= 0) {
+    $usrLogin = trim((string)[usr_login]);
+    if ($usrLogin !== '' && strcasecmp($usrLogin, 'Guest') !== 0) {
+        $loginSql = str_replace("'", "''", $usrLogin);
+        sc_lookup(rsCompSub, "
+            SELECT COALESCE(su.subvettore_id, 0)
+            FROM sec_users su
+            INNER JOIN sec_users_groups sug
+                ON sug.login = su.login
+               AND sug.group_id = 2
+            WHERE su.login = '$loginSql'
+            LIMIT 1
+        ", 'pigliacelli');
+        $subId = !empty({rsCompSub[0][0]}) ? (int){rsCompSub[0][0]} : 0;
     }
 }
 
@@ -84,8 +75,8 @@ sc_lookup(rsCompDic, "
 $dicId = !empty({rsCompDic[0][0]}) ? (int){rsCompDic[0][0]} : 0;
 if ($dicId <= 0) {
     sc_exec_sql("
-        INSERT INTO subvettori_dichiarazioni (subvettore_id, anno, stato)
-        VALUES ($subId, $anno, 'bozza')
+        INSERT INTO subvettori_dichiarazioni (subvettore_id, anno, stato, documento_id)
+        VALUES ($subId, $anno, 'bozza', $documentoId)
     ", 'pigliacelli');
     sc_lookup(rsCompDicNew, "
         SELECT id
@@ -102,9 +93,18 @@ if ($dicId <= 0) {
     sc_error_exit();
 }
 
+sc_exec_sql("
+    UPDATE subvettori_dichiarazioni
+    SET documento_id = $documentoId
+    WHERE id = $dicId
+      AND subvettore_id = $subId
+      AND (documento_id IS NULL OR documento_id = 0)
+", 'pigliacelli');
+
 $_SESSION['wizard_dichiarazione_id'] = $dicId;
+$_SESSION['wizard_dichiarazione_documento_id'] = $documentoId;
 $_SESSION['wizard_dichiarazione_anno'] = $anno;
 $_SESSION['wizard_subvettore_id'] = $subId;
 [subvettoreId] = $subId;
 
-sc_redir('form_subvettori_dichiarazioni', subvettoreId=[subvettoreId], 'modal');
+sc_redir('form_subvettori_dichiarazioni', dichiarazioneId=$dicId; subvettoreId=$subId, 'modal', '', '800', '1200');
