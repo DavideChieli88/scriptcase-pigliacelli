@@ -1,9 +1,24 @@
+<?php
 /**
- * form_subvettori_mezzi -> pulsante PHP "Prossimo"
+ * Slot ANGA/RENTRI aziendali (subvettore_mezzo_id e autista vuoti).
  *
- * Errori: flash in sessione + sc_redir (niente sc_alert/JS).
- * onScriptInit mostra il messaggio con sc_error_message.
+ * Unione dei flag has_cat_trasp_rifiuti_1/4/5 su tutti i mezzi del subvettore:
+ * una Autorizzazione + una Ricevuta per ogni categoria presente almeno una volta,
+ * e una Iscrizione RENTRI + una Ricevuta RENTRI se c'è almeno una categoria.
+ * Nessuna categoria → nessuno slot ANGA/RENTRI.
+ *
+ * Categoria sparita da tutti i mezzi:
+ * - slot senza file → DELETE
+ * - slot con file già caricato → si lascia (lo cancella il subvettore)
+ *
+ * Non copia i file già legati a un mezzo. Non imposta data_scadenza.
+ * I tipi usati diventano mandatory=1: lo step documenti richiede file e scadenza.
+ *
+ * La chiama form_subvettori_mezzi_btn_prossimo, prima di aprire form_documenti_wizard.
+ * form_documenti è la form di admin e operatori: non va sincronizzata lì.
+ * Copia della funzione anche in onAfterInsert / onAfterUpdate del mezzo.
  */
+
 if (!function_exists('anga_rentri_sync_slots')) {
     function anga_rentri_sync_slots($subId)
     {
@@ -134,73 +149,3 @@ if (!function_exists('anga_rentri_sync_slots')) {
         return $changed;
     }
 }
-
-
-$subId = 0;
-if (isset([subvettoreId])) {
-    $subId = (int)[subvettoreId];
-}
-if ($subId <= 0 && isset($_SESSION['wizard_subvettore_id'])) {
-    $subId = (int)$_SESSION['wizard_subvettore_id'];
-}
-
-sc_log_add('WIZARD', 'MEZZI_PROSSIMO_V3 START sub=' . $subId);
-
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    @session_start();
-}
-
-if ($subId <= 0) {
-    $_SESSION['wizard_flash_msg'] = 'Subvettore non identificato.';
-    sc_redir('blank_wizard_landing');
-}
-
-sc_lookup(rsWizMezCnt, "SELECT COUNT(*) FROM subvettori_mezzi WHERE subvettore_id = $subId", 'pigliacelli');
-$nMezzi = !empty({rsWizMezCnt[0][0]}) ? (int){rsWizMezCnt[0][0]} : 0;
-
-sc_log_add('WIZARD', 'MEZZI_PROSSIMO_V3 COUNT_MEZZI=' . $nMezzi);
-
-[subvettoreId] = $subId;
-$_SESSION['wizard_subvettore_id'] = $subId;
-
-if ($nMezzi < 1) {
-    $_SESSION['wizard_flash_msg'] = 'Inserire almeno un mezzo prima di proseguire.';
-    sc_log_add('WIZARD', 'MEZZI_PROSSIMO_V3 BLOCK no mezzi');
-    sc_redir('form_subvettori_mezzi', subvettoreId=[subvettoreId]);
-}
-
-sc_lookup(rsWizMezDocOk, "
-    SELECT COUNT(DISTINCT sm.id)
-    FROM subvettori_mezzi sm
-    INNER JOIN documenti d ON d.subvettore_mezzo_id = sm.id
-    WHERE sm.subvettore_id = $subId
-      AND d.tipo_documento_id = 22
-      AND d.file IS NOT NULL
-      AND TRIM(d.file) <> ''
-", 'pigliacelli');
-$nDocOk = !empty({rsWizMezDocOk[0][0]}) ? (int){rsWizMezDocOk[0][0]} : 0;
-
-sc_log_add('WIZARD', 'MEZZI_PROSSIMO_V3 COUNT_CARTA=' . $nDocOk);
-
-// Autista↔mezzo facoltativo (SAL 16/09): non bloccare Prossimo.
-if ($nDocOk < $nMezzi) {
-    $_SESSION['wizard_flash_msg'] = 'Completare la carta di circolazione per ogni mezzo prima di proseguire.';
-    sc_log_add('WIZARD', 'MEZZI_PROSSIMO_V3 BLOCK carta');
-    sc_redir('form_subvettori_mezzi', subvettoreId=[subvettoreId]);
-}
-
-sc_log_add('WIZARD', 'MEZZI_PROSSIMO_V3 OK mezzi=' . $nMezzi);
-
-anga_rentri_sync_slots($subId);
-
-sc_exec_sql("
-    UPDATE subvettori
-    SET wizard_step = 4
-    WHERE id = $subId
-      AND wizard_complete = 0
-      AND wizard_step = 3
-", 'pigliacelli');
-
-sc_exec_sql('COMMIT');
-
-sc_redir('form_documenti_wizard', subvettoreId=[subvettoreId]);

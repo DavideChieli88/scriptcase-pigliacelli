@@ -1,0 +1,887 @@
+set 28, 2026
+Pigliacelli Workspace | Briefing e SAL
+invitato davide.chieli@digiwebuno.it Erik Capoccetta
+Allegati Pigliacelli Workspace | Briefing e SAL
+Record delle riunioni Trascrizione
+Riepilogo
+Test di deployment e configurazione del wizard e gestione documentaleDeployment e configurazioneTest di deployment in UAT superati con successo e verifica dei flussi iniziali per il progetto Pigliacelli.Gestione documentaleRidefinita la richiesta dei documenti ANGA e RENTRI a livello aziendale nel sistema.Pianificazione e scadenzeConcordato il completamento delle modifiche al wizard entro mercoledì per consentire i test dei clienti.
+Decisioni
+Concordato
+Divisione dei dati aziendali e del rappresentante I dati sociali e quelli del legale rappresentante devono essere separati in due blocchi distinti nel modulo.
+Gestione centralizzata dei documenti ANGA e RENTRI I documenti ANGA e RENTRI devono essere rimossi dalla gestione dei singoli veicoli e gestiti in base alle categorie dei mezzi nel Wizard.
+Inserimento dello step per l'Allegato E Il flusso del Wizard deve includere uno step separato dedicato esclusivamente alla compilazione dell'Allegato E.
+Utilizzo di griglie per le viste È stato stabilito di impiegare le griglie per la gestione delle viste anziché i form.
+Layout a pagina intera per gli allegati È stato concordato di impostare la sezione degli allegati a tutta pagina senza l'utilizzo di modali.
+Passaggi successivi
+[Erik Capoccetta] Avvisare Francesco: Comunicare a Francesco la scadenza della licenza di ScriptCase entro i prossimi 7-8 giorni.
+[Davide Chieli] Spostare Rentry: Rimuovere il campo Rentry dai mezzi e trasferire la gestione dello stesso nell'anagrafica aziendale.
+[Davide Chieli] Aggiornare Wizard: Implementare un nuovo passaggio nel Wizard per caricare autorizzazioni e ricevute specifiche basate sulle categorie dichiarate per i mezzi.
+[Davide Chieli] Definire obbligatorietà campi: Richiedere ai clienti delucidazioni su quali campi specifici del questionario debbano essere impostati come obbligatori.
+[Davide Chieli] Formattare valuta: Inserire il simbolo dell'euro in corrispondenza di tutti i campi relativi ai dati economici.
+[Davide Chieli] Aggiungere step Allegato E: Implementare il nuovo passaggio nel Wizard posizionato dopo l'inserimento di autisti e mezzi per la compilazione dei documenti.
+[Davide Chieli] Generare documenti dinamici: Creare un controllo che verifichi le categorie assegnate ai veicoli e richieda solo i documenti pertinenti durante il processo di onboarding.
+[Davide Chieli] Aggiornare gestione file: Utilizzare una griglia editabile al posto della modale e disabilitare l'opzione di eliminazione dei file da parte degli utenti.
+[Davide Chieli] Validare campi obbligatori: Impostare i campi documento e data di scadenza come obbligatori per garantire la completezza dell'inserimento dati.
+[Erik Capoccetta, Davide Chieli] Pianificare riunione di controllo: Verificare entro mercoledì sera l'avanzamento dei lavori per procedere con l'invio delle credenziali agli utenti giovedì.
+Dettagli
+Topic 1: Test di deployment e flusso iniziale per il progetto Pigliacelli: Davide Chieli spiega di aver eseguito diversi deploy e test in ambiente UAT in modalità incognito, verificando il corretto funzionamento del flusso di creazione dei subvettori e l'invio delle credenziali via email (00:00:41). Erik Capoccetta verifica la ricezione e la formattazione in HTML dell'email di test (00:01:55).
+Topic 2: Configurazione dei campi anagrafici e delle validazioni: Davide Chieli illustra i campi aggiunti nello step 3, tra cui il codice fiscale del rappresentante legale, la residenza, la banca, l'IBAN e il codice destinatario. Erik Capoccetta suggerisce di suddividere i dati sociali dell'azienda da quelli del legale rappresentante in due blocchi distinti per chiarezza (00:03:38). Vengono inoltre esaminate le validazioni tramite espressione regolare per l'IBAN e segnalata la scadenza imminente della licenza di Script Case prevista tra 7-8 giorni, che Erik Capoccetta si impegna a comunicare a Francesco (00:04:47).
+Topic 3: Inserimento e gestione degli autisti nel sistema: Vengono esaminati i passaggi per l'inserimento degli autisti (step 6), che comprendono il nome, le scadenze della patente, il CQC, la formazione sulla sicurezza e l'eventuale permesso di soggiorno con relativa scadenza (00:07:29). Davide Chieli spiega che i file possono essere trascinati direttamente nei riquadri e che il salvataggio conferma la creazione dell'autista nel sistema (00:08:44).
+Topic 4: Gestione dei mezzi e discussione sui documenti ANGA e RENTRI: Nella sezione relativa ai veicoli, il modello è stato rimosso poiché ricavato dalla carta di circolazione e l'assegnazione dell'autista è stata resa opzionale (00:11:29). Sorge un confronto tra Erik Capoccetta e Davide Chieli in merito alla gestione delle autorizzazioni dell'Albo Nazionale Gestione Ambientale (ANGA) e del RENTRI: Davide Chieli sostiene che tali documenti vadano richiesti per singolo mezzo in base alle indicazioni fornite da Flavia Pigliacelli e Davide Marcoccia, mentre Erik Capoccetta sostiene che l'autorizzazione ANGA sia aziendale sebbene richieda l'aggiornamento costante dei singoli mezzi (00:12:45) (00:17:31).
+Topic 5: Chiarimento sulla normativa e ridefinizione della richiesta documenti nel Wizard: Dopo aver verificato i riferimenti normativi, Erik Capoccetta chiarisce che le categorie dell'Albo Ambientale e le iscrizioni sono rilasciate all'azienda e non al singolo mezzo, sebbene i veicoli debbano essere associati a una specifica categoria (00:21:59). Di conseguenza, viene concordato che i documenti ANGA e RENTRI non devono essere caricati direttamente all'interno di ogni singolo mezzo, ma il sistema dovrà verificare le categorie dei mezzi inseriti per richiedere i relativi documenti e ricevute in un passaggio successivo del Wizard (00:24:28).
+Topic 6: Gestione di Durf, polizze assicurative e form di dichiarazione (Allegato E): Vengono analizzati altri documenti richiesti come il Durf e la polizza assicurativa, oltre al form per la dichiarazione aziendale (Allegato E) contenente i dati strutturali e i fatturati degli ultimi anni (00:29:29) (00:32:50). Erik Capoccetta propone di scorporare l'Allegato E inserendolo come uno step dedicato del Wizard (passo 5), posizionato prima del caricamento finale dei documenti e della firma, per rispettare le richieste di Flavia Pigliacelli (00:49:31). Davide Chieli si occuperà di riorganizzare questa struttura (00:50:55) (00:55:46).
+Topic 7: Miglioramenti dell'interfaccia e pianificazione delle scadenze: Vengono discussi ulteriori interventi tecnici, tra cui la validazione del codice destinatario e dell'IBAN, l'utilizzo di griglie editabili per i documenti anziché finestre modali e la rimozione della possibilità di eliminare autonomamente determinati file per evitare errori di compilazione (00:52:28). Infine, Erik Capoccetta stabilisce che le modifiche allo spostamento del form e alla gestione dei documenti dovranno essere completate entro mercoledì (00:55:46).
+Gestione dei pulsanti del Wizard tramite variabili globali o menu: Il problema discusso riguarda la gestione dei pulsanti avanti e indietro all'interno del wizard per evitare di duplicare inutilmente le form. Davide Chieli evidenzia che Scriptcase gestisce la stessa form e la medesima variabile in input, rendendo complesso nascondere i pulsanti nelle diverse sezioni. Erik Capoccetta suggerisce l'impiego di una variabile globale o l'utilizzo dell'evento di sistema del menu denominato `SC menu item` per impostare una variabile a zero all'apertura del menu, nascondendo così i comandi non necessari (00:58:16). Davide Chieli precisa di non utilizzare il menu standard dell'applicazione, ma Erik Capoccetta ribadisce che la variabile fa parte del modulo di sistema del menu principale (00:59:16).
+Utilizzo delle griglie per la visualizzazione statica dei dati: Durante l'esame delle viste nel wizard, Davide Chieli ricontra la comparsa indesiderata di pulsanti di navigazione all'interno della stessa form (01:00:17). Erik Capoccetta propone di sostituire la form con una griglia (*grid*), sottolineando che le viste devono rimanere statiche e l'uso di una griglia nativa previene anomalie di visualizzazione. Davide Chieli esprime inizialmente perplessità riguardo alla creazione di una griglia separata per ogni vista per evitare un lavoro ripetitivo, ma riconosce le difficoltà tecniche riscontrate finora (01:01:08). Infine, il consenso condiviso orienta verso l'utilizzo delle griglie per garantire la stabilità delle viste (01:02:03).
+Pianificazione delle scadenze e invio delle credenziali di prova: Erik Capoccetta definisce la tempistica per il completamento del wizard, fissando una verifica di controllo per mercoledì con l'obiettivo di inviare giovedì le credenziali ai clienti per consentire loro di effettuare test in autonomia (01:02:03). Davide Chieli stima il lavoro residuo a meno di due ore per la giornata corrente e circa un giorno e due ore per mercoledì, manifestando preoccupazione per la ristrettezza dei tempi dedicati ai test. Erik Capoccetta concorda un ulteriore riscontro telefonico per mercoledì a fine giornata (alle ore 17:00), in modo da garantire due giorni pieni di lavoro effettivo (01:04:13).
+Gestione dinamica dei documenti e delle categorie dei mezzi: Davide Chieli solleva una questione operativa in merito alla gestione dei documenti per i mezzi abilitati a specifiche categorie (dalla categoria 1 alla 4/5). Erik Capoccetta indica di lasciare invariata la configurazione dei mezzi senza attivare interazioni dirette al clic, delegando la logica di controllo al sistema (01:02:03). Erik Capoccetta spiega che, al momento del passaggio all'azione successiva, il sistema dovrà interrogare l'elenco dei mezzi per verificare la presenza di categorie specifiche (come la categoria 1, 2 o 4) e inserire dinamicamente i documenti associati (quali quietanza o *rentry*) solo se non già presenti. Davide Chieli riconosce che la generazione automatica di questa struttura rappresenta la parte più complessa da implementare (01:03:10).
+Strutturazione dei dati anagrafici e navigazione a pagina intera: Vengono definiti i dettagli di layout del wizard: cliccando sul pulsante per procedere, l'utente accederà direttamente alla form dell'allegato a pagina intera, eliminando la modalità modale. Erik Capoccetta consiglia di organizzare ulteriormente i dati anagrafici suddividendoli in blocchi dedicati, un approccio che Davide Chieli ha già iniziato a impostare positivamente. La riunione si conclude con i saluti poiché Erik Capoccetta deve partecipare a un altro impegno fissato alle 16:00, concordando di riaggiornarsi il giorno seguente o direttamente a ridosso della scadenza (01:04:13).
+Dovresti rivedere le note di Gemini per assicurarti che siano accurate. Ricevi suggerimenti e scopri come Gemini prende appunti
+Qual è la qualità di queste note specifiche? Rispondi a un breve sondaggio? Facci sapere cosa ne pensi e quanto le note siano state utili per le tue esigenze.
+set 28, 2026
+Pigliacelli Workspace | Briefing e SAL - Trascrizione
+00:00:41
+Erik Capoccetta: Davide,
+Davide Chieli: Ciao Erik,buon ciao buon pomeriggio a te.
+Erik Capoccetta: buon pomeriggio. Allora, come stai?
+Davide Chieli: Tutto bene? Ti ringrazio.
+Erik Capoccetta: Ah, allora, vediamo un attimo di fare un po' il punto della situazione su su Pigliacelli per cercare di
+Davide Chieli: Sì,
+Erik Capoccetta: capire un attimo se possiamo
+Davide Chieli: allora ti Sì, io ho fatto già un paio di deploy. In realtà ho fatto sia venerdì scorso e ho fatto già dei test in Oat in incognito, cioè il massimo che posso fare da solo è mi servirebbe solo un'altra macchina, però ho fatto diciamo e poi li ho rifatti anche ieri e oggi, eh, o meglio ieri,
+Erik Capoccetta: Ja.
+Davide Chieli: vabbè, no, oggi ieri vabbè ho visto giusto qualcosa per stare sicuro, però eh, praticamente eh sta funzionando tutto. Eh,
+Erik Capoccetta: Ah!
+Davide Chieli: ti faccio vedere un attimo. Allora, vi faccio vedere la prova su ATI perché io già ho pulito tutto.
+Erik Capoccetta: Eh, facciamo
+Davide Chieli: Ehm, allora, non so se stai vedendo.
+Erik Capoccetta: Sì, sì.
+Davide Chieli: Ok, già ho pulito tutto.
+00:01:55
+Davide Chieli: Stavo dicendo, ho fatto, vabbè, dei test giusto per un po' come come abbiamo detto loro, loro non vogliono non vogliono la sincronizzazione immediata coi subvettori, vogliono solo creare il subvettore da qua, no? Quindi io sono un admin, faccio il flusso di creazione subvettori, come abbiamo visto l'altra volta.
+Erik Capoccetta: M.
+Davide Chieli: Eh, ti do un attimo la tua Eric Capozzetta,
+Erik Capoccetta: Ok.
+Davide Chieli: eh. Ok. E questo è un per adesso serve ancora il codice qua. Test. Vando la questa è quest.
+Erik Capoccetta: Sì, sì.
+Davide Chieli: Mando le credenziali. Dovrebbero arrivarti le credenziali a te.
+Erik Capoccetta: Pigliacellisupport. Ok.
+Davide Chieli: Ok. Poi da lì puoi, diciamo, fare il flusso che abbiamo visto con magari se la condividi lo vediamo insieme, così ho anche la tua visione, tra virgolette del del flusso non infettato dalla mia macchina,
+Erik Capoccetta: Sì,
+Davide Chieli: tra virgolette.
+Erik Capoccetta: allora.
+Davide Chieli: Угуm.
+Erik Capoccetta: Vbè, la mail sì, è formattata in HTML, quindi ho visto che lo è.
+Davide Chieli: Ok,
+Erik Capoccetta: Ok.
+Davide Chieli: allora qua ci sono un po' di novità, diciamo che c'hanno cominciamo.
+00:03:38
+Davide Chieli: Vabbè, questa qui è è uguale, è una grafica aziendale, questa è uguale, identica, diciamo, questa step qua, a parte i campi nuovi che ci hanno chiesto di aggiungere.
+Erik Capoccetta: Eh, che erano quelli?
+Davide Chieli: Questi erano pochi, diciamo, erano pochi campi. Se a vedere giù sono giusto i campi, codice fiscale rappresentante, residenza rappresentante e la banca, l'iban e il codice destinatario. Questi questi altri pochi campi qua.
+Erik Capoccetta: Sì.
+Davide Chieli: La la l'enormità dei campi sarà nello step 5,
+Erik Capoccetta: Sì, sì,
+Davide Chieli: quello là che che avevo che abbiamo fatto in una forma nuova.
+Erik Capoccetta: ma qua riusciamo a dividere i dati dell'azienda da quelli del legale rappresent,
+Davide Chieli: Sì,
+Erik Capoccetta: cioè facciamo due blocchi,
+Davide Chieli: sì, l'ho fatto. Ti faccio vedere dopo come ho fatto per la step 5 col nuovo form. Comunque sì, dividere i dati di che cosa? della del rappresentante
+Erik Capoccetta: dati sociali io metterei e dati legali rappresentante.
+Davide Chieli: dati sociali, dati rappresentante. Va bene. Due blocks.
+Erik Capoccetta: Così lui sa che sta compilando il rappresentante legale.
+00:04:47
+Davide Chieli: Sì, sì,
+Erik Capoccetta: Eh,
+Davide Chieli: sì, sì, sì. Ok,
+Erik Capoccetta: vabbè, io mo confino se vado avanti.
+Davide Chieli: puoi mettere Puoi mettere No, purtroppo sono tutti bloccati questi qua.
+Erik Capoccetta: Sì, sì, sì,
+Davide Chieli: Katt.
+Erik Capoccetta: sì.
+Davide Chieli: Anzi, la cosa che mi chiederò che dovrò chiedere poi a loro è quando fanno il sondaggio,
+Erik Capoccetta: Ok,
+Davide Chieli: il mega sondaggio, che campi saranno obbligatori, perché per adesso ho messo una parte dei dati obbligatori e una parte no. Diciamo poi ce lo devono dire loro quali saranno obbligatorie.
+Erik Capoccetta: vedi perché seò qua Eric. Ok.
+Davide Chieli: Non so se vuoi fa freddo. Qui incomincia a fare freddo.
+Erik Capoccetta: Eh, un pochino qua. Tu lo controlli il formato quando faccio valida. Se io non ho messo un formato valido.
+Davide Chieli: Sì, sì, sì. In realtà questo formato qui viene validato anche più avanti sui sign,
+Erik Capoccetta: Mh mh.
+Davide Chieli: cioè viene anche trasformato nel caso non sia valido.
+Erik Capoccetta: Ok. Codice fiscale. Presidenza.
+00:06:19
+Erik Capoccetta: C. Eh, vedi perché poi si mischia con numero iscrizione al
+Davide Chieli: Sì, sì, infatti questi magari però erano dei rappresentanti questi questi dati.
+Erik Capoccetta: No, l'albo no, però capito?
+Davide Chieli: Ci sta proprio nuovo campo che è l'iscrizione all'albo del rappresentante.
+Erik Capoccetta: Ah,
+Davide Chieli: Ah.
+Erik Capoccetta: pensato. Allora, banca IB. Vabbè, questo qua dovremmo
+Davide Chieli: Ah, qua c'è una cosa, qua c'è una cosa strana, però vabbè, penso che in realtà tu non ce l'hai, però vabbè, l'autocompilazione me dice tipo è bloccata perché nel sito non è sicuro,
+Erik Capoccetta: Eh sì,
+Davide Chieli: però m Ah,
+Erik Capoccetta: perché non c'hanno il certificato qua in UAT.
+Davide Chieli: è un'altra cosa che dice che tra poco, tra 8 giorni, 7 giorni, non mi ricordo quanto, scade script case, la licenza
+Erik Capoccetta: Sì, sì, sì, sì, sì. Quello lo devo dire a Francesco. E qua lo validiamo l'IBAN.
+Davide Chieli: No, perché non devo vedere come si fa a validare l'Ban. Devo vedere la regola.
+Erik Capoccetta: Vabbè,
+Davide Chieli: Validare.
+Erik Capoccetta: con una reex,
+Davide Chieli: Mh.
+00:07:29
+Erik Capoccetta: aspetta che gioco valida. Aggiungo sempre
+Davide Chieli: Sì.
+Erik Capoccetta: pure il codice sì. Sono sette cifre alfa numeriche o gli zer
+Davide Chieli: Solo numeri, sono anche lettere.
+Erik Capoccetta: no. Lettere e numeri alfa numeri o 7 z0 o
+Davide Chieli: Ok. f***. Ecco.
+Erik Capoccetta: Vabbè.
+Davide Chieli: M
+Erik Capoccetta: Ok, prossimo. Ok, quindi io mo qua dovrò inserire poi gli autisti, no?
+Davide Chieli: Sì, sì, sì. Allora, qui c'è già la prima novità. Se fai nuova,
+Erik Capoccetta: Mh.
+Davide Chieli: allora se incominci vabbè qua ci saranno, vabbè, qui metti il nome dell'autista, le scadenze varie che ci hanno chiesto. Eh, per adesso ho messo dei dati a caso.
+Erik Capoccetta: Poi abbiamo levato quei campi.
+Davide Chieli: Sì, abbiamo levato quei cambi, li abbiamo spostati nei mezzi. In più cà aggiunto vabbè.
+Erik Capoccetta: Scusa, se tu se tu la patente qua vicino ci metti la scadenza,
+Davide Chieli: Ah, sì. a livello di, diciamo, di di blocco di di di Sì,
+Erik Capoccetta: anche qua,
+Davide Chieli: sì.
+00:08:44
+Davide Chieli: Metto patente, scadenza sotto.
+Erik Capoccetta: perché vedi, sono uguali sti campi, no?
+Davide Chieli: Ma tu dici proprio a livello di campo non non Eh,
+Erik Capoccetta: CQC CQC c'è il CQC qua.
+Davide Chieli: ok, ok. Sì,
+Erik Capoccetta: Patente ce l'hai qua. Formazione sicurezza.
+Davide Chieli: eh. Li ho messi sopra e sotto scadenze sopra e sotto.
+Erik Capoccetta: Ah! Vabbè, tanto no, potremmo fare anche dei blocchi tipo patente, eh, così ci metti documento e scadenza. Documento scadenza. Allora, fare blocchi per ogni queste sono cose a livello di però fanno sempre piacere.
+Davide Chieli: Sì, sì, sì.
+Erik Capoccetta: Vabbè, scadenza. Ah, formazione sicurezza 01.
+Davide Chieli: Vabbè, ti conviene copiarli, incovallarli un attimo, giusto per provarli tanto.
+Erik Capoccetta: Ok,
+Davide Chieli: Ok,
+Erik Capoccetta: tanto qua mi devo caricare i cosi.
+Davide Chieli: qui devi caricare. Io c ho caricato un blank da 0 byte, diciamo, da 1 byte, quello che è.
+Erik Capoccetta: Sì, sì, infatti lo trovo pure io che tanto ce l'ho qua. Sempre buono.
+Davide Chieli: Poi puoi anche trascinarli direttamente.
+00:10:01
+Davide Chieli: Io faccio così. Ok. C'è lo stesso blank li trascini direttamente in ogni riquadro. Fai primo.
+Erik Capoccetta: Sì, sì. Vabbè, tanto DP.
+Davide Chieli: Ok. M E qua ci sta questa parte qua. Tu puoi aggiungere il permesso di soggiorno. Se è sì devi metterlo per forza.
+Erik Capoccetta: Esatto.
+Davide Chieli: Quindi ecco la scadenza.
+Erik Capoccetta: Mh.
+Davide Chieli: Ok.
+Erik Capoccetta: Perfetto.
+Davide Chieli: Poi eh vabbè in questo caso no. Va bene sal. Poi devi salvare e qui ti crea l'audista.
+Erik Capoccetta: E ne posso aggiungere un altro.
+Davide Chieli: Sì, però diciamo puoi andare già avanti eventualmente.
+Erik Capoccetta: Ok.
+Davide Chieli: Ok,
+Erik Capoccetta: Qua mi dice
+Davide Chieli: questi sono Allora, qui c'è la parte più importante che sono i mezzi
+Erik Capoccetta: Ok.
+Davide Chieli: nuovo.
+Erik Capoccetta: No, no, stavo vedendo qua.
+Davide Chieli: Ah, sì,
+Erik Capoccetta: L'ID non c'è qua.
+Davide Chieli: sì, sì.
+Erik Capoccetta: Levalo tanto
+Davide Chieli: Ah, dimetti la griglia. Ok.
+Erik Capoccetta: tipo veicolo. Perfetto. Anzi, queste sono
+00:11:29
+Davide Chieli: Allora, qua eh c'è praticamente io mi sono basato su quello che ci ha detto Davide, quindi e mi sono ripreso proprio le conversazioni col registrate proprio perché ho
+Erik Capoccetta: mi.
+Davide Chieli: dovuto capire che cosa diceva lui. Allora, qua a parte, vabbè, il tipo veicolo che adesso è un, diciamo, a loro non serviva più il modello perché il modello lo ricavano dalla dalla carta di circolazione, quindi non gli serviva.
+Erik Capoccetta: Giusto.
+Davide Chieli: Questo è il select che abbiamo aggiunto. Questi vabbè, sono i campi, scadenze, eccetera. Eh sì,
+Erik Capoccetta: E pure qua raggruppa scadenza e documento.
+Davide Chieli: sì, sì, l'ho segnato già questo qui. Adesso quella parte sotto è quella più importante.
+Erik Capoccetta: Aspetta, me lo segno pure io. Autista ha segnato, sì o no?
+Davide Chieli: Qua è opzionale.
+Erik Capoccetta: Ok.
+Davide Chieli: Stavolta prima era obbligatorio.
+Erik Capoccetta: Ok.
+Davide Chieli: Adesso qua se specifici specifichi che hai cat ti ti devi ti obbliga a inserire i nuovi documenti che sono questi qua che ci hanno chiesto che ce le chieste Flavia praticamente. Quindi qua c'è per la 1 metti l'angorizzazione ricevuta a pagamento con le
+00:12:45
+Erik Capoccetta: Ora non so però qua se sono specifichi per quel mezzo o
+Davide Chieli: scadenze sta scritto che sono specifici
+Erik Capoccetta: per Ah,
+Davide Chieli: per mezzo,
+Erik Capoccetta: quindi ogni mezzo c'ha quelli suoi. Ok.
+Davide Chieli: cioè qu così sta scritto nella nella registrazione per un per unità anche nella
+Erik Capoccetta: Ok.
+Davide Chieli: mail. Se vai a vedere la mail di Davide,
+Erik Capoccetta: Eh, quello volevo riprendere. Marcoccia. Aspetta che la ritroviamo. Lo trova
+Davide Chieli: Allora
+Erik Capoccetta: No, perché volevo essere sicuro che fosse così.
+Davide Chieli: dice se ne ha due deve ne caricare deve caricarne due. indicare le scadenze.
+Erik Capoccetta: Allora, Davide Chielie Davide Marcoccia, ecco qua, del 22 facendo No, questo è il turf, non c'entra niente.
+Davide Chieli: No, quella ce l'ho accelerito. Vabbè, è la quella sotto.
+Erik Capoccetta: Sì, sì.
+Davide Chieli: Ok.
+Erik Capoccetta: Provo a chiarire quanto autorizzazione anche a categoria sono la medesima cosa. Vabbè, se il vettore dichiara di averne anche soltanto uno, deve caricare per portare a scadenza. Eh, però non ha detto che sono specifiche per il mezzo, sono per l'azienda.
+00:14:15
+Davide Chieli: Eh, l'hanno detto, l'hanno detto l'hanno detto durante la conversazione, la registrazione della conversazione.
+Erik Capoccetta: Sei sicuro tu di questa cosa?
+Davide Chieli: Controlla,
+Erik Capoccetta: Ricevo sono
+Davide Chieli: puoi controllare direttamente su Gemini.
+Erik Capoccetta: potrzione. Entri è unica vedi queste so per l'azienda però ne sono più che certo perché lo facciamo già per un altro cliente sta roba.
+Davide Chieli: Questa qua non è per
+Erik Capoccetta: Il registro rentri è unico per l'azienda quindi ora ha detto una cazzata lui,
+Davide Chieli: mezzo che a prescindere dal numero delle categorie è collegato
+Erik Capoccetta: no? Oh, tetto
+Davide Chieli: alle unità locali dell'azienda. Se mi dice unità locali, io capisco l'unità, cioè i mezzi singoli.
+Erik Capoccetta: no, non so i mezzi. M. No, vabbè, devo riprendere.
+Davide Chieli: Eh, e le categorie possedute.
+Erik Capoccetta: Vediamo un attimo, tanto non ci mettiamo niente a ritrovarla.
+Davide Chieli: Mh mh.
+Erik Capoccetta: No, perché io lo so per certo, perché lo fa anche un altro nostro cliente sta roba renti e allora è una non è per
+Davide Chieli: Eh,
+Erik Capoccetta: ogni
+Davide Chieli: da come è scritto qua, appunto, sembra che entri lo chiedono per singolo mezzo.
+00:15:25
+Erik Capoccetta: Allora raga deciso di numerare documenti rentri. Va bene, non abbiamo capito. Allora, iscrizione poi. Ok. Ok.
+Davide Chieli: Ma infatti alla fine io ne chiedo una sì per mezzo, però sì.
+Erik Capoccetta: Sì, sì, però quello qui sono tre documenti che è lo stesso documento. Va bene. Eh, però non lo dice niente, non dice un trasportatore può avere la categoria uno, vedi, è un per l'azienda, quindi no, questi li dovresti mettere nell'anagrafica.
+Davide Chieli: Mh. Va bene. Questo va fatto una modifica. Ok. Rentry, però scritto così eh, mi fa venire dei dubbi tutto qua. Reente è collegato alle unità locali dell'azienda, non alle categorie possedute.
+Erik Capoccetta: Ma dove sta scritto?
+Davide Chieli: Io la mail.
+Erik Capoccetta: Allora, scusa, eh, buongiorno. Prova a chiarire un po' quanto richiesto. Autorizzazione anche categoria e va bene. Se il vettore dichiara di averne anche soltanto una tra le categorie 1 4 e 5, deve caricarla, supportarla e indicare la relativa scadenza. Ovviamente se ne ha due ne deve caricare due.
+00:16:42
+Erik Capoccetta: Le relative scadenze così via ricevuto il pagamento anca dovrebbe essere unica per tutte le categorie e la
+Davide Chieli: però mh mh
+Erik Capoccetta: scadenza ciò non toglie che il vettore possa effettuare il pagamento. Vabbè che chi se ne frega. Eh,
+Davide Chieli: quindi per ogni categoria io metterei la possibilità di caricare la relativa ricevuta e quindi lui ha
+Erik Capoccetta: esatto.
+Davide Chieli: Okure l'ha disaccoppiata. Questa sta cosa della rentry è l'unica non ha scadenza a prescindere dal numero delle categorie. Quindi qua io che cosa ho fatto?
+Erik Capoccetta: Eh,
+Davide Chieli: Cioè se tu metti una te ne chiede sempre una nel forma a prescindere se metti una che hai una o la quattro o la cinque.
+Erik Capoccetta: esatto. Cioè, basta che tu metti sia a una,
+Davide Chieli: Eh però eh te ne chiede una sola però.
+Erik Capoccetta: lui ti chiede il rente.
+Davide Chieli: Cioè, una basta a prescindere dalle categorie che hai.
+Erik Capoccetta: Eh,
+Davide Chieli: Il problema è che però se c'hai un altro mezzo, io chiedo anche la un'altra rento.
+Erik Capoccetta: no, no, no,
+00:17:31
+Davide Chieli: Lì è questo perché da quello che sta scritto qua,
+Erik Capoccetta: questa è
+Davide Chieli: il rente è collegato all'unità locale dell'azienda e non alle categorie possedute.
+Erik Capoccetta: le unità locali sono le sedi. Se tu c'hai più sedi.
+Davide Chieli: Eh, sono le sedi.
+Erik Capoccetta: Sì, sì.
+Davide Chieli: Ok, quindi la rentri magari se chiamo, non so, gli do chiedo conferma di questa cosa, però va bene, la sposta in anagrafica.
+Erik Capoccetta: No, no, Ma sì. Uro questo. Quindi la devi togliere dai mezzi sta roba e semplicemente metterla nell'anagrafica.
+Davide Chieli: Quindi scadenza rentri e rentri e che cosa più noa no.
+Erik Capoccetta: Anga, tutta sta roba qua.
+Davide Chieli: Langga vi serve per il mezzo, no?
+Erik Capoccetta: No, l'anga è sempre per la per la società. Questa qua da qua fino in giù è tutto peragrafica società.
+Davide Chieli: Non lo so, io sono perplesso. Va bene. Perché se loro cioè hanno detto loro di mettere Yanga nei mezzi,
+Erik Capoccetta: No, ma è di della società. Il documento è della società.
+Davide Chieli: cioè aspetta, io sono, aspetta, vedo questo trovo un attimo la Gemini, aspetta.
+00:18:58
+Erik Capoccetta: Eh, io pure l'ho trovata, ma non è che lo dice.
+Davide Chieli: Ah, io ce l'ho qua. Allora,
+Erik Capoccetta: Grazie.
+Davide Chieli: rileggiamo l'ultima call di Flavia Pigliacelli e Davide Marcoccia. i documenti. Га?
+Erik Capoccetta: duplicati, ma non è che dice è stato vedi è stato decostare i campi e le verifiche reali della vista a quella del mezzo. Ok.
+Davide Chieli: M.
+Erik Capoccetta: Eliminare i documenti documenti partecipanti alle trasporto. Quindi qua che cos'è? Che il mezzo ecco, adesso ho capito che cos'è, cioè il mezzo può avere questo. Ok?
+Davide Chieli: Cosa? Questo eh perché ce l'hanno detto loro di metterlo nei mezzi.
+Erik Capoccetta: Questi campi sono relativi al mezzo, sì,
+Davide Chieli: Sono sicuro di questo.
+Erik Capoccetta: però il caricamento dei documenti è unico e aziendale, cioè se almeno un mezzo c'ha una categoria 1, tu gli devi chiedere il catri eccetera. Se almeno un mezzo c'ha la categoria due, gli devi chiedere, capito? Per quel motivo là. Il documento però è uno, non è che è 1 per mezzo.
+00:20:38
+Davide Chieli: Uno per Ok, per quelle unità locali era proprio strano, però va bene.
+Erik Capoccetta: Scusa, aspetta. No, no, le unità locali sono le sedi.
+Davide Chieli: Ok.
+Erik Capoccetta: Autorizzazione anga è legata all'azienda Facciamo una ricerca noi, cioè basta.
+Davide Chieli: Il controllo delle categorie deviale per ogni veicolo, non per l'azienda e non per l'autista.
+Erik Capoccetta: Vedi la l'autorizzazione dell'Albo nazionale gestione ambientale è primariamente legata all'azienda, ma prevede l'associazione obbligatoria l'aggiornamento costante dei singoli mezzi impiegati. Quindi se tu c'hai un l'autorizzazione anche è unica,
+Davide Chieli: Mh.
+Erik Capoccetta: è per tutta l'azienda, però la devi tenere aggiornata con l'elenco dei mezzi.
+Davide Chieli: Oh, aggiornata con l'elenco dei mezzi. Ah, semplicemente m se tuoro mi mettono due veicoli, uno che c'ha uno e uno che c'ha quattro, io banalmente, cioè questa cosa perché metterla nei mezzi allora? Cioè,
+Erik Capoccetta: Eh,
+Davide Chieli: boh,
+Erik Capoccetta: infatti non ha senso metterla nel mettiamola nell'anagrafica aziendale
+Davide Chieli: non ha senso sta cosa, eh. Non non non mi torna.
+Erik Capoccetta: perché secondo me è legata all'anagrafica Eh,
+Davide Chieli: è una cosa che ha chiesto proprio specificamente Flavia, perciò eh gli
+00:21:59
+Erik Capoccetta: ma quella non è che
+Davide Chieli: appunti della stessa cosa la descrizione. Allora, questa proprio la citazione,
+Erik Capoccetta: sì Io ho
+Davide Chieli: quindi per ogni c'è un mezzo che ha uno e 4, un altro mezzo che ha cinque. Devi chiedere uno, cioè devi controllare tutti i mezzi mezzo categoria qu se io devo aggiungere due, diciamo, due file aggiuntivi obbligatori che sono relativi al mezzo. Ecco, diciamo qua.
+Erik Capoccetta: aspetta.
+Davide Chieli: Questa roba all'ang è legata al mezzo, non è legata all'azienda. Eric questa proprio testori di parole tue proprio
+Erik Capoccetta: Sì, sì, sì. No, ma ho visto quello che perché l'aveva detto lui, quindi le
+Davide Chieli: ci fanno perdere tempo se non so chiari così.
+Erik Capoccetta: riediamo facciamo
+Davide Chieli: Mh mh. E io sì, faccio direttamente così. Lui trova direttamente nella conversazione di Gemini.
+Erik Capoccetta: No, no, ma non mi interessa la conversazione, mi interessa la normativa.
+Davide Chieli: Ah, ok.
+Erik Capoccetta: Ah, conversazione. Allora, le categorie di iscrizione all'albo vengono rilasciate esclusivamente all'azienda e non al singolo mezzo.
+00:23:30
+Davide Chieli: M.
+Erik Capoccetta: Quindi il meccanismo funziona in questo modo. L'azienda ottiene la qualifica e riceve l'autorizzazione per una o più categorie. i mezzi vengono abilitati sotto quell'ombrello. Ogni volta che l'azienda possiede una determinata categoria decide quale dei suoi mezzi vedi, associare. Ecco perché.
+Davide Chieli: Ah,
+Erik Capoccetta: Quindi sì,
+Davide Chieli: quindi ha senso che la il mezzo abbia la categoria.
+Erik Capoccetta: è il mezzo ti dice a quale categoria appartiene, ok?
+Davide Chieli: Sì.
+Erik Capoccetta: Però il documento della categoria è unico per l'azienda,
+Davide Chieli: Ok,
+Erik Capoccetta: non per il mezzo. Cioè lui ti dice, "Se tu hai almeno un mezzo che c'ha la categoria 1, mi devi dimostrare che c'hai quell'autorizzazione.
+Davide Chieli: perché questa cosa la richiedono anche dopo.
+Erik Capoccetta: Se c'hai almeno un mezzo,
+Davide Chieli: M.
+Erik Capoccetta: eh, quindi capis? Se c'hai almeno un mezzo che c'ha la categoria 4, mi devi dimostrare che c'ha questa perzione, quindi mi devi caricare l'autorizzazione tua che è una
+Davide Chieli: Mh
+Erik Capoccetta: per la categoria 4. Quindi tu qua fai certo la domanda a quale categoria è associato il mezzo?
+00:24:28
+Erik Capoccetta: se n'è associata una.
+Davide Chieli: mh.
+Erik Capoccetta: Poi in base al risultato di questi di questi record
+Davide Chieli: Nei documenti dopo aggiunger automaticamente.
+Erik Capoccetta: nei documenti gli devi chiedere o l'uno o il 4 o il cinque oppure insieme.
+Davide Chieli: Mh mh. Eh, però pure le scadenze vanno aggiunte,
+Erik Capoccetta: Quindi questo e pure le scaden Certo tutto quanto.
+Davide Chieli: però
+Erik Capoccetta: Cioè, quindi questo ha senso, però non deve far caricare questi non devono apparire qua, ma devono apparire poi nel caricamento documenti di
+Davide Chieli: eh perché attualmente,
+Erik Capoccetta: là.
+Davide Chieli: cioè qu il problema è questo. Adesso loro caricano documento e scadenza e vanno sullo stesso record di documento. Quindi, praticamente, loro caricano tutte e due le cose e mi ritrovo nei documenti, il documento Ang con la data di scadenza pura.
+Erik Capoccetta: Ah.
+Davide Chieli: Se dovessero fare, cioè se se deve cambiare questa cosa, adesso il documento ang va a finire direttamente nei documenti e la scadenza la devono mettere loro a manina senza specificarlo qui dai documenti come viene già.
+Erik Capoccetta: No, la deve essere un ulteriore passaggio del Wizard dove loro ti caricano dei documenti prima di chiuderlo.
+00:25:41
+Davide Chieli: Un altro step deve essere.
+Erik Capoccetta: Eh, per forza, perché questi devono caricare prima di chiudere il Wizard. No, dopo.
+Davide Chieli: No, no, è sempre nel Wizard. È sempre nel Wizard che avviene questa cosa,
+Erik Capoccetta: Eh,
+Davide Chieli: però avviene lo step dopo,
+Erik Capoccetta: eh, va bene. Giusto.
+Davide Chieli: cioè praticamente quello che ti dicevo è si ritrovano oltre ai documenti già obbligatori aggiungo sotto seder aggiungo anche questi
+Erik Capoccetta: Questo
+Davide Chieli: ango firmato che hanno segnalato e i
+Erik Capoccetta: è il rentri.
+Davide Chieli: rentri e ok e quindi più le
+Erik Capoccetta: Esatto.
+Davide Chieli: le insomma le scadenze
+Erik Capoccetta: In base a quello che t' hanno dichiarato sui mezzi.
+Davide Chieli: in base a quello che hanno dichiarato sui mezzi. Va bene,
+Erik Capoccetta: Quindi sì,
+Davide Chieli: quindi però devo fare un check tutti i mezzi che mettono poi.
+Erik Capoccetta: se lui eh se lui ti ha inserito quattro mezzi di cui due c'hanno categoria uno, uno il tre e l'altro il cinque, tu gli vai a chiedere un vabbè quattro, scusami, tu gli vai a chiedere tutte e tre le ricevute e una sola rentry perché rentri
+00:26:44
+Davide Chieli: Mh. Eh, una già. Vabbè, ci sta una.
+Erik Capoccetta: è Se invece lui ti inserisce
+Davide Chieli: Infatti ne chiedevo una sola là.
+Erik Capoccetta: 5 e mezzi tutti categoria 4, tu gli chiedi una categoria 4 e riend.
+Davide Chieli: No, e bassa. Sì.
+Erik Capoccetta: Quindi questo va va modificato qua.
+Davide Chieli: Угуm.
+Erik Capoccetta: fare modifica su documenti e rentra con
+Davide Chieli: Ok.
+Erik Capoccetta: una nel passaggio successivo in base alle categorie dei mezzi inseriti. Vabbè. Quindi vabbè, non qua metto no perché Ok.
+Davide Chieli: No, ci sono ancora delle cose da su,
+Erik Capoccetta: Sì, sì.
+Davide Chieli: cioè
+Erik Capoccetta: Quindi carte di circolazione, scadenza. Vabbè, comunque c di ccolazione che non gli diedono l'assicurazione. Qua
+Davide Chieli: non c'è il documento di assicurazione, diciamo, però
+Erik Capoccetta: cioè hanno messo scadenza assicurazione, non hanno non richiedono il cedolino.
+Davide Chieli: Non c'è da nessuna parte il
+Erik Capoccetta: Sì, sì. No, vabbè, sarà una cosa loro. Oh, vedi qua? Poi aggiungi qua
+Davide Chieli: Eh no, è questo ti sto dicendo io qua li raggiungevo alla fine.
+00:28:29
+Erik Capoccetta: copia documento del regal certificato Ren turc ricevuto annuale campo da
+Davide Chieli: Ah,
+Erik Capoccetta: pagamento visuale.
+Davide Chieli: io posso fare un'altra cosa molto più semplice in realtà, però eh posso fare anche che loro mettono io loro mi caricano già i documenti anga e poi me li vado a cancellare io. Posso fare un'altra cosa? Cioè io già,
+Erik Capoccetta: Come te
+Davide Chieli: cioè nel senso loro già mi caricano tutti i documenti anga con le scadenze eccetera per no per quel mezzo che mi caricano quel mezzo,
+Erik Capoccetta: tutti quanti.
+Davide Chieli: mi caricano già il documento anga come viene già. Se me lo caricano per per più mezzi semplicemente mi vado a eliminare tutti i documenti, tra virgolette doppioni che non servono.
+Erik Capoccetta: No, però mh cioè perché quelli poi li fai perché la la è un documento tipo la quita
+Davide Chieli: Non ti piace?
+Erik Capoccetta: RCA in tra l'altro anche questo, no?
+Davide Chieli: Sì, questa è opzionale,
+Erik Capoccetta: Questa questa la devono questa la devono mettere nel
+Davide Chieli: mi pare. No, quella là no. M.
+00:29:29
+Erik Capoccetta: mezzo perché ogni mezzo c'ha la sua polizza assicurativa, però non ce l'hanno detto.
+Davide Chieli: Ok,
+Erik Capoccetta: Cavoli loro. Cioè io li farei comparire qua in base a quello che t' hanno scritto di così è più pulito, no? Loro è un documento aziendale, quindi Ok,
+Davide Chieli: va bene.
+Erik Capoccetta: va bene.
+Davide Chieli: Sì, sì. No. qui praticamente comunque sì, invece di apparire sui mezzi.
+Erik Capoccetta: Eh,
+Davide Chieli: Sì.
+Erik Capoccetta: esatto. Fai dalla scadenza mettono un giorno a finire sto Wizard.
+Davide Chieli: Eh, tu non hai visto niente.
+Erik Capoccetta: M sì, sì, sta quello d'oro. Ciao ciao
+Davide Chieli: Esatto.
+Erik Capoccetta: dico.
+Davide Chieli: E a parte che mancano anche i tre documenti che ci dovrebbero mandare che devo ancora fare da zero praticamente.
+Erik Capoccetta: Misura camerale. Beh, ma là son dei flag, delle cose, della privacy,
+Davide Chieli: Eh,
+Erik Capoccetta: mh
+Davide Chieli: però sono cambi solo da mettere la DB solo devo disegnare il documento da zero. Questo è opzionale. Puoi anche non metterlo.
+Erik Capoccetta: devi dire se sei in possesso o no.
+00:31:23
+Davide Chieli: Se sei imposto però sei obbligato poi a inserirlo.
+Erik Capoccetta: Ah,
+Davide Chieli: Ma questa è una cosa che non ci dovrebbe sta. Solo su questa form Sì. Eh, prossimo è indietro la farmo.
+Erik Capoccetta: mh
+Davide Chieli: Ok, solo qua sta il sito qua.
+Erik Capoccetta: quando fai il reload, vedi?
+Davide Chieli: Sì,
+Erik Capoccetta: Perché però vuoi fare il reload della
+Davide Chieli: per far apparire i campi.
+Erik Capoccetta: Eh, ma quello lo puoi fare pure senza fare il reload, ti ricompa.
+Davide Chieli: Eh, non mi ricordo il motivo.
+Erik Capoccetta: Mh.
+Davide Chieli: Comunque il durf e la poliz sono obbligatorio. In effetti secondo me pure a me ha molto senso. R ha molto più senso che siano i veicoli, onestamente.
+Erik Capoccetta: Eh, eh. Eh, questo è per ogni mezzo.
+Davide Chieli: pure, secondo me,
+Erik Capoccetta: Ok. Documenti caricati. firmare i documenti predisposti di inviare per attivazione. Eh, però prima non devono compilare tutto quel
+Davide Chieli: no, solo per quel documento dichiarazione.
+Erik Capoccetta: questo.
+Davide Chieli: Vedi?
+Erik Capoccetta: Ah, compila la dichiarazione.
+00:32:50
+Erik Capoccetta: Perfetto. Ah, e qua c'è tutto.
+Davide Chieli: No, qui l' ho fatto. vari blocchi proprio per se vai vedi giù.
+Erik Capoccetta: Però per esempio vedi iscrizione anga questo,
+Davide Chieli: Eh, queste sono dal da quando è parte l'anga. Se siete iscritti all'anga. Perciò te l'ho chiesto lo richiedono dopo qua.
+Erik Capoccetta: eh vedi che però è una cosa aziendale, quindi glielo io glielo chiederei quando compilano il documento, così qua te lo ritrovi già già caricato.
+Davide Chieli: glielo glielo chiedi quando gli chiedono il documento.
+Erik Capoccetta: quando ti carica il documento,
+Davide Chieli: Mh,
+Erik Capoccetta: per esempio, pure sede amministrativa. Ah, questi tutti capitale sociale,
+Davide Chieli: qua ci sono tutti i dati che servono per compilare quel PDF.
+Erik Capoccetta: per esempio, sede amministrativa e fax. Io lo metterei in quegli altri campi.
+Davide Chieli: No, vabbè, questa poi sia giusta, eh. Io ti faccio vedere prima come lo eh se vai più giù, qua ci stanno i fatturati. Questi qua sono, tra virgolette, una tabella praticamente e qua sono a blocchi.
+Erik Capoccetta: Sì, sì, sì.
+00:34:05
+Davide Chieli: Fatte sono le domande 7 8 5 eccetera.
+Erik Capoccetta: No, ho capito. L'unica cosa, quindi questi si possono eliminare, per esempio, io s amministrativa la
+Davide Chieli: Queste però a meno che non le ripigliamo dal iscrizione allanga viene richiesta nel documento, mi posso nascondere e mettere quella che c'abbiamo c'abbiamo già eventualmente.
+Erik Capoccetta: Eh, esatto. Ma io tanti dati li metterei pure in e li metterei in nella screta anagrafica.
+Davide Chieli: Eh, Flavia aveva detto di no,
+Erik Capoccetta: m tipo la sede amministrativa ec.
+Davide Chieli: cioè a Flavia aveva chiesto di tenere minimale, diciamo, di aggiungere qualche campo, appunto, come la banca, il sede legale del cè roba del rappresent entante nella prima anagrafica e poi di fare questa forma apposta tutto quanto. Ma quello che ha detto lei è proprio questo, però
+Erik Capoccetta: Vabbè, io sono sempre del principio che chiedi una volta e non li chiedi
+Davide Chieli: mio
+Erik Capoccetta: più. Ok, quindi vabbè, quindi vanno come compilati tutti questi
+Davide Chieli: lo puoi fare.
+Erik Capoccetta: e questi campi e dopo lo posso firmare. Per esempio, capitale sociale.
+00:35:39
+Erik Capoccetta: Questo è un è un cur.000.
+Davide Chieli: È un currency
+Erik Capoccetta: Certo, è un po' scomoda così sta forma, eh.
+Davide Chieli: un po'.
+Erik Capoccetta: è un po' scomoda perché devi Vabbè, mo perché forse c'ho la finestra.
+Davide Chieli: C'è la finestra. Sì, che in teoria è calibrata.
+Erik Capoccetta: sede amministrativa e qua però mi sembra sede amministrativa la dovevi dividere per indirizzo città, indirizzo e coso, vero?
+Davide Chieli: Non me la ricordo,
+Erik Capoccetta: Non era un campo,
+Davide Chieli: dico la verità questa cosa non me la ricordo. Io ho preso solo i campi della del come si dice del PDF.
+Erik Capoccetta: eh? C'era un unico campo. Questo
+Davide Chieli: Sta proprio sede amministrativa mi pare. Aspetta che te la trovo. Migrazioni PDF. Digazioni riferimento. Eccolo qua. Allora, sì. No, questa sede amministrativa è è sotto, tra virgolette, non è quel campo lì.
+Erik Capoccetta: Quindi è un unico campo.
+Davide Chieli: Qua ci sta sede legale, eh capitale sociale, aspetta. Sede amministrativa, indirizzo sede amministrativa. Responsabile amministrativo.
+00:37:11
+Davide Chieli: Come si chiama il campo?
+Erik Capoccetta: Sede amministrativa. Va,
+Davide Chieli: Eh sì, quella indirizzo sede amministrativa e c in realtà ci stanno indirizzo sede
+Erik Capoccetta: quindi è unico.
+Davide Chieli: legale e indirizzo sede amministrativo.
+Erik Capoccetta: Eh,
+Davide Chieli: Sono due campi,
+Erik Capoccetta: però la sede legale ce l'abbiamo dallica.
+Davide Chieli: eh non mi ricordo se ci sta la sede legale questa qua.
+Erik Capoccetta: Eh, beh, la sede quella sì, eh.
+Davide Chieli: Non mi ricordo. Sono talmente tanti che onestamente non li ho visti, non me li ricordo tutti quanti.
+Erik Capoccetta: Vabbè, basta che non è separato il campo. Facciamo
+Davide Chieli: Se li compigli poi si vede, insomma. Pure magari la lebol è sbagliata, semplicemente capito. Io ho scritto sede amministrativa, ma in realtà è indirizzo sede, però
+Erik Capoccetta: numero iscritti Ren. Per esempio, numero iscrizione all'albo è quello che gli abbiamo chiesto all'inizio.
+Davide Chieli: è numero albo gestori. Questo è il nazionale gestori ambientali numero.
+Erik Capoccetta: Mh mh.
+Davide Chieli: Questo qua sarebbe per le categorie 1 4 5 sarebbe
+00:38:39
+Erik Capoccetta: Ok. Addirittura ma sono tutti obbligatori, no?
+Davide Chieli: M. La maggior parte no. M.
+Erik Capoccetta: Ah, questo
+Davide Chieli: Però qui ci devono dire appunto che cosa nascondere, che cosa no.
+Erik Capoccetta: eh sì.
+Davide Chieli: può banalmente non rendere obbligatorio,
+Erik Capoccetta: Mamma mia.
+Davide Chieli: anche perché, per esempio, alcuni responsabili qui non sono obbligatori se non flaggi delle cose in teoria.
+Erik Capoccetta: Ah, ok. M l'amministrativo non lo vogli il telefono internazionale. No, numero personale.
+Davide Chieli: mercato internazionale. Qua per dirti se metti sì dovresti mettere le nazioni,
+Erik Capoccetta: Mh.
+Davide Chieli: però non ho messo nessuna logica per di controllo in questo momento.
+Erik Capoccetta: Bah, sta roba.
+Davide Chieli: Eh, questo è solo per compilare il PDF, cioè sennò era i campi sono vuoti banalmente,
+Erik Capoccetta: Sì, sì, sì.
+Davide Chieli: quindi
+Erik Capoccetta: No, questo ovviamente mettiamoci l'euro vicino, il simbolo dell'euro.
+Davide Chieli: Sì, sui Corren.
+Erik Capoccetta: Ma m
+Davide Chieli: Sì.
+Erik Capoccetta: Eh, mamma mia. Vabbè, mi vuole tutti. Matturato anno. Oh,
+Davide Chieli: in realtà.
+00:40:45
+Erik Capoccetta: questi questi qua tu poi te li salvi?
+Davide Chieli: Mh mh. Sì,
+Erik Capoccetta: Mh. Eh,
+Davide Chieli: tutto sì.
+Erik Capoccetta: no, dico te li i fatturati te li salvi in una tabella separata in modo da togliere i profond.
+Davide Chieli: No, è sempre nella stessa riga su vettori eh dichiarazioni ce l'ho, però diciamo per ogni anno chiaramente ce l'ho.
+Erik Capoccetta: Eh no, così poi lui se quest'anno gli compila poi l'anno prossimo alcuni già se ritrovano.
+Davide Chieli: Già ci sì, perché già sta mo questa è una cosa che stavo facendo adesso, in realtà che ho appena iniziato però che è il quando scade la dichiarazione, lui praticamente quando firma la dichiarazione si mette in automatico la scadenza un anno. quando scade ti chiederà mo questa cosa dobbiamo discuterne un attimo magari o io le faccio vedere in una grid le dichiarazioni del subvettore e quindi
+Erik Capoccetta: Che cosa? M.
+Davide Chieli: diciamo gli arriva banalmente una semplice mail che gli dice di compilare, cioè io creo sotto al sedere una nuova un nuovo documento dichiarazione che deve compilare e lui si va a ricompilare banalmente il questo form eh questo stesso form dichiarazioni con già alcuni dati, come per esempio gli Ianni caricati con, diciamo, diciamo quelli che ha messo meno l'ultimo,
+00:42:02
+Erik Capoccetta: M quelli che ho messo. Eh, esatto, così. E qua per esempio si potrebbero già compilare perché
+Davide Chieli: però per dirti qua, Esatto. Però forse la cosa migliore magari era mettere già però questo non lo io non sono non sono un tecnico di di questa roba, quindi non so se loro possono mettere 2020, 2021,
+Erik Capoccetta: no,
+Davide Chieli: 2022 e magari che se non so,
+Erik Capoccetta: sono gli ultimi tre.
+Davide Chieli: capito se se sono aziende che hanno lavorato solo 88 anni,
+Erik Capoccetta: Eh,
+Davide Chieli: che devo dire,
+Erik Capoccetta: vabbè.
+Davide Chieli: appunto, si possono mettere anche fissi per me. Cioè, se tu mi dici se il fatturato parte dall'anno scorso,
+Erik Capoccetta: Eh sì.
+Davide Chieli: io dal 2026 metto in automatico metto 2025 2024 2023,
+Erik Capoccetta: Eh sì,
+Davide Chieli: però ce lo dovrebbero confermare se lo sapr
+Erik Capoccetta: vedi se si caria, vedi, questo è un'altra cosa che poi gli devi chiedere.
+Davide Chieli: M
+Erik Capoccetta: Quindi, secondo me, questa gliela devi far fare prima ancora di proporgli i documenti da caricare.
+Davide Chieli: eh se si è allegare una copia del certificato senza rispondere alle domande a seguito tranne il punto 5.4 che va compilato.
+00:43:24
+Davide Chieli: Eh, capito? Questa è è un un casino.
+Erik Capoccetta: Però questa qua sì, secondo me io la farei prima di chiedere così poi alla fine di tutto Vabbè, ma tanto questi non sono obbligatori, no?
+Davide Chieli: No.
+Erik Capoccetta: E dove salvo? Ah, salva.
+Davide Chieli: Quella roba la compilare presenza sul mercato
+Erik Capoccetta: Presenta su mercato nazionale o internazionale?
+Davide Chieli: quella là su cassato sopra sì o no?
+Erik Capoccetta: Eh, l'ho compilato.
+Davide Chieli: Questo ah in nazioni forse perché come ti dicevo se non metti mercato nazionale no mercato internazionale no hai messo
+Erik Capoccetta: Ah, ok. Forse non vuole un attimo.
+Davide Chieli: Vabbè ok.
+Erik Capoccetta: Sì.
+Davide Chieli: Poi prodotti, servizi, clienti. Vabbè, sta roba qua.
+Erik Capoccetta: Ah,
+Davide Chieli: Questa è quella.
+Erik Capoccetta: perché erano tutti e due. No, ecco perché.
+Davide Chieli: Questi qua dovresti compilarli perché servono appunto per l'anno prossimo. Poi ripeto, ci devono dire che cosa sono obbligatorie e cosa no.
+Erik Capoccetta: Certo.
+Davide Chieli: Questi sono percentuali, credo.
+Erik Capoccetta: M.
+Davide Chieli: Vabbè, non c'è il cont sul 100% anche perché
+00:45:03
+Erik Capoccetta: Quindi io lo posso andare a firmare una volta firmato
+Davide Chieli: Sì, adesso se se vedi la firma adesso vedi il documento che ho generato con tutti i campi vicino. No.
+Erik Capoccetta: M Ok, ma questo è il numero albo però è della società. Perché vedi società dig cons legale in Frosinone sono, partita IVA, codice fiscale iscrizione no. Quindi è della società,
+Davide Chieli: Ok, quindi questo è il numero albo e quello questa
+Erik Capoccetta: non è del rappresentante legale, è della società,
+Davide Chieli: quindi ce ne sono due, abbiamo detto.
+Erik Capoccetta: no? Ma in realtà è sempre uno, il rappresentante legale non è non ha iscrizione all'album in qualità.
+Davide Chieli: E allora è sempre lo stesso.
+Erik Capoccetta: Eh sì, in qualità di pettore in via Sant'Anna, vero? Ma dichiara terzi, va bene.
+Davide Chieli: Descrizione all'albo è uno solo.
+Erik Capoccetta: E se è per la società? Mh. Ah, e poi c'è tutto DGSRL, capitale sociale, questo.
+Davide Chieli: Vedi numero albo trasportatori ci sta numero albo rap quello che hai messo prima.
+Erik Capoccetta: Eh, eh, esatto.
+00:46:32
+Erik Capoccetta: Invece è sempre quello, è sempre l'unico,
+Davide Chieli: Ah, questo non so che è successo qua. Scendo. Questo non ho visto questo qua.
+Erik Capoccetta: sì o no?
+Davide Chieli: Mh. Ok. Ci sarà qualche variabile globale che dovesse CB da controllare.
+Erik Capoccetta: Ione registro delle imprese, luogo registro delle imprese, il numero registro delle imprese rea numero rea numero albo è sempre quello della società Massimo Giano, Mario Verdi Intesta, codice destinatario, legale rappresentante a Vellete. Eh, ok. Inizio attività 2020 indirizzo sede legale. Vedi indirizzo sede amministrativa dice no questo me l'hai fatto mettere. Ok. Sì,
+Davide Chieli: sete amministrativa, come ti dicevo.
+Erik Capoccetta: sì, sì. Pax parti luogo registro impresa. Numero registro impresa. Numero albo è sempre non è del rappresentante, capito? numero ren,
+Davide Chieli: Quindi, per esempio, conto terzi numero eh,
+Erik Capoccetta: ecco, numero albo gestore. Invece questa è un'altra cosa che è legato a queste categorie anga 1 4 e
+Davide Chieli: quello che ti dicevo, cioè so due Sì.
+00:47:40
+Erik Capoccetta: 5. ADR. Ah, ok. Anche qua vedi frat
+Davide Chieli: Eh, ho notato c'era qualche parentesi quadra che non è andata bene.
+Erik Capoccetta: di nuovi numero 5 di Ok, perfetto. Qua è stato fatto tutto il coso e percentuale strutturato parco automezzi autisti. Vabbè, qua le varie crocette che sono state messe eccetera. dichiarazione nella sua qualità della società. Anche qua, vedi, c'è lo slash
+Davide Chieli: Eh, questo slash, aspetta, sarà un escape. Forse vedere un attimo. Legale appresentante.
+Erik Capoccetta: m della società di là sopra. C'era pure in qualità, c'era pure lo slash. Va bene. Partita IVA. Ok, lo vedi società pure qua c'è lo scappe tutti quelli con in qualità,
+Davide Chieli: Mh.
+Erik Capoccetta: vedi?
+Davide Chieli: Eh, forse perché gli accenti danno fastidio. Sì. Ok, devo vedere che devo fa' qua.
+Erik Capoccetta: Ok. Sempre qua no.
+Davide Chieli: Mh.
+Erik Capoccetta: Società sì. Ah, partita io la consapevo. Di chiara Massimale Massimale Massime. Ok, ok, quindi vabbè, poi io qua firmo e lui mi fa completare tutto
+00:49:31
+Davide Chieli: Sì. Sì. E poi devi fare il flusso di mio
+Erik Capoccetta: leader. L'unica cosa che adesso qua secondo me io la qua tu dove chiedi i documenti io lo farei fare dopo.
+Davide Chieli: eh faresti prima i documenti del
+Erik Capoccetta: Farei prima compilare quel form là
+Davide Chieli: mh
+Erik Capoccetta: e e poi farei così. Se ti deve allegare pure quell'altro documento, te l'allega qua.
+Davide Chieli: Ah, ok, perfetto. 9001 là quello che è
+Erik Capoccetta: Mh. Cioè, io ti farei fare anagrafica, autisti, mezzi, quel form là, poi tutti i documenti che ti devi caricare e poi quelli che deve firmare.
+Davide Chieli: vabbè ci sta. anche se non po vista stavol 9001 onestamente. Vabbè,
+Erik Capoccetta: Quindi questo questo form qua, Davide, questo qua, io lo farei come un altro step del Wizard,
+Davide Chieli: solo le dichiarazioni.
+Erik Capoccetta: solo che poi sarebbe solo questa l'allegato eh allegato e no allegato e scusami. Sì, l'allegato che c**** l'allegato E. Sì.
+Davide Chieli: Non vedo nulla. Ci stai condividendo?
+Erik Capoccetta: Ah,
+Davide Chieli: Cioè, vedo solo Ok.
+00:50:55
+Erik Capoccetta: sì. Allegato E si chiama. Ma io farei proprio un altro form legato.
+Davide Chieli: Ah, questo si chiama EFC. Ce lo dissero Flavia. Tutti quelli sotto sarebbe Sì,
+Erik Capoccetta: Eh sì, perché sono tanti documenti insieme,
+Davide Chieli: sì.
+Erik Capoccetta: però il form è l'allegato e allegato e quindi aggiungiamo uno step al wizard allegato e
+Davide Chieli: Allora, quindi praticamente aggiungere lo step allegato e
+Erik Capoccetta: passo 4 alle L'allegato
+Davide Chieli: allora, quindi praticamente c'ho anagrafica, poi c'ho autisti, mezzi. Dopo autisti e mezzi che cosa c'ho?
+Erik Capoccetta: è passo 5 upload documenti e passo 6 firma documenti.
+Davide Chieli: Vabbè, quindi la firma rimane dove sta praticamente solo il form della compilazione rimane prima.
+Erik Capoccetta: Eh sì,
+Davide Chieli: Ho capito bene? Mh, va bene, perché Flavia voleva un form là. Io perciò io il suo desiderata l'ha espresso così.
+Erik Capoccetta: no, lei lo voleva separato dai tadi grafici, è giusto, glielo lo facciamo separato dai tadira.
+Davide Chieli: Sì, va bene. Eh, devo aggiungere un po' di cose, devo bene. Devo rifare questa parte, va bene così.
+00:52:28
+Erik Capoccetta: una grafica intrig. Ok, per il resto direi che ci siamo al netto di alcuni accorgimenti del Wii o validare l'iban, validare il codice SD,
+Davide Chieli: Ah, sì, sì,
+Erik Capoccetta: diciamo che per il resto ci siamo.
+Davide Chieli: vabbè. Sì, sì. M.
+Erik Capoccetta: Per aggiungere sto coso che rentri compilazione allegato e ok. Eh, tipo qua, infatti io ti avevo suggerito di fare di fare una grid editabile invece che fare così.
+Davide Chieli: Sì, su basta cambiare solo questa è una questa è una editabile.
+Erik Capoccetta: Ah, e perché, scusa, io devo andare in modale per caricare il documento? sarebbe,
+Davide Chieli: Eh,
+Erik Capoccetta: cioè fai
+Davide Chieli: perché mi chiedesti che ci voleva la modale per caricare i documenti, perché se ti ricordi all'inizio era una forma multiord.
+Erik Capoccetta: eh dico qua, vi qua è utile nella io te l'avevo detto nel nel pannello del dell'operatore Pigliacelli, quando lui doveva richiedere il documento.
+Davide Chieli: No, quello no, quello è vecchio. Quello là quello è molto vecchio. Questa qui è l'ultima cosa che abbiamo fatto.
+00:53:48
+Erik Capoccetta: Eh, infatti, guarda, io ti avevo scritto li farei caricare direttamente dalla Crid senza aprire la modale l'altra.
+Davide Chieli: Ah, vabbè, se diciamo che ehm Prima ancora mi dicesti di fare che ricordo era una
+Erik Capoccetta: Sì.
+Davide Chieli: multord prima era molto più sempra come dicevi tu si mettevano direttamente i file all'interno.
+Erik Capoccetta: Eh,
+Davide Chieli: Poi non so perché, diciamo, mi chiedesti la la modale per ogni cosa.
+Erik Capoccetta: no. No, ma questa non l'avevo mai vista io. La prima volta l'ho vista quando t' ho chiesto di farla
+Davide Chieli: Vabbè,
+Erik Capoccetta: modare. Qui è più facile senza che stanno aprire la modale. Dove non serve non non la mettiamo la moda
+Davide Chieli: va bene, allora metto una mult record o una forma, la Questa è una cosa che stavo
+Erik Capoccetta: e poi qua non devono poterli eliminare loro.
+Davide Chieli: pensando pure io, onestamente. Non penso che si devono eliminare.
+Erik Capoccetta: No,
+Davide Chieli: Mh.
+Erik Capoccetta: perché sennò immagino che li manda avanti pure se
+Davide Chieli: Sì, sì. Allora, mo gli levo le per mettere l'eliminazione.
+00:54:50
+Erik Capoccetta: Eh, sì, perché a meno che tu non fai un controllo dopo dove se lui ne ha pure se lui ne ha eliminato uno, tu però glielo chiedi.
+Davide Chieli: Eh, sì. No, no,
+Erik Capoccetta: Ma non sì,
+Davide Chieli: non devono non devono toccarla sta cosa.
+Erik Capoccetta: né la modifica n tanto qua c'hanno la la cosa che è solo modifica.
+Davide Chieli: Mh.
+Erik Capoccetta: E se non ti caricano il coso non è valido, no?
+Davide Chieli: Se non ti caricano il documento e la scadenza.
+Erik Capoccetta: Eh, esatto. Devi metti come campi obbligatori,
+Davide Chieli: Sì, sì,
+Erik Capoccetta: non possono salvar,
+Davide Chieli: già, già lo sono. Già. Se vedi non valide te li chiede già.
+Erik Capoccetta: eh. Perfetto, perfetto. Vabbè, poi l'onboarding si completa e quella accede e ci manca tutto quell'altro pezzo.
+Davide Chieli: Quale verzo?
+Erik Capoccetta: Eh eh diciamo mo adesso ci manca la parte del contratto della cioè va rivista,
+Davide Chieli: Ah, sì, sì, sì, sì, esatto. Sì,
+Erik Capoccetta: però diciamo l'onboarding è terminato.
+Davide Chieli: sì,
+Erik Capoccetta: Al netto che loro ci devono dare quei tre documenti.
+00:55:46
+Davide Chieli: sì. e che si devono fare da zero.
+Erik Capoccetta: Cioè,
+Davide Chieli: Sì, sperando che non chiedano da in altri campi,
+Erik Capoccetta: io direi io direi queste cose di farle
+Davide Chieli: altre cose.
+Erik Capoccetta: entro mercoledì, tanto non sono grosse cose, se spostare il form e basta.
+Davide Chieli: Eh, può stare in step un po' la scocciatura, eh, perché devo è un po' una scocciatura, però penso per mercoledì solo questa parte qua che tutto entro mercoledì non lo so se ce la faccio.
+Erik Capoccetta: Entro mercoledì, guarda, bisogna fare, vabbè, a parte quelle robe là delle grupp del blocco,
+Davide Chieli: I blocchi,
+Erik Capoccetta: eh,
+Davide Chieli: vabbè, sono sono cose semplici, tra virgolette.
+Erik Capoccetta: quello lo fai in 30 secondi, poi, eh, devi spostare i documenti angan li devi levare dalla dalla forma del del mezzo. Là ci devi lasciare solo i radio button.
+Davide Chieli: Quella è la parte quella là dicevo, la parte che devo smontare è quella là de Yanga con Na.
+Erik Capoccetta: Eh, quella validazione E il form devi solo spostarlo dentro uno step del Wizard,
+Davide Chieli: Devo aggiungere uno step del Wizard,
+00:57:04
+Erik Capoccetta: diciamo la parte secondo me più eh e la parte più
+Davide Chieli: quindi Sì, esatto.
+Erik Capoccetta: complicata secondo me è quella poi di di controllo quali categorie ti hanno inserito i mezzi e di reinserire i relativi documenti dell'area. Quello può essere un po' più complicato. Ah, per il resto mo non so comeè costruito il Wizard, però devi aggiungere uno step.
+Davide Chieli: La parte più rognosa è stato eh nascondere banalmente, cioè vabbè, a parte le logiche più complicate, il questi i tasti avanti e indietro Banalmente sono sono una scocciatura perché a volte non riesco a nasconderli in entrambi forma.
+Erik Capoccetta: Ah, ho capito.
+Davide Chieli: Quella sono una scocciatura proprio grossi.
+Erik Capoccetta: Ma scusa, se tu il passo avanti e indietro te lo fai, no? Vabbè, devi comunque validare il form, quindi però ti fai dei form separati, eh.
+Davide Chieli: sono tutti formi separati tranne eh
+Erik Capoccetta: No, ti dico, ti fai altri, cioè questo qua dei documenti o quello degli autisti,
+Davide Chieli: mh mh
+Erik Capoccetta: te ne fai uno dedicato per il Wizard e quell'altro che invece poi viene usato dentro la piattaforma, te ne fai un altro.
+00:58:16
+Davide Chieli: dedicato per il wizard.
+Erik Capoccetta: Tu usi quello del Wizard, lo riusi pure quando lui, che ne so,
+Davide Chieli: Eh sì,
+Erik Capoccetta: è entrato.
+Davide Chieli: perché se se non creare senò se arriviamo a 200.
+Erik Capoccetta: Beh, però se c'hai questo problema dei pulsanti alla fine lo potresti fare tanto su due
+Davide Chieli: Sì, questo sì,
+Erik Capoccetta: formello lo potresti fare
+Davide Chieli: potendo si può fare. Sì,
+Erik Capoccetta: con una variabile globale, che ne so,
+Davide Chieli: ho fatto così.
+Erik Capoccetta: isard is wizard è uno.
+Davide Chieli: No, no, è così. che però il problema è è che script case ehm prende lo stesso form in input, quindi prende comunque la stessa variabile in input e deve riuscire a
+Erik Capoccetta: Tu quella la imposti nel menù. nel menù quando chiami quel format dentro un evento del click,
+Davide Chieli: Eh,
+Erik Capoccetta: mi sembra che è, mo non mi ricordo bene, comunque tra gli eventi del menù c'è la possibilità in cui tu dici se io ho selezionato questa voce
+Davide Chieli: mh mh
+Erik Capoccetta: imposta questa variabile a
+00:59:16
+Davide Chieli: no, questa non mi manca.
+Erik Capoccetta: eh c'è scritto on SC menù item.
+Davide Chieli: Ah, non la conosco.
+Erik Capoccetta: If SC menù,
+Davide Chieli: Ok.
+Erik Capoccetta: però a te non è che la devi impostare per ogni volta, basta che quando apri il menù metti quella variabile a zero, tutto quello che viene dopo è Wizard Zero,
+Davide Chieli: Eh,
+Erik Capoccetta: quindi te li nasconde i pulsanti.
+Davide Chieli: devo studiarmela un attimo. Come si chiama? SC menù.
+Erik Capoccetta: Eh sì, SC menù item. No, comunque sta tra le
+Davide Chieli: Menù item. Sembra qualcos'altro, però va bene. Sembra quella della dell'app menù. Boh.
+Erik Capoccetta: eh la variabile è una variabile di sistema del modulo menù che eh vedi che identifica quale He. voce di menù è stata selezionata sc_ menù_ item si chiama il menù
+Davide Chieli: E menù in che senso menù? Cioè che menù?
+Erik Capoccetta: quello principale il menù
+Davide Chieli: Ma io non uso quello, eh?
+Erik Capoccetta: della Ah,
+Davide Chieli: Non uso proprio quello. Io no,
+01:00:17
+Erik Capoccetta: ne hai fatto uno.
+Davide Chieli: non uso proprio quello.
+Erik Capoccetta: Ah, non usi il menù app menù? No,
+Davide Chieli: No, c questa roba non sta proprio nell'app menù.
+Erik Capoccetta: no, il wizard, la parte quella che sta in piattaforma. Sì,
+Davide Chieli: Ah, sì,
+Erik Capoccetta: però eh
+Davide Chieli: quella sì, quella sì. Ah, ma quella quella è più semplice. Quella non è tanto quello il problema. Ripeto, è solo i Wizard stesso che è
+Erik Capoccetta: tu dove li devi nascondere? Nel cioè li devi nascondere dentro il menù.
+Davide Chieli: Wizard. È Wizard proprio il problema perché se tu fai edit in questo momento tu apri la stessa formale, per esempio,
+Erik Capoccetta: Eh ah.
+Davide Chieli: e quella stessa formai gli stessi campi,
+Erik Capoccetta: Qua tu dici qua.
+Davide Chieli: capito?
+Erik Capoccetta: Vabbè,
+Davide Chieli: Eh eh ok su questo step qui
+Erik Capoccetta: qua non la devi aprire più, però.
+Davide Chieli: no sugli altri vale lo stesso.
+Erik Capoccetta: Però sugli autisti però non c'è. Avanti e indietro, scusa. Eh,
+01:01:08
+Davide Chieli: Eh infatti lo sono riuscito a nascondere qua.
+Erik Capoccetta: no,
+Davide Chieli: Sono nascosto ovunque.
+Erik Capoccetta: dico perché ci dovrebbe stare avanti e indietro qua.
+Davide Chieli: E a qui appariva, fidati di me che appariva. È partito non so quante volte. Qua è la stessa forma.
+Erik Capoccetta: Ma perché questa è la stessa forma. E qua non è una E qua non puoi usare una grid
+Davide Chieli: Potrei Sì, potrei fare anche una grid,
+Erik Capoccetta: che eh qua usa una grid perché è una vista,
+Davide Chieli: volendo. Sì, mo funziona. Vabbè, farmi un'altra grid solo per questo.
+Erik Capoccetta: eh perché la Crid c'ha le sue peccoli e io userei una Grid qua.
+Davide Chieli: M
+Erik Capoccetta: Oh, banalmente. Eh sì, e ho capito perché tu visualizzavi questi pure dentro, perché è la stessa.
+Davide Chieli: Eh sì.
+Erik Capoccetta: Ma se invece qua ti fai una grid e ti apri
+Davide Chieli: Perché volevo utilizzare la stessa cosa senza fare?
+Erik Capoccetta: il
+Davide Chieli: Senza fare grid ogni volta eccetera,
+Erik Capoccetta: Sì,
+Davide Chieli: però effettivamente
+01:02:03
+Erik Capoccetta: però però sulle view ti conviene usare le grid,
+Davide Chieli: mh
+Erik Capoccetta: cioè tanto quelle sono view, devono rimanere statiche per una questione di cose,
+Davide Chieli: Ok.
+Erik Capoccetta: no? Sì, impazzisce. fare sta cosa.
+Davide Chieli: E infatti sto impazzend sto impazzendo veramente.
+Erik Capoccetta: Eh,
+Davide Chieli: Ok.
+Erik Capoccetta: credo.
+Davide Chieli: Ok, va bene.
+Erik Capoccetta: Va bene Davide,
+Davide Chieli: Allora,
+Erik Capoccetta: allora facciamo così, rimaniamo che ci facciamo un controllo mercoledì per terminare questo Wizard, così io vorrei giovedì mandare a loro le credenziali, si fanno un po' di prove,
+Davide Chieli: sì, sì,
+Erik Capoccetta: li li facciamo stare un po'
+Davide Chieli: sì.
+Erik Capoccetta: tranquilli e noi poi
+Davide Chieli: Va bene. Quindi la cosa importante è la cosa importante è quella cosa dell'anga. Quindi per adesso che è la cosa che sperando che non ci richiedano cose strane, però diciamo i documenti abbiamo detto l'unica cosa come recupi mezzi quindi anche se loro dicono No. Al contrario. Io metto solo eh sì a a diciamo quel mezzo a abilitato a categoria 1 45.
+Erik Capoccetta: Questi devi lasciare di com'è la devi lasciare.
+01:03:10
+Davide Chieli: Eh, quindi metto abilitato a eh però non
+Erik Capoccetta: senza questo però che quando clicchi poi ti questo no.
+Davide Chieli: chiedono eh perché questa roba qui dove la sposto adesso? i documenti.
+Erik Capoccetta: Questa roba qui in base al risultato che t'ha compilato, quello che è presente dentro l'elenco mezzi, te lo vai a leggere e dici "C'è qualcuno con categoria 1?" No, quello categoria 1 non lo inserisco. C'è qualcuno con categoria 2? Così inserisco documento categoria 2, quietanza e rentry. Poi c'è qualcuno in categoria 4? Sì, inserisco categoria 4. Rentry già ce l'ho, non lo rinserisco.
+Davide Chieli: Ah, certo, quello
+Erik Capoccetta: Questa è un po' la cosa più che altro. Vabbè, perché a livello di queri che devi fare, ma quando vai a costruire l'allenco documenti,
+Davide Chieli: mh mh. Sì, sì,
+Erik Capoccetta: ma niente di niente di magari te la fai
+Davide Chieli: è quella la parte rognosa, appunto, solo creare sotto al sedere le cose.
+Erik Capoccetta: qua,
+Davide Chieli: Mh mh.
+Erik Capoccetta: se la fai qua, quando questo fa prossimo,
+01:04:13
+Davide Chieli: Mh.
+Erik Capoccetta: in base ai risultati che c'ha gli vai a riempire i documenti. Se già non ci sono, glielo metti. Se già ci sono,
+Davide Chieli: Ok. E quindi invece di prossimo adesso vado adesso se clicco sul prossimo vado sull'allegato i quindi vado
+Erik Capoccetta: vai sull'allegato e Sil.
+Davide Chieli: sul direttamente sul form.
+Erik Capoccetta: Eh, così lo metti a tutta pagina senza il modale.
+Davide Chieli: Ok, perfetto. E mh
+Erik Capoccetta: Magari pure là cerchiamo. Cerca. Ho visto che già l'hai organizzato bene con i cioè però anche i dati quelli là anagrafici mettiamo
+Davide Chieli: i blocchi.
+Erik Capoccetta: qualche altro blocco,
+Davide Chieli: Sì, sì, sì, sì,
+Erik Capoccetta: tipo dati a
+Davide Chieli: sì, sì. Perciò ti dicevo io, allora, considerando che mo sono manco 2 ore che di lavoro, domani praticamente è un giorno e 2 ore per mercoledì.
+Erik Capoccetta: sì tutto domani. No, mercoledì. Vabbè, sentiamoci anche a fine giornata, eh.
+Davide Chieli: Ok,
+Erik Capoccetta: Ok. C'hai, diciamo, un giorno e me quasi quasi due, diciamo, di lavoro.
+Davide Chieli: è poch è pochino per fare i test pure è pochino, però vabbè,
+Erik Capoccetta: Ah,
+Davide Chieli: provo provo a farcela.
+Erik Capoccetta: eh, no, no, no, dai,
+Davide Chieli: Vabbè.
+Erik Capoccetta: ci risentiamo magari mercoledì fine giornata anche alle 5 e così c'hai due
+Davide Chieli: Va bene.
+Erik Capoccetta: giorni pieni di lavoro,
+Davide Chieli: Sì, sì, sì, sì. Va benissimo.
+Erik Capoccetta: considerato anche quest'ora qua. Tanto, ecco, adesso io ti lascio che c'ho un'altra riunione,
+Davide Chieli: Ah,
+Erik Capoccetta: anzi è cominciata pure alle 4:00 e
+Davide Chieli: ok, scusami. Ci sentiamo domani, allora domani e dopodomani direttamente.
+Erik Capoccetta: dopodomani,
+Davide Chieli: Va bene.
+Erik Capoccetta: dopodomani se c'hai qualche problema domani. Seò dopodomani.
+Davide Chieli: Ok.
+Erik Capoccetta: Va bene,
+Davide Chieli: Buona riunione.
+Erik Capoccetta: grazie.
+Davide Chieli: Ciao Eric.
+Erik Capoccetta: Ciao. Ciao.
+Davide Chieli: M.
+Trascrizione terminata dopo 01:05:49
+Questa trascrizione modificabile è stata generata dal computer e potrebbe contenere errori. È possibile anche modificare manualmente il testo dopo la creazione.

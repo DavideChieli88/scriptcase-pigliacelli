@@ -4,7 +4,9 @@
 **Data:** 17 settembre 2026  
 **Contesto:** allineamento requisiti documenti rifiuti dopo call 16/09/2026  
 
-Vedi anche: [`pigliacelli_briefing_sal_2026-09-16.md`](pigliacelli_briefing_sal_2026-09-16.md) · [`docs_elenco_documenti_subvettori.md`](docs_elenco_documenti_subvettori.md)
+Vedi anche: [`pigliacelli_briefing_sal_2026-09-16.md`](pigliacelli_briefing_sal_2026-09-16.md) · [`pigliacelli_briefing_sal_2026-09-28.md`](pigliacelli_briefing_sal_2026-09-28.md) · [`docs_elenco_documenti_subvettori.md`](docs_elenco_documenti_subvettori.md)
+
+La call del **28/09** sposta il caricamento: i flag restano sul mezzo, autorizzazione, ricevute e RENTRI si chiedono nello step documenti aziendale. Nomi e “una ricevuta per categoria / RENTRI unico” di questa mail restano il riferimento sui tipi.
 
 ---
 

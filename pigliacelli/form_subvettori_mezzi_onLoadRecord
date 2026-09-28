@@ -167,3 +167,19 @@ if ($mezzoId > 0) {
 }
 
 sc_log_add('MEZ_DISP', 'onLoadRecord id=' . $mezzoId . ' flag=' . $flag1 . $flag4 . $flag5);
+
+sc_field_display({anga_cat_1}, 'off');
+sc_field_display({scadenza_anga_cat_1}, 'off');
+sc_field_display({ricevuta_anga_cat_1}, 'off');
+sc_field_display({scadenza_ricevuta_anga_cat_1}, 'off');
+sc_field_display({anga_cat_4}, 'off');
+sc_field_display({scadenza_anga_cat_4}, 'off');
+sc_field_display({ricevuta_anga_cat_4}, 'off');
+sc_field_display({scadenza_ricevuta_anga_cat_4}, 'off');
+sc_field_display({anga_cat_5}, 'off');
+sc_field_display({scadenza_anga_cat_5}, 'off');
+sc_field_display({ricevuta_anga_cat_5}, 'off');
+sc_field_display({scadenza_ricevuta_anga_cat_5}, 'off');
+sc_field_display({rentri_iscrizione}, 'off');
+sc_field_display({ricevuta_rentri}, 'off');
+sc_field_display({scadenza_ricevuta_rentri}, 'off');

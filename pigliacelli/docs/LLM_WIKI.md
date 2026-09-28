@@ -3,11 +3,12 @@
 Wiki operativa per agenti/LLM. Aggiornare quando cambiano requisiti o naming.
 
 **Gerarchia requisiti (prevale dall’alto):**
-1. `chiarimento_anga_rentri_2026-09-17.md`
-2. `pigliacelli_briefing_sal_2026-09-16.md`
-3. `pigliacelli_briefing_sal_2026-07-21.md`
-4. `requisiti_pigliacelli_validazione_2026-07.md`
-5. `docs_elenco_documenti_subvettori.md` · `modello_flag_documenti.md`
+1. `pigliacelli_briefing_sal_2026-09-28.md` — fix wizard; ANGA/RENTRI: flag sul mezzo, file nello step documenti
+2. `chiarimento_anga_rentri_2026-09-17.md` — nomi, cardinalità, scadenze (dove i file si caricano prevale il 28/09)
+3. `pigliacelli_briefing_sal_2026-09-16.md`
+4. `pigliacelli_briefing_sal_2026-07-21.md`
+5. `requisiti_pigliacelli_validazione_2026-07.md`
+6. `docs_elenco_documenti_subvettori.md` · `modello_flag_documenti.md`
 
 ---
 
@@ -31,7 +32,7 @@ Portale **sub-vettori** (trasporto):
 | FASE 1 onboarding | Wizard: anagrafica → autisti → mezzi → upload doc → firma “verdi” EasyGN → invio attivazione |
 | Contratti SGA | Job tratte → tipo **1** Quadro+All.A, **2** appendice nuove tratte, **3** variazione tariffe |
 | Revisione+firma | Magic link PEC → form → PDF → EasyGN duale → `web_hook_firma` |
-| Documenti | Tipi, possesso/readonly, alert scadenze; ANGA/RENTRI sui **mezzi** |
+| Documenti | Tipi, possesso/readonly, alert scadenze; flag ANGA sul mezzo, file ANGA/RENTRI nello step documenti |
 | Modulo 1 | Fatture Zucchetti, DDT webhook, sync società/fornitori/ordini |
 
 Tabelle chiave: `subvettori`, `contratti`, `subvettori_contratti`, `tratte`, `contratti_tratte`, `documenti`, `tipi_documento`, `subvettori_autisti`, `subvettori_mezzi`, `sec_users`.
@@ -91,18 +92,18 @@ credenziali → login group 2, wizard_complete=0
 - `documenti` (previsti): `in_possesso`, `presa_visione_at`, `documento_padre_id`
 - UI: `is_readonly=0` caricare / `=1` visionare
 
-### ANGA/RENTRI (mail 17/09 — per **mezzo**)
-- Cat. 1/4/5 = Autorizzazione ANGA (1 auth+scadenza per cat. flaggata)
-- Ricevuta ANGA: slot per cat.; scad. **30/04**
-- Iscrizione RENTRI: **unica**, **senza** scadenza
-- Ricevuta RENTRI: **unica**, scad. **30/04**
-- Non moltiplicare RENTRI per categoria; non confondere quietanza con ricevuta pagamento
+### ANGA/RENTRI (call 28/09 — prevale sul “per mezzo” del 16/09)
+- I **radio** cat. 1/4/5 restano sul mezzo. Gli **upload** ANGA e RENTRI no.
+- Step documenti, un record aziendale (mezzo e autista vuoti) per l’**unione** delle categorie: una autorizzazione e una ricevuta per ogni categoria presente su almeno un mezzo.
+- Se c’è almeno una categoria: **una** iscrizione RENTRI e **una** ricevuta RENTRI.
+- File e data di scadenza li mette il subvettore in quello step. Non cancella le righe.
+- Dettaglio: `pigliacelli_briefing_sal_2026-09-28.md`. Nomi e matrice storica: `chiarimento_anga_rentri_2026-09-17.md`.
 
 ---
 
 ## Decisioni SAL 16/09 (P0/P1)
 
-- ANGA/cat./carta circolazione su **mezzo**, non autista
+- ANGA/cat./carta circolazione su **mezzo**, non autista. Call **28/09**: i radio restano sul mezzo; i file ANGA/RENTRI vanno nello step documenti.
 - Tipo veicolo: select **Trattore | Semirimorchio** (un record = una targa)
 - Autista↔mezzo **facoltativa**
 - Scadenza obbligatoria al caricamento doc autisti

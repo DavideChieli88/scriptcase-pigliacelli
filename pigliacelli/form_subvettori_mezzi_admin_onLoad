@@ -175,48 +175,19 @@ if ($mezzoId > 0) {
     }
 }
 
-if ($flag1 === 1) {
-    sc_field_display({anga_cat_1}, 'on');
-    sc_field_display({scadenza_anga_cat_1}, 'on');
-    sc_field_display({ricevuta_anga_cat_1}, 'on');
-    sc_field_display({scadenza_ricevuta_anga_cat_1}, 'on');
-} else {
-    sc_field_display({anga_cat_1}, 'off');
-    sc_field_display({scadenza_anga_cat_1}, 'off');
-    sc_field_display({ricevuta_anga_cat_1}, 'off');
-    sc_field_display({scadenza_ricevuta_anga_cat_1}, 'off');
-}
-
-if ($flag4 === 1) {
-    sc_field_display({anga_cat_4}, 'on');
-    sc_field_display({scadenza_anga_cat_4}, 'on');
-    sc_field_display({ricevuta_anga_cat_4}, 'on');
-    sc_field_display({scadenza_ricevuta_anga_cat_4}, 'on');
-} else {
-    sc_field_display({anga_cat_4}, 'off');
-    sc_field_display({scadenza_anga_cat_4}, 'off');
-    sc_field_display({ricevuta_anga_cat_4}, 'off');
-    sc_field_display({scadenza_ricevuta_anga_cat_4}, 'off');
-}
-
-if ($flag5 === 1) {
-    sc_field_display({anga_cat_5}, 'on');
-    sc_field_display({scadenza_anga_cat_5}, 'on');
-    sc_field_display({ricevuta_anga_cat_5}, 'on');
-    sc_field_display({scadenza_ricevuta_anga_cat_5}, 'on');
-} else {
-    sc_field_display({anga_cat_5}, 'off');
-    sc_field_display({scadenza_anga_cat_5}, 'off');
-    sc_field_display({ricevuta_anga_cat_5}, 'off');
-    sc_field_display({scadenza_ricevuta_anga_cat_5}, 'off');
-}
-
-if ($flag1 === 1 || $flag4 === 1 || $flag5 === 1) {
-    sc_field_display({rentri_iscrizione}, 'on');
-    sc_field_display({ricevuta_rentri}, 'on');
-    sc_field_display({scadenza_ricevuta_rentri}, 'on');
-} else {
-    sc_field_display({rentri_iscrizione}, 'off');
-    sc_field_display({ricevuta_rentri}, 'off');
-    sc_field_display({scadenza_ricevuta_rentri}, 'off');
-}
+// ANGA/RENTRI si caricano nello step documenti, non sul mezzo. I flag restano visibili.
+sc_field_display({anga_cat_1}, 'off');
+sc_field_display({scadenza_anga_cat_1}, 'off');
+sc_field_display({ricevuta_anga_cat_1}, 'off');
+sc_field_display({scadenza_ricevuta_anga_cat_1}, 'off');
+sc_field_display({anga_cat_4}, 'off');
+sc_field_display({scadenza_anga_cat_4}, 'off');
+sc_field_display({ricevuta_anga_cat_4}, 'off');
+sc_field_display({scadenza_ricevuta_anga_cat_4}, 'off');
+sc_field_display({anga_cat_5}, 'off');
+sc_field_display({scadenza_anga_cat_5}, 'off');
+sc_field_display({ricevuta_anga_cat_5}, 'off');
+sc_field_display({scadenza_ricevuta_anga_cat_5}, 'off');
+sc_field_display({rentri_iscrizione}, 'off');
+sc_field_display({ricevuta_rentri}, 'off');
+sc_field_display({scadenza_ricevuta_rentri}, 'off');

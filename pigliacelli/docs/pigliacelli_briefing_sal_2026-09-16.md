@@ -4,7 +4,7 @@
 **Partecipanti:** Flavia Pigliacelli, Davide Marcoccia (Pigliacelli); Davide Chieli, Erik Capoccetta (Digiweb)  
 **File originali:** [`pigliacelli_briefing_sal_2026-09-16.docx`](pigliacelli_briefing_sal_2026-09-16.docx) · [`pigliacelli_briefing_sal_2026-09-16.txt`](pigliacelli_briefing_sal_2026-09-16.txt)
 
-Vedi anche: [`requisiti_pigliacelli_validazione_2026-07.md`](requisiti_pigliacelli_validazione_2026-07.md) · [`pigliacelli_briefing_sal_2026-07-21.md`](pigliacelli_briefing_sal_2026-07-21.md) · [`modello_flag_documenti.md`](modello_flag_documenti.md) · **[`chiarimento_anga_rentri_2026-09-17.md`](chiarimento_anga_rentri_2026-09-17.md)** (mail 17/09 — prevale su D6/D7 per ANGA/RENTRI)
+Vedi anche: [`requisiti_pigliacelli_validazione_2026-07.md`](requisiti_pigliacelli_validazione_2026-07.md) · [`pigliacelli_briefing_sal_2026-07-21.md`](pigliacelli_briefing_sal_2026-07-21.md) · [`modello_flag_documenti.md`](modello_flag_documenti.md) · **[`chiarimento_anga_rentri_2026-09-17.md`](chiarimento_anga_rentri_2026-09-17.md)** (mail 17/09) · **[`pigliacelli_briefing_sal_2026-09-28.md`](pigliacelli_briefing_sal_2026-09-28.md)** (call 28/09: i file ANGA/RENTRI non si caricano sul mezzo)
 
 ---
 
