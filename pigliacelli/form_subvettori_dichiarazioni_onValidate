@@ -15,7 +15,35 @@
  * IDE: campo stato presente in form e nascosto.
  * Non usare sc_error_exit (modale).
  * Macro SC: niente spazi dentro le graffe.
+ *
+ * Prossimo (JS) invia dic_go_next=1 insieme al Salva.
+ * Se la validazione passa, onAfterUpdate apre i documenti.
+ * Dichiarazione firmata: niente update, si passa solo allo step documenti.
  */
+
+if (!function_exists('dic_wizard_advance_docs')) {
+    function dic_wizard_advance_docs($subId)
+    {
+        $subId = (int)$subId;
+        if ($subId <= 0) {
+            return;
+        }
+        sc_exec_sql("
+            UPDATE subvettori
+            SET wizard_step = 5
+            WHERE id = $subId
+              AND wizard_complete = 0
+              AND wizard_step < 5
+        ", 'pigliacelli');
+        sc_exec_sql('COMMIT');
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            @session_start();
+        }
+        $_SESSION['wizard_subvettore_id'] = $subId;
+        unset($_SESSION['dic_wizard_nav']);
+        unset($_SESSION['dic_wizard_go_docs']);
+    }
+}
 
 if (!function_exists('dic_si_no')) {
     function dic_si_no($raw)
@@ -73,9 +101,35 @@ if (!function_exists('dic_need_text')) {
     }
 }
 
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    @session_start();
+}
+unset($_SESSION['dic_wizard_go_docs']);
+
+$goNext = (isset($_COOKIE['dic_go_next']) && (string)$_COOKIE['dic_go_next'] === '1')
+    || (isset($_POST['dic_go_next']) && (string)$_POST['dic_go_next'] === '1')
+    || (isset($_REQUEST['dic_go_next']) && (string)$_REQUEST['dic_go_next'] === '1');
+
+$dicSubId = 0;
+if (isset({subvettore_id}) && (int){subvettore_id} > 0) {
+    $dicSubId = (int){subvettore_id};
+} elseif (isset([subvettoreId]) && (int)[subvettoreId] > 0) {
+    $dicSubId = (int)[subvettoreId];
+} elseif (!empty($_SESSION['wizard_subvettore_id'])) {
+    $dicSubId = (int)$_SESSION['wizard_subvettore_id'];
+}
+
 $statoBlocco = isset({stato}) ? strtolower(trim((string){stato})) : '';
 if ($statoBlocco === 'firmata') {
-    sc_error_message('La dichiarazione firmata non si modifica.');
+    if ($goNext && $dicSubId > 0) {
+        dic_wizard_advance_docs($dicSubId);
+        [subvettoreId] = $dicSubId;
+        sc_redir('form_documenti_wizard', subvettoreId=[subvettoreId]);
+    } elseif ($goNext) {
+        sc_error_message('Subvettore non identificato.');
+    } else {
+        sc_error_message('La dichiarazione firmata non si modifica.');
+    }
 } else {
 
 $missing = array();
@@ -241,11 +295,18 @@ if (dic_si_no({q_10_4_resp_alimentare}) === 1) {
 }
 
 if (!empty($missing)) {
+    if (isset($_COOKIE['dic_go_next'])) {
+        setcookie('dic_go_next', '', time() - 3600, '/');
+        unset($_COOKIE['dic_go_next']);
+    }
     sc_error_message(
         "Compilare tutti i campi della dichiarazione:\n- "
         . implode("\n- ", $missing)
     );
 } else {
+    if ($goNext) {
+        $_SESSION['dic_wizard_go_docs'] = 1;
+    }
     $statoOra = isset({stato}) ? strtolower(trim((string){stato})) : '';
     if ($statoOra !== 'firmata') {
         {stato} = 'compilata';

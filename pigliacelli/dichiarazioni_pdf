@@ -491,6 +491,14 @@ $introI = 'Il/la sottoscritto/a (nome e cognome) ' . $fillOrDots($legaleNome, 40
     . $fillOrDots($viaFrase($indirizzo), 24) . ' n. ' . $fillOrDots($civico, 4)
     . "\nC.F. " . $fillOrDots($cf, 24) . ' P. Iva ' . $fillOrDots($piva, 22);
 
+// Le parentesi delle caselle non vanno scritte nel sorgente: Scriptcase
+// interpreta [X] come globale e nel PDF esce $this->sc_temp_X.
+$pdfBoxOn = chr(91) . 'X' . chr(93);
+$pdfBoxOff = chr(91) . ' ' . chr(93);
+$pdfIvSi = $pdfBoxOn . ' si    ' . $pdfBoxOff . ' no';
+$pdfIvNo = $pdfBoxOff . ' si    ' . $pdfBoxOn . ' no';
+$pdfIvEmpty = $pdfBoxOff . ' si    ' . $pdfBoxOff . ' no';
+
 // Il template originale lascia vuote le caselle sì/no e diverse righe di E/F.
 // Si ridisegna sempre, così la X e i campi anagrafici finiscono sul foglio.
 $canFpdi = false;
@@ -585,11 +593,11 @@ if ($canFpdi && $pageCount > 0) {
             }
             $ivMarkTpl = $dget('capitale_iv');
             if ($ivMarkTpl === '1') {
-                $ivTxtTpl = '[X] si    [ ] no';
+                $ivTxtTpl = $pdfIvSi;
             } elseif ($ivMarkTpl === '0') {
-                $ivTxtTpl = '[ ] si    [X] no';
+                $ivTxtTpl = $pdfIvNo;
             } else {
-                $ivTxtTpl = '[ ] si    [ ] no';
+                $ivTxtTpl = $pdfIvEmpty;
             }
             $capTpl = trim($fmtEuro($dget('capitale_sociale')) . '    i.v.  ' . $ivTxtTpl);
             $alboTpl = trim($alboNum . ($alboProv !== '' ? ' (' . $alboProv . ')' : ''));
@@ -603,7 +611,7 @@ if ($canFpdi && $pageCount > 0) {
                 288 => $cfR,
             );
             foreach ($extraE as $yE => $valE) {
-                if (trim((string)$valE) === '' || $valE === 'i.v.  [ ] si    [ ] no') {
+                if (trim((string)$valE) === '' || $valE === 'i.v.  ' . $pdfIvEmpty) {
                     if ($yE !== 138) {
                         continue;
                     }
@@ -937,11 +945,11 @@ if ($canFpdi && $pageCount > 0) {
     $sedeE = trim($viaCompleta . ($citta !== '' ? ', ' . $citta : '') . ($prov !== '' ? ' (' . $prov . ')' : ''));
     $ivMark = $yn($dget('capitale_iv'));
     if ($ivMark === '1') {
-        $ivTxt = '[X] si    [ ] no';
+        $ivTxt = $pdfIvSi;
     } elseif ($ivMark === '0') {
-        $ivTxt = '[ ] si    [X] no';
+        $ivTxt = $pdfIvNo;
     } else {
-        $ivTxt = '[ ] si    [ ] no';
+        $ivTxt = $pdfIvEmpty;
     }
     $formRowE('RAGIONE SOCIALE:', $ragione);
     $formRowE('SEDE LEGALE:', $sedeE);
@@ -1068,9 +1076,9 @@ if ($canFpdi && $pageCount > 0) {
     $cellLbl('Conto Terzi n. ' . $alboNum, $wL, 6.5);
     $cellLbl('REN n. ' . $dget('ren'), $wR, 6.5, 1);
     $cellLbl('Iscrizione Albo Nazionale Gestori Ambientali n° ' . $dget('num_albo_gestori') . ' per le categorie:', $contentW, 6.5, 1);
-    $box1 = ($yn($dget('anga_cat1')) === '1') ? '[X]' : '[ ]';
-    $box4 = ($yn($dget('anga_cat4')) === '1') ? '[X]' : '[ ]';
-    $box5 = ($yn($dget('anga_cat5')) === '1') ? '[X]' : '[ ]';
+    $box1 = ($yn($dget('anga_cat1')) === '1') ? $pdfBoxOn : $pdfBoxOff;
+    $box4 = ($yn($dget('anga_cat4')) === '1') ? $pdfBoxOn : $pdfBoxOff;
+    $box5 = ($yn($dget('anga_cat5')) === '1') ? $pdfBoxOn : $pdfBoxOff;
     $cellLbl(
         $box1 . '  1 del ' . $fmtDate($dget('anga_cat1_data'))
         . '     ' . $box4 . '  4 del ' . $fmtDate($dget('anga_cat4_data'))
@@ -1095,8 +1103,8 @@ if ($canFpdi && $pageCount > 0) {
     $cellLbl('Tel. ' . $dget('resp_logistica_tel') . '   Cell. ' . $dget('resp_logistica_cell'), $half, 6, 1);
 
     $secBar('3. DIMENSIONI AZIENDALI E FATTURATO');
-    $nazBox = ($yn($dget('mercato_nazionale')) === '1') ? '[X]' : '[ ]';
-    $intBox = ($yn($dget('mercato_internazionale')) === '1') ? '[X]' : '[ ]';
+    $nazBox = ($yn($dget('mercato_nazionale')) === '1') ? $pdfBoxOn : $pdfBoxOff;
+    $intBox = ($yn($dget('mercato_internazionale')) === '1') ? $pdfBoxOn : $pdfBoxOff;
     $cellLbl('Presenza sul mercato:   Nazionale ' . $nazBox . '     Internazionale ' . $intBox . '     Nazioni: ' . $dget('nazioni'), $contentW, 6.2, 1);
     $cellLbl(
         'Numero totale personale: ' . $dget('n_personale')

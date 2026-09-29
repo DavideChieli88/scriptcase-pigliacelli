@@ -10,15 +10,29 @@
  * Dichiarazione firmata: niente salvataggio.
  */
 
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    @session_start();
+}
+
+$dicOp = '';
+if (isset($_POST['nmgp_opcao'])) {
+    $dicOp = strtolower(trim((string)$_POST['nmgp_opcao']));
+}
+if ($dicOp !== 'alterar' && $dicOp !== 'update' && isset($_COOKIE['dic_go_next'])) {
+    setcookie('dic_go_next', '', time() - 3600, '/');
+    unset($_COOKIE['dic_go_next']);
+}
+
 $statoForm = isset({stato}) ? strtolower(trim((string){stato})) : '';
 if ($statoForm === 'firmata') {
     sc_btn_display('insert', 'off');
-    sc_btn_display('update', 'off');
     sc_btn_display('delete', 'off');
-}
-
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    @session_start();
+    if (!empty($_SESSION['dic_wizard_nav'])) {
+        sc_btn_display('update', 'on');
+        sc_ajax_javascript('dicMaskSave');
+    } else {
+        sc_btn_display('update', 'off');
+    }
 }
 if (!empty($_SESSION['dic_wizard_nav'])) {
     sc_btn_display('btn_next_declarations', 'on');
