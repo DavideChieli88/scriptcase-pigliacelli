@@ -3,7 +3,7 @@
  *
  * Pagina di atterraggio onboarding subvettore (wizard_complete = 0).
  * Logo + testo introduttivo + pulsante verso il primo step incompleto
- * (wizard_step: 1 anagrafica, 2 autisti, 3 mezzi, 4 documenti, 5 firma verdi/grid).
+ * (wizard_step: 1 anagrafica, 2 autisti, 3 mezzi, 4 dichiarazione, 5 documenti, 6 firma).
  *
  * Setup:
  * 1) New Application → Blank → blank_wizard_landing
@@ -18,16 +18,18 @@ $WIZ_APP = array(
     1 => 'form_subvettori_starting_wizard', // anagrafica
     2 => 'form_subvettori_autisti_wizard',  // onboarding (NON form_subvettori_autisti: quella chiede subvettoreContrattoId)
     3 => 'form_subvettori_mezzi',
-    4 => 'form_documenti_wizard',
-    5 => 'grid_documenti_to_sign_wizard',
+    4 => 'form_subvettori_dichiarazioni',
+    5 => 'form_documenti_wizard',
+    6 => 'grid_documenti_to_sign_wizard',
 );
 
 $WIZ_LABEL = array(
     1 => 'Anagrafica aziendale',
     2 => 'Autisti',
     3 => 'Mezzi',
-    4 => 'Documenti',
-    5 => 'Firma documenti',
+    4 => 'Dichiarazione',
+    5 => 'Documenti',
+    6 => 'Firma documenti',
 );
 
 if (!function_exists('wiz_landing_logo_src')) {
@@ -103,7 +105,7 @@ if ($subId <= 0) {
 }
 
 // wizard_step=0 con complete=0 non è "finito": riparti da 1 (evita bounce menu↔blank)
-if ($wizStep < 1 || $wizStep > 5) {
+if ($wizStep < 1 || $wizStep > 6) {
     $wizStep = 1;
 }
 
@@ -113,7 +115,46 @@ $nextLabel = isset($WIZ_LABEL[$wizStep]) ? $WIZ_LABEL[$wizStep] : $WIZ_LABEL[1];
 
 // ?go=N → apri quello step (solo se gia' raggiunto: N <= wizard_step)
 $go = isset($_GET['go']) ? (int)$_GET['go'] : 0;
-if ($go >= 1 && $go <= 5 && $go <= $wizStep && isset($WIZ_APP[$go])) {
+if ($go === 4 && $go <= $wizStep) {
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        @session_start();
+    }
+    $anno = (int)date('Y');
+    sc_lookup(rsLandDic, "
+        SELECT id
+        FROM subvettori_dichiarazioni
+        WHERE subvettore_id = $subId
+          AND anno = $anno
+        ORDER BY
+            CASE WHEN LOWER(TRIM(COALESCE(stato, ''))) IN ('compilata', 'firmata') THEN 0 ELSE 1 END,
+            id DESC
+        LIMIT 1
+    ", 'pigliacelli');
+    $dicId = !empty({rsLandDic[0][0]}) ? (int){rsLandDic[0][0]} : 0;
+    if ($dicId <= 0) {
+        sc_exec_sql("
+            INSERT INTO subvettori_dichiarazioni (subvettore_id, anno, stato)
+            VALUES ($subId, $anno, 'bozza')
+        ", 'pigliacelli');
+        sc_lookup(rsLandDicNew, "
+            SELECT id
+            FROM subvettori_dichiarazioni
+            WHERE subvettore_id = $subId
+              AND anno = $anno
+            LIMIT 1
+        ", 'pigliacelli');
+        $dicId = !empty({rsLandDicNew[0][0]}) ? (int){rsLandDicNew[0][0]} : 0;
+    }
+    if ($dicId > 0) {
+        $_SESSION['wizard_dichiarazione_id'] = $dicId;
+        $_SESSION['wizard_dichiarazione_anno'] = $anno;
+        $_SESSION['wizard_subvettore_id'] = $subId;
+        $_SESSION['dic_wizard_nav'] = 1;
+        unset($_SESSION['dic_return_to']);
+        sc_redir('form_subvettori_dichiarazioni', dichiarazioneId=$dicId; subvettoreId=$subId);
+    }
+}
+if ($go >= 1 && $go <= 6 && $go <= $wizStep && isset($WIZ_APP[$go])) {
     sc_redir($WIZ_APP[$go], subvettoreId=[subvettoreId]);
 }
 
@@ -173,13 +214,13 @@ if ($ragione !== '') {
 }
 
 echo '<p>Per completare l\'accreditamento le verrà chiesto di compilare i dati anagrafici, '
-    . 'inserire almeno un autista e un mezzo, caricare i documenti richiesti e firmare '
-    . 'digitalmente i documenti predisposti da Pigliacelli.</p>'
+    . 'inserire almeno un autista e un mezzo, compilare la dichiarazione, caricare i documenti '
+    . 'richiesti e firmare digitalmente i documenti predisposti da Pigliacelli.</p>'
     . '<p>Può interrompere e riprendere in qualsiasi momento. Gli step già raggiunti restano '
     . 'modificabili: clicchi sullo step per aprirlo e aggiornare i dati.</p>'
     . '<ul class="steps">';
 
-for ($i = 1; $i <= 5; $i++) {
+for ($i = 1; $i <= 6; $i++) {
     $unlocked = ($i <= $wizStep);
     $cls = 'locked';
     $suffix = '';
@@ -205,7 +246,7 @@ echo '</ul>'
     . '<div class="note">Prossimo passo: <strong>' . wiz_landing_h($nextLabel) . '</strong></div>'
     . '<div class="actions">'
     . '<a class="btn" href="?go=' . (int)$wizStep . '">Continua</a>'
-    . '<p class="hint">Step ' . (int)$wizStep . ' di 5 — clicchi uno step precedente per modificarlo</p>'
+    . '<p class="hint">Step ' . (int)$wizStep . ' di 6 — clicchi uno step precedente per modificarlo</p>'
     . '</div>'
     . '</div></div></div></body></html>';
 

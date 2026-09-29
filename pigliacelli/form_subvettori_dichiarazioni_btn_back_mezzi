@@ -1,0 +1,26 @@
+/**
+ * form_subvettori_dichiarazioni → pulsante PHP btn_back_mezzi (label: Indietro)
+ *
+ * IDE: Programming → Buttons → PHP → btn_back_mezzi → Toolbar.
+ * Visibile solo nello step wizard (dic_wizard_nav).
+ */
+
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    @session_start();
+}
+
+$subId = 0;
+if (isset([subvettoreId]) && (int)[subvettoreId] > 0) {
+    $subId = (int)[subvettoreId];
+} elseif (isset($_SESSION['wizard_subvettore_id'])) {
+    $subId = (int)$_SESSION['wizard_subvettore_id'];
+}
+if ($subId <= 0) {
+    $_SESSION['wizard_flash_msg'] = 'Subvettore non identificato.';
+    sc_redir('blank_wizard_landing');
+}
+
+[subvettoreId] = $subId;
+unset($_SESSION['dic_wizard_nav']);
+
+sc_redir('form_subvettori_mezzi', subvettoreId=[subvettoreId]);

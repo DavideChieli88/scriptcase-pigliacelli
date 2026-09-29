@@ -2,7 +2,7 @@
  * form_documenti_wizard → onAfterInsert
  *
  * Stesso codice di onAfterUpdate (stato=2 + basename).
- * Niente mail qui — solo a fine step 5.
+ * Niente mail qui — solo a fine step 6.
  * Niente COMMIT: lo gestisce SC (nm_commit_db).
  */
 

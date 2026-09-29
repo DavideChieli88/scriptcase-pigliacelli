@@ -1,8 +1,8 @@
 /**
  * grid_documenti_to_sign_wizard → onScriptInit
  *
- * Wizard step 5: elenco documenti verdi (tipi_documento.is_readonly=1)
- * del subvettore loggato. Crea gli slot mancanti, blocca accesso se non in step 5.
+ * Wizard step 6: elenco documenti verdi (tipi_documento.is_readonly=1)
+ * del subvettore loggato. Crea gli slot mancanti, blocca accesso se non in step 6.
  *
  * SETUP GRID (ScriptCase IDE):
  * - SQL esempio:
@@ -17,7 +17,7 @@
  * - Toolbar: send_for_activation
  * - Security: group 2
  *
- * onScriptInit: auth step 5, crea slot documenti, sync firmato_il da EasyGN.
+ * onScriptInit: auth step 6, crea slot documenti, sync firmato_il da EasyGN.
  * Mail operatori: solo nel pulsante "Invia per attivazione".
  */
 
@@ -125,7 +125,7 @@ if ($subId <= 0) {
     sc_error_message('Subvettore non associato.');
     sc_redir('app_menu');
 }
-if ($wizStep < 5) {
+if ($wizStep < 6) {
     sc_redir('blank_wizard_landing');
 }
 

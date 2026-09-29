@@ -1,10 +1,10 @@
 /**
  * form_documenti_wizard → pulsante PHP next_step_btn_signs (label: Prossimo / Next)
  *
- * Step 4 → 5:
+ * Step 5 → 6:
  * 1) Controlla documenti aziendali (upload, is_readonly=0)
- * 2) Se OK: wizard_step=5
- * 3) Redirect grid_documenti_to_sign_wizard
+ * 2) Se OK: wizard_step=6
+ * 3) Crea i documenti verdi e apre grid_documenti_to_sign_wizard
  *
  * Errori: flash in sessione + sc_redir (niente sc_error_message/sc_error_exit:
  * in alcuni contesti SC generano PHP non valido).
@@ -113,9 +113,10 @@ if (!empty($missing)) {
 
 sc_exec_sql("
     UPDATE subvettori
-    SET wizard_step = 5
+    SET wizard_step = 6
     WHERE id = $subId
       AND wizard_complete = 0
+      AND wizard_step < 6
 ", 'pigliacelli');
 
 // Crea subito i documenti verdi (is_readonly=1): la SQL della grid
@@ -161,7 +162,6 @@ sc_exec_sql("
       )
 ", 'pigliacelli');
 
-// Pulisci id documento dello step 4 (altrimenti Firma al 1° click usa il giallo)
 [documentoId] = 0;
 if (isset($_SESSION['documentoId'])) {
     unset($_SESSION['documentoId']);

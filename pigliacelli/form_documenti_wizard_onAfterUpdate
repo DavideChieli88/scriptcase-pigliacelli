@@ -5,7 +5,7 @@
  * - Forza basename in DB (niente path/subdir).
  * - Se onBeforeUpdate ha sostituito il file, conferma UPDATE su documenti.file.
  *
- * Niente mail/notifica operatori qui: partono solo a fine step 5
+ * Niente mail/notifica operatori qui: partono solo a fine step 6
  * (Invia per attivazione).
  * Niente COMMIT: lo gestisce SC (nm_commit_db).
  */

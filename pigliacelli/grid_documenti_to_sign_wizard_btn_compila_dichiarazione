@@ -105,6 +105,7 @@ $_SESSION['wizard_dichiarazione_id'] = $dicId;
 $_SESSION['wizard_dichiarazione_documento_id'] = $documentoId;
 $_SESSION['wizard_dichiarazione_anno'] = $anno;
 $_SESSION['wizard_subvettore_id'] = $subId;
+unset($_SESSION['dic_wizard_nav']);
 [subvettoreId] = $subId;
 
 sc_redir('form_subvettori_dichiarazioni', dichiarazioneId=$dicId; subvettoreId=$subId, 'modal', '', '800', '1200');

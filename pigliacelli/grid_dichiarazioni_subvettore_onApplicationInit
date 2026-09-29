@@ -18,7 +18,8 @@
  *   FROM subvettori_dichiarazioni sd
  *   LEFT JOIN documenti d ON d.id = sd.documento_id
  *   WHERE sd.subvettore_id = [subvettoreId]
- *   ORDER BY sd.anno DESC
+ *   ORDER BY sd.anno DESC, sd.id ASC
+ *   Non usare "id" da solo: con il JOIN è ambiguo.
  *
  * Campi negli eventi: {dic_id} {dic_sub} {dic_anno} {dic_stato} {dic_doc}
  *   {doc_firmato_il} {doc_scadenza} {doc_file}

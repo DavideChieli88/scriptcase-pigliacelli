@@ -365,7 +365,7 @@ sc_exec_sql("
     SET mail_credenziali_inviata_at = NULL,
         wizard_complete = 0,
         wizard_step = CASE
-            WHEN COALESCE(wizard_step, 0) < 1 OR COALESCE(wizard_step, 0) > 5 THEN 1
+            WHEN COALESCE(wizard_step, 0) < 1 OR COALESCE(wizard_step, 0) > 6 THEN 1
             ELSE wizard_step
         END
     WHERE id = $subvettore_id

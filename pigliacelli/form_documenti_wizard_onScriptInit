@@ -50,8 +50,8 @@ if ((int)[subvettoreId] <= 0) {
     sc_redir('blank_wizard_landing');
 }
 
-// Gli slot ANGA/RENTRI li crea form_subvettori_mezzi_btn_prossimo
-// prima di arrivare qui. La SELECT di questa form gira prima di onScriptInit.
+// Gli slot ANGA/RENTRI li creano onAfterInsert / onAfterUpdate del mezzo.
+// La SELECT di questa form gira prima di onScriptInit: non sincronizzare qui.
 
 // Filtro elenco: NON usare sc_where() (non esiste / non espande → Fatal error).
 // In ScriptCase → SQL → Where della form mettere ESATTAMENTE:

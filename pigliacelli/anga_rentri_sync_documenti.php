@@ -14,7 +14,7 @@
  * Non copia i file già legati a un mezzo. Non imposta data_scadenza.
  * I tipi usati diventano mandatory=1: lo step documenti richiede file e scadenza.
  *
- * La chiama form_subvettori_mezzi_btn_prossimo, prima di aprire form_documenti_wizard.
+ * La chiamano onAfterInsert e onAfterUpdate di form_subvettori_mezzi (anche admin).
  * form_documenti è la form di admin e operatori: non va sincronizzata lì.
  * Copia della funzione anche in onAfterInsert / onAfterUpdate del mezzo.
  */

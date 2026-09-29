@@ -1,0 +1,68 @@
+/**
+ * form_subvettori_dichiarazioni → pulsante PHP btn_next_declarations (label: Prossimo)
+ *
+ * IDE: Programming → Buttons → PHP → btn_next_declarations → Toolbar.
+ * Visibile solo se la form è aperta dallo step wizard (dic_wizard_nav).
+ * Salva prima il questionario: qui si controlla solo che lo stato sia compilata o firmata.
+ * Poi apre form_documenti_wizard (step 5). Gli slot ANGA/RENTRI li creano già i mezzi.
+ */
+
+$subId = 0;
+if (isset([subvettoreId]) && (int)[subvettoreId] > 0) {
+    $subId = (int)[subvettoreId];
+}
+if ($subId <= 0 && isset({subvettore_id}) && (int){subvettore_id} > 0) {
+    $subId = (int){subvettore_id};
+}
+if ($subId <= 0 && isset($_SESSION['wizard_subvettore_id'])) {
+    $subId = (int)$_SESSION['wizard_subvettore_id'];
+}
+
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    @session_start();
+}
+
+if ($subId <= 0) {
+    $_SESSION['wizard_flash_msg'] = 'Subvettore non identificato.';
+    sc_redir('blank_wizard_landing');
+}
+
+[subvettoreId] = $subId;
+$dicId = 0;
+if (isset([dichiarazioneId]) && (int)[dichiarazioneId] > 0) {
+    $dicId = (int)[dichiarazioneId];
+} elseif (!empty($_SESSION['wizard_dichiarazione_id'])) {
+    $dicId = (int)$_SESSION['wizard_dichiarazione_id'];
+}
+
+$stato = '';
+if ($dicId > 0) {
+    sc_lookup(rsDicNext, "
+        SELECT LOWER(TRIM(COALESCE(stato, '')))
+        FROM subvettori_dichiarazioni
+        WHERE id = $dicId
+          AND subvettore_id = $subId
+        LIMIT 1
+    ", 'pigliacelli');
+    $stato = !empty({rsDicNext[0][0]}) ? trim((string){rsDicNext[0][0]}) : '';
+}
+if ($stato !== 'compilata' && $stato !== 'firmata') {
+    $_SESSION['wizard_flash_msg'] = 'Salvare la dichiarazione compilata prima di proseguire.';
+    $_SESSION['dic_wizard_nav'] = 1;
+    sc_redir('form_subvettori_dichiarazioni', dichiarazioneId=$dicId; subvettoreId=$subId);
+}
+
+sc_exec_sql("
+    UPDATE subvettori
+    SET wizard_step = 5
+    WHERE id = $subId
+      AND wizard_complete = 0
+      AND wizard_step < 5
+", 'pigliacelli');
+
+sc_exec_sql('COMMIT');
+
+$_SESSION['wizard_subvettore_id'] = $subId;
+unset($_SESSION['dic_wizard_nav']);
+
+sc_redir('form_documenti_wizard', subvettoreId=[subvettoreId]);

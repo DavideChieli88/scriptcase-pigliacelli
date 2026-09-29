@@ -17,6 +17,17 @@ if ($statoForm === 'firmata') {
     sc_btn_display('delete', 'off');
 }
 
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    @session_start();
+}
+if (!empty($_SESSION['dic_wizard_nav'])) {
+    sc_btn_display('btn_next_declarations', 'on');
+    sc_btn_display('btn_back_mezzi', 'on');
+} else {
+    sc_btn_display('btn_next_declarations', 'off');
+    sc_btn_display('btn_back_mezzi', 'off');
+}
+
 sc_label(q_5_1_iso9001) = '5.1 - Siete certificati ISO 9001? (Se sì, allegare una copia del certificato senza rispondere alle domande a seguito tranne il punto 5.4 che va compilato; se no, rispondere alle domande successive)';
 sc_label(q_5_2_piano_iso9001) = '5.2 - Esiste un piano di certificazione ISO 9001';
 sc_label(q_5_3_politica_qualita) = '5.3 - La vostra azienda ha provveduto a definire, per iscritto, una Politica per la Qualità';

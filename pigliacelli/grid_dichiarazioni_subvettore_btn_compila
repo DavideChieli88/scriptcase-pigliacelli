@@ -78,5 +78,6 @@ $_SESSION['wizard_dichiarazione_id'] = $dicId;
 $_SESSION['wizard_dichiarazione_documento_id'] = $documentoId;
 $_SESSION['wizard_subvettore_id'] = $subId;
 $_SESSION['dic_return_to'] = 'grid_dichiarazioni_subvettore';
+unset($_SESSION['dic_wizard_nav']);
 
 sc_redir('form_subvettori_dichiarazioni', dichiarazioneId=[dichiarazioneId];subvettoreId=[subvettoreId]);

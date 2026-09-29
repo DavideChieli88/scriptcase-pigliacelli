@@ -2,7 +2,7 @@
  * form_subvettori_dichiarazioni → onAfterUpdate
  *
  * Se la form è stata aperta dalla griglia annuale, torna lì.
- * Lo step 5 non imposta dic_return_to e resta com'è.
+ * Il wizard non imposta dic_return_to: dopo il salvataggio la form resta aperta.
  */
 
 $back = '';

@@ -12,7 +12,9 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     @session_start();
 }
 
-if ((!isset([dichiarazioneId]) || (int)[dichiarazioneId] <= 0)
+if (!empty($_SESSION['dic_wizard_nav']) && !empty($_SESSION['wizard_dichiarazione_id'])) {
+    [dichiarazioneId] = (int)$_SESSION['wizard_dichiarazione_id'];
+} elseif ((!isset([dichiarazioneId]) || (int)[dichiarazioneId] <= 0)
     && !empty($_SESSION['wizard_dichiarazione_id'])
 ) {
     [dichiarazioneId] = (int)$_SESSION['wizard_dichiarazione_id'];
