@@ -2,17 +2,34 @@
  * Blank ScriptCase: scarica PDF firmato da EasyGN e lo invia al browser.
  * API: GET {easygn_base_url}/files/download/{id}
  *
- * Parametro globale: [contrattoId] — legge easygn_file_id da contratti.easygn_file_id
+ * Contratti (gia in uso da grid_contratti, tasto show_contract_signed):
+ *   [contrattoId] oppure ?contrattoId= — legge contratti.easygn_file_id
+ * Documenti firmati (grid verdi e dichiarazioni, tasto show_signed_doc_btn):
+ *   ?documentoId= oppure [documentoId] — legge documenti.easygn_file_id
  * sec_settings: easygn_bearer, easygn_base_url
  */
-$contrattoId = (int)[contrattoId];
-if ($contrattoId <= 0) {
-    sc_error_message('contrattoId mancante o non valido.');
+$documentoId = 0;
+$contrattoId = 0;
+
+if (isset($_GET['documentoId']) && (int)$_GET['documentoId'] > 0) {
+    $documentoId = (int)$_GET['documentoId'];
+} elseif (isset($_GET['contrattoId']) && (int)$_GET['contrattoId'] > 0) {
+    $contrattoId = (int)$_GET['contrattoId'];
+} elseif ((int)[contrattoId] > 0) {
+    $contrattoId = (int)[contrattoId];
+} elseif (isset($_REQUEST['documentoId']) && (int)$_REQUEST['documentoId'] > 0) {
+    $documentoId = (int)$_REQUEST['documentoId'];
+} elseif (isset([documentoId]) && (int)[documentoId] > 0) {
+    $documentoId = (int)[documentoId];
+}
+
+if ($documentoId <= 0 && $contrattoId <= 0) {
+    sc_error_message('contrattoId o documentoId mancante o non valido.');
     return;
 }
 
-$log = function ($msg) use ($contrattoId) {
-    sc_log_add('EASYGN_DL', '[contrattoId=' . $contrattoId . '] ' . (string)$msg);
+$log = function ($msg) use ($contrattoId, $documentoId) {
+    sc_log_add('EASYGN_DL', '[contrattoId=' . $contrattoId . '][documentoId=' . $documentoId . '] ' . (string)$msg);
 };
 
 $fail = function ($msg) use ($log) {
@@ -40,10 +57,57 @@ if ($bearer === '') {
 $easygnBaseUrl = rtrim(trim($sc_setting('easygn_base_url', 'https://easygn.digiwebuno.it/api')), '/');
 $log('start download stream baseUrl=' . $easygnBaseUrl);
 
-sc_lookup(rsF, "SELECT easygn_file_id FROM contratti WHERE id = $contrattoId LIMIT 1");
+$wfId = '';
+if ($documentoId > 0) {
+    sc_lookup(rsF, "
+        SELECT COALESCE(easygn_file_id, ''), COALESCE(easygn_workflow_id, '')
+        FROM documenti
+        WHERE id = $documentoId
+        LIMIT 1
+    ", 'pigliacelli');
+    $wfId = isset({rsF[0][1]}) ? trim((string){rsF[0][1]}) : '';
+} else {
+    sc_lookup(rsF, "SELECT easygn_file_id FROM contratti WHERE id = $contrattoId LIMIT 1");
+}
 $fileId = !empty({rsF[0][0]}) ? trim((string){rsF[0][0]}) : '';
+if (strcasecmp($fileId, 'null') === 0) {
+    $fileId = '';
+}
+
+if ($fileId === '' && $documentoId > 0 && $wfId !== '' && function_exists('curl_init')) {
+    $wfUrl = $easygnBaseUrl . '/workflows/' . rawurlencode($wfId);
+    $log('file id assente, GET ' . $wfUrl);
+    $chWf = curl_init();
+    curl_setopt($chWf, CURLOPT_URL, $wfUrl);
+    curl_setopt($chWf, CURLOPT_HTTPGET, true);
+    curl_setopt($chWf, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($chWf, CURLOPT_CONNECTTIMEOUT, 15);
+    curl_setopt($chWf, CURLOPT_TIMEOUT, 30);
+    curl_setopt($chWf, CURLOPT_HTTPHEADER, array(
+        'Authorization: Bearer ' . $bearer,
+        'Accept: application/json',
+    ));
+    $wfBody = curl_exec($chWf);
+    $wfHttp = (int)curl_getinfo($chWf, CURLINFO_HTTP_CODE);
+    curl_close($chWf);
+    $wfJson = is_string($wfBody) ? json_decode($wfBody, true) : null;
+    if ($wfHttp >= 200 && $wfHttp < 300 && is_array($wfJson) && !empty($wfJson['files'][0]['id'])) {
+        $fileId = trim((string)$wfJson['files'][0]['id']);
+        $fileSql = str_replace("'", "''", $fileId);
+        sc_exec_sql("
+            UPDATE documenti
+            SET easygn_file_id = '$fileSql'
+            WHERE id = $documentoId
+              AND (easygn_file_id IS NULL OR TRIM(easygn_file_id) = '')
+        ", 'pigliacelli');
+        $log('easygn_file_id recuperato dal workflow e salvato: ' . $fileId);
+    }
+}
 
 if ($fileId === '') {
+    if ($documentoId > 0) {
+        $fail('easygn_file_id assente sul documento ' . $documentoId . ' (workflow ' . ($wfId !== '' ? $wfId : 'vuoto') . ').');
+    }
     $fail('easygn_file_id assente su contratti per contratto_id=' . $contrattoId . ' (inviare prima la firma EasyGN).');
 }
 
@@ -140,7 +204,11 @@ if ($pdfBin === '') {
 }
 
 $pdfLen = strlen($pdfBin);
-$filename = 'contratto_' . $contrattoId . '_firmato.pdf';
+if ($documentoId > 0) {
+    $filename = 'documento_' . $documentoId . '_firmato.pdf';
+} else {
+    $filename = 'contratto_' . $contrattoId . '_firmato.pdf';
+}
 $log("download ok http=$http source=$source pdf_len=$pdfLen → browser");
 
 if (headers_sent()) {

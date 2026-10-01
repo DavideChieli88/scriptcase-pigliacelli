@@ -6,7 +6,9 @@
  * non e' salvata (stato compilata/firmata, flag in onScriptInit).
  *
  * compila_dichiarazione_btn: solo sulla riga il cui tipo contiene "dichiaraz".
- * Action Bar Ajax: sign_doc_btn, compila_dichiarazione_btn.
+ * open_pdf_btn: nascosto se firmato. show_signed_doc_btn: solo se firmato
+ * (scarica il PDF da EasyGN, stessa app dei contratti).
+ * Action Bar Ajax: sign_doc_btn, compila_dichiarazione_btn, open_pdf_btn, show_signed_doc_btn.
  */
 
 $firmatoIl = trim((string){d.firmato_il});
@@ -36,6 +38,14 @@ if ($tipoNome === '' && isset({d.tipo_documento_id}) && (int){d.tipo_documento_i
 
 $isDichiarazioni = (stripos($tipoNome, 'dichiaraz') !== false);
 $pronta = !empty($_SESSION['wizard_dichiarazione_pronta']);
+
+if ($firmato) {
+    sc_actionbar_hide('open_pdf_btn');
+    sc_actionbar_show('show_signed_doc_btn');
+} else {
+    sc_actionbar_show('open_pdf_btn');
+    sc_actionbar_hide('show_signed_doc_btn');
+}
 
 if ($isDichiarazioni) {
     if ($firmato) {

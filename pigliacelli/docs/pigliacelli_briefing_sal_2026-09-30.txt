@@ -1,0 +1,760 @@
+set 30, 2026
+Pigliacelli Workspace | Briefing e SAL
+invitato davide.chieli@digiwebuno.it Erik Capoccetta
+Allegati Pigliacelli Workspace | Briefing e SAL
+Record delle riunioni Trascrizione 
+
+
+Riepilogo
+Verifica della piattaforma e aggiornamento dei flussi con pianificazione dei testVerifica iniziale e modificheControllo della piattaforma e validazione dell'IBAN. Modifica dei campi di immatricolazione.Gestione documenti e sincronizzazioneCaricamento automatico dei documenti e separazione dei pulsanti di sincronizzazione SGA.Contratti e test finaliFlusso di firma dei contratti e pianificazione dei test operativi per i subvettori.
+
+
+Decisioni
+Concordato
+Sostituzione del campo anno immatricolazione con la data Si è deciso di sostituire il campo dell'anno di immatricolazione con la data di immatricolazione completa.
+Organizzazione della sezione anagrafica e visualizzazione dei documenti Si è stabilito di posizionare i dettagli del subvettore sotto la sezione anagrafica e di sostituire il nome del file dei documenti con un'icona apribile.
+Separazione della sincronizzazione SGA in due funzioni Si è stabilito di separare la sincronizzazione SGA creando due pulsanti distinti, uno per l'anagrafica e uno per le tratte.
+
+
+Passaggi successivi
+[Erik Capoccetta] Condividere testo email: Condividere il testo per le email con Davide.
+[Davide Chieli] Validare IBAN: Implementare la maschera di validazione per l IBAN.
+[Davide Chieli] Validare codice SD: Implementare la maschera di validazione per il codice SD.
+[Davide Chieli] Aggiornare immatricolazione: Modificare il campo anno immatricolazione in data immatricolazione.
+[Davide Chieli] Nascondere ID: Rendere invisibile l ID nel modulo.
+[Davide Chieli] Integrare privacy: Integrare il form per l informativa privacy nel flusso.
+[Davide Chieli] Aggiungere tasto: Inserire un pulsante per caricare il documento firmato.
+[Davide Chieli] Organizzare anagrafica: Spostare i dettagli del vettore sotto la sezione anagrafica azienda.
+[Davide Chieli] Inserire icona: Sostituire il nome del file con un icona di spunta cliccabile per aprire il documento.
+[Davide Chieli] Nascondere sincronizzazione: Nascondere temporaneamente il pulsante di sincronizzazione SGA.
+[Erik Capoccetta] Creare pianificazione: Definire le attività future e impostare scadenze chiare per il progetto.
+[Davide Chieli] Separare pulsanti: Implementare due pulsanti separati per la sincronizzazione SGA uno per l anagrafica e uno per le tratte.
+[Davide Chieli] Pulire database: Ripulire il database per ripristinare uno stato iniziale pulito.
+[Davide Chieli] Semplificare Wizard: Rimuovere gli step relativi a autisti e mezzi dal flusso di firma per mostrare esclusivamente le tratte.
+[Davide Chieli] Abilitare Contratto Quadro: Creare un pulsante nella form contrattistica per consentire l'invio del contratto generale ai vettori preesistenti.
+[Davide Chieli] Completare Reminder: Inserire i documenti come le dichiarazioni e i moduli annuali mancanti nella gestione delle notifiche.
+[Davide Chieli] Sviluppare Job Sincronizzazione: Implementare i job per la sincronizzazione dei viaggi dei subvettori.
+[Davide Chieli] Revisionare Flusso Firma: Adeguare il form di sottoscrizione contrattuale alla logica operativa prevista per le variazioni.
+[Erik Capoccetta] Inviare Registrazione: Trasmettere il file della chiamata appena disponibile.
+[Davide Chieli] Pulire Database: Eseguire la manutenzione e pulizia del DB entro la mattina successiva.
+
+
+Dettagli
+Verifica iniziale della piattaforma e validazione dell'IBAN: Davide Chieli ha mostrato l'accesso tramite Tinot Mail e l'area riservata per verificare il funzionamento dei task principali (00:00:12). Durante la dimostrazione, Erik Capoccetta ha evidenziato la necessità di inserire la validazione dell'IBAN, che Davide Chieli si è impegnato a completare definendola un'operazione rapida da inserire direttamente nel campo (00:02:01).
+Modifica dei campi di immatricolazione e pulizia dell'interfaccia: Erik Capoccetta ha segnalato di nascondere l'ID e di trasformare il campo relativo all'anno di immatricolazione dei mezzi in una data completa. Davide Chieli ha preso nota delle modifiche da apportare, confermando di aver già rilasciato il sistema e di dover procedere unicamente alla pulizia del database (00:04:14).
+Caricamento automatico dei documenti e questionari di conformità: Davide Chieli ha illustrato la funzionalità che genera automaticamente i documenti nello step successivo in base alle risposte fornite nel sondaggio, inclusi i certificati ISO, la diagnosi energetica e l'attestato di invio Enea (00:07:18). Erik Capoccetta ha confermato la correttezza di tali controlli aggiunti autonomamente nel flusso (00:08:40) (00:12:34).
+Gestione dei documenti multi-record e trascinamento dei file: Davide Chieli ha mostrato la sezione per il caricamento dei documenti in formato multi-record, ottimizzata per consentire il trascinamento manuale (drag and drop) dei file da parte dei subvettori (00:09:52). I documenti gestiti comprendono l'autorizzazione Ang, l'iscrizione Rentry e i certificati ISO configurati (00:10:54).
+Correzione dei bug delle parentesi quadre e gestione delle credenziali: Davide Chieli ha spiegato di aver risolto circa sette errori derivati dall'interpretazione errata delle parentesi quadre HTML scambiate per macro da script case. Erik Capoccetta ha ricordato che le password di accesso agli step successivi vengono inviate tramite SMS ai subvettori (00:12:34).
+Integrazione dell'informativa privacy e riorganizzazione delle sezioni anagrafiche: Discutendo dell'informativa privacy, Erik Capoccetta ha richiesto che la compilazione avvenga in un modulo esplicito e separato all'interno del flusso (00:14:14). Successivamente, Erik Capoccetta e Davide Chieli hanno concordato di riorganizzare le sezioni anagrafiche, spostando i dettagli del subvettore, i contratti e le tratte nelle apposite sezioni contrattistiche della piattaforma (00:20:05).
+Miglioramenti grafici per la visualizzazione dei file degli autisti: Erik Capoccetta ha richiesto di sostituire il nome testuale del file nella griglia dei documenti degli autisti con un'icona a forma di spunta (checkmark) che permetta di aprire il documento in una nuova finestra cliccandoci sopra (00:21:15). Davide Chieli ha recepito l'indicazione grafica migliorativa per applicarla sia agli autisti che ai mezzi (00:22:24).
+Pianificazione dei test per i subvettori e gestione della sincronizzazione SGA: Erik Capoccetta ha stabilito di comunicare l'avvio dei test ai subvettori a partire da venerdì mattina, fornendo le credenziali di accesso (00:23:53). Per evitare azioni improprie prima dei test, Davide Chieli ha provveduto a nascondere temporaneamente la sincronizzazione con SGA (00:25:08).
+Separazione dei pulsanti di sincronizzazione SGA per anagrafica e tratte: Erik Capoccetta ha richiesto di dividere la funzionalità di sincronizzazione con SGA in due pulsanti distinti: uno posizionato nell'anagrafica vettori per importare i nuovi subvettori da sottoporre a onboarding, e uno dedicato alle tratte (00:27:46). Davide Chieli ha confermato la comprensione di questa separazione operativa (00:29:06).
+Gestione delle tratte e dei subvettori attivi o inattivi: Erik Capoccetta ha spiegato che il job di sincronizzazione deve pescare le tratte di tutti i subvettori presenti in anagrafica, indipendentemente dal loro stato attivo o inattivo (00:32:42). Davide Chieli ha chiarito che, qualora un subvettore completi il Wizard e diventi attivo, il sistema gestirà l'inserimento di nuove tratte o la firma del contratto principale se si tratta della prima volta (00:31:12).
+Verifica dei mezzi e degli autisti nei moduli contrattuali: Davide Chieli ha posto quesiti in merito alla gestione dei moduli di autisti e mezzi ereditati dai vecchi flussi. Erik Capoccetta ha precisato che tali dati devono essere caricati e gestiti direttamente dall'anagrafica della piattaforma, permettendo ai subvettori di confermarli o modificarli (00:33:56) (00:37:13).
+Flusso di firma dei contratti e invio delle PEC: Erik Capoccetta ha dettagliato che, per i nuovi subvettori privi di tratte precedenti, il sistema crea automaticamente un contratto in bozza nella sezione contrattistica (00:40:23) (00:42:52). Davide Chieli e Erik Capoccetta hanno confermato che la mail viene inviata alla PEC del subvettore affinché il legale rappresentante possa procedere alla firma e alla visualizzazione delle tratte (00:41:53) (00:44:00).
+Contratti quadro per i vecchi subvettori e chiusura delle attività di test: Erik Capoccetta ha indicato la necessità di prevedere un pulsante nella form contrattistica per inviare un nuovo contratto quadro da far rifirmare ai vecchi subvettori (00:46:14). In conclusione, Davide Chieli ha pianificato di ultimare le ultime migliorie e pulire il database per consentire l'inizio dei test operativi (00:48:32).
+
+set 30, 2026
+Pigliacelli Workspace | Briefing e SAL - Trascrizione
+00:00:12
+
+Erik Capoccetta: Davide,
+Davide Chieli: Ciao Erik,buoni.
+Erik Capoccetta: pomeriggio. Eccoci qua. Allora, ci siamo.
+Davide Chieli: Sì,
+Erik Capoccetta: Sì.
+Davide Chieli: abbastanza diciamo ci sono ancora cose da finire, come ti dicevo, però sui task che mi principali già sono stati fixati. Allora, vi faccio vedere al volo, eh, mi sono appena creato una mail qua sul proprio adesso su Tinot Mail,
+Erik Capoccetta: Sì,
+Davide Chieli: eh, con su vettore, scusami, nuovo. Quindi, vabbè, ho inviato le credenziali, qui arriva la mail.
+Erik Capoccetta: tra l'altro m'hanno mandato il testo che ci dobbiamo mettere, eh.
+Davide Chieli: Ah, e dopo se me lo condividi per le varie mail o una
+Erik Capoccetta: Sì,
+Davide Chieli: sola.
+Erik Capoccetta: una solo questa.
+Davide Chieli: Eh vabbè, va bene. Aspetta, accedo un attimo in incognito all'area riservata. Allora, questo devo chiudere. Mh. Ho fatto l'ho chiuso.
+Erik Capoccetta: Ce l'hai un po' aperto.
+Davide Chieli: Mh. Non vale che l'ho chiuso. Aspetta. Boh. Aspetta, dovrei averla ancora salvata. Temp mail, mi ricordo qual era.
+
+
+00:02:01
+
+Davide Chieli: Eccola qua. Speriamo che non sia cambiato.
+Erik Capoccetta: Eh, mo sì, è cambiata.
+Davide Chieli: No, ok. No, infatti mi ricordo che questo è rimane in cash. Finché non la svoti funziona. Ok, questa si può chiudere. Sono un po' troppe, no? Ok, qui dentro c'è stanno
+Erik Capoccetta: C'è un attimo, rispondo un attimo a Filippo. Oh. Yeah.
+Davide Chieli: Sì. Ah, metto le rebo Ehi,
+Erik Capoccetta: Eccomi Davide, scusami.
+Davide Chieli: eccoti. Allora, stavo dicendo, eh, ho compilato un attimo la Questa è la prima, adesso vado avanti.
+Erik Capoccetta: Sì, c'è c'è là c'è la validazione dell'IBAN e
+Davide Chieli: Eh, quella mi mancava, te l'ho detto, non ce l'ho fatta ancora a farla,
+Erik Capoccetta: Ah!
+Davide Chieli: eh. Quella è una cosa proprio di 2 secondi in realtà. Penso che vada messa nel campo direttamente.
+Erik Capoccetta: Sì, sì,
+Davide Chieli: Non mi ricordo se la devo fare io in nell'on validate
+Erik Capoccetta: no, c'è la maschera di valitazione nel campo.
+Davide Chieli: oppure eh allora ripeto, allora basta quella, insomma.
+
+
+00:04:14
+
+Davide Chieli: All mettiamo qua che ne so Erik.
+Erik Capoccetta: Ok,
+Davide Chieli: Qua, come vedi, ci sono i blocchi.
+Erik Capoccetta: oh.
+Davide Chieli: Non so se li hai visti. Erik,ti sento scatti.
+Erik Capoccetta: Sì, sì. No, dico bene bene.
+Davide Chieli: Ah, ti senta scatti. Ok.
+Erik Capoccetta: Ok.
+Davide Chieli: Non lo so come Ah,
+Erik Capoccetta: sempre l'ID devi nascondere, eh.
+Davide Chieli: ecco, bravo. Esattamente. Sì, ho detto le cose piccoline queste qua non ho avuto il tempo di farle di nascondere.
+Erik Capoccetta: Guarda, loro m'hanno scritto per sollecitare, io gli ho detto che entro fine settimana gli mandiamo le cose,
+Davide Chieli: Sì, sì, sì, sì.
+Erik Capoccetta: quindi
+Davide Chieli: No, io secondo me possiamo Io ho già rilasciato, in realtà devo solo ripulire il database.
+Erik Capoccetta: m
+Davide Chieli: Secondo me qui ci vuole la polizza, come dicevamo noi, eh,
+Erik Capoccetta: eh sì.
+Davide Chieli: sono abbastanza convinto che ce la fanno aggiungere.
+Erik Capoccetta: M.
+Davide Chieli: Allora, io qua metto 1 e 4.
+Erik Capoccetta: Ok.
+Davide Chieli: Ok, facci caso. Mettiamo un altro.
+
+
+00:05:48
+
+Davide Chieli: Ok.
+Erik Capoccetta: Lì più che anno è data. In effetti, se fai mettere tutta La data,
+Davide Chieli: Cosa?
+Erik Capoccetta: la data diimmatricolazione mh citata nella
+Davide Chieli: Questo? Ah, sì,
+Erik Capoccetta: label.
+Davide Chieli: sì. Aspetta che me lo segno. I mezzi poi. Allora, anno immatricolazione diventa data. Va bene.
+Erik Capoccetta: Ah,
+Davide Chieli: Immatricolazione.
+Erik Capoccetta: vabbè.
+Davide Chieli: Ok.
+Erik Capoccetta: Ok,
+Davide Chieli: Allora, io adesso metto 5 e un'altra volta 1 e 4 stavolta. Ok? Quindi la prima c'ha 1 e4, questa c'ha 1 4 e 5.
+Erik Capoccetta: ok.
+Davide Chieli: Adesso vado avanti. Qui ci sarà Allora, qui ci sarà la prima, diciamo,
+Erik Capoccetta: Угуm.
+Davide Chieli: la seconda novità, tra virgolette. Vabbè, qui devo mettere Ho messo, Vabbè. altre cose, altri controlli. Ehm eh quando adesso selezioneranno dal sondaggio mette ti faccio vedere quei qui ci sono alcuni campi, non so se mi facessi vedere tu in effetti perché io non meo non non li avevo proprio visti quei cambi che ti obbligano.
+
+
+00:07:18
+
+Davide Chieli: In realtà loro non ce l'hanno chiesta questa cosa, però lo stiamo ipotizzando noi, eh, ti obbligano a caricare dei dei documenti e a mettere delle vabbè e a mettere dei campi, semplicemente a compilare dei campi.
+Erik Capoccetta: Eh,
+Davide Chieli: Adesso che cosa succede? Che sotto al sedere creo in automatico quei documenti nello step successivo dei documenti.
+Erik Capoccetta: ok. che era come avevamo detto Ok.
+Davide Chieli: Ok. Sì. Ok. Per esempio, in particolare quello che dicono loro è se sì allegare una copia del certificato senza rispondere alle domande a seguito tranne il punto 5.4 che va compilato. Quindi banalmente io ho fatto un sì e qua metto sì, magari stessa cosa.
+Erik Capoccetta: Eh,
+Davide Chieli: Qui metto eh
+Erik Capoccetta: vedi là però ci devi mettere legge. Hai visto che dice? Se sì, indicare a seguito le generalità e il suo numero di telefono. C'è stato conato.
+Davide Chieli: in realtà sono già sopra, già le compilate sopra.
+Erik Capoccetta: Mh mh.
+Davide Chieli: Eh sì,
+Erik Capoccetta: Magari là puoi controllare che se hanno messo sì e quel campo non è compilato.
+
+
+00:08:40
+
+Davide Chieli: qua sì, infatti si dovrebbe esserci già il check. Eh, qui stessa cosa. Se io faccio sì, eh, dovrei caricare, cioè l'I mi deve caricare l'ISO 14.0001.
+Erik Capoccetta: Oh.
+Davide Chieli: Io faccio notare che questi documenti non c'è l'hanno chiesti, cioè non è non sono nel Io li ho aggiunti io, ma non sono nell'elenco eh diciamo di quelli che ci hanno dato loro.
+Erik Capoccetta: Eh sì, ma perché quelli lo danno per implicito, no? che tu leggi lì e
+Davide Chieli: Stessa cosa qua. Qui se io faccio sì e sì, qua mi carica un documento, il squass e qua me ne carica due, cioè la copia la testazione di invio dell'ENA, la diagnosi energetica.
+Erik Capoccetta: mh
+Davide Chieli: Quindi sono due documenti, qui e qui è un altro. Ok,
+Erik Capoccetta: ok.
+Davide Chieli: qui sono altri. Sì, vabbè, questi sono necessari. Bene così. E adesso possiamo andare avanti. Salviamo. In realtà funziona già col prossimo, però va bene.
+Erik Capoccetta: Eh, lo puoi levare quel salva in effetti.
+Davide Chieli: Eh, l'ho fatto perché nel caso in cui debbano compilarlo ancora.
+
+
+00:09:52
+
+Davide Chieli: Vabbè, posso possiamo anche levarlo. Sì. Eh, allora qui invece, per esempio, qui è come ti dice, questa è come lo facevo io la prima la prima volta che tu mi dicesti, "No, falla con le modali". Se ti ricordi, mo mi è venuto in mente quando l'ho rimessa, eh, questa qua è la la forma dei documenti in multicrecord.
+Erik Capoccetta: Eh, ma io quello là te l'avevo chiesto per gli autisti, perché quelli dovevano caricare 80.000 documenti. È ovvio che 80.000 file upload a tutti.
+Davide Chieli: Eh, vabbè, anche qua me la chiedesti, perciò io la mi la cambiai, senò non la cambiavo, figurati.
+Erik Capoccetta: No, no, no, qua no. Non c'eramo mai arrivati più.
+Davide Chieli: Oh, penso che c'era Vabbè, comunque va bene così. Comunque li ho rimessi così. Basta che adesso adesso però salva serve qui. Qui serve per perché proprio come è fatto alla multicrecord lo devono salvare qua. Eh, in particolare ti faccio solo notare una cosa che quiè comincio a caricare un attimo i documenti. Adesso sicuramente è più veloce il caricamento perché possono fare ehm il drag and drop manalmente.
+
+
+00:10:54
+
+Erik Capoccetta: อื
+Davide Chieli: Eh mo appena ci arriviamo comincio a caricare tutti i documenti che servono. Saranno proprio tanti quelli che poveri poveri subdettori.
+Erik Capoccetta: Ha.
+Davide Chieli: Durf, questo è il nuovo che ci hanno chiesto e qua ci sono. Allora, autorizzazione ang ricevuta cagamento ang una volta sola, l'anga 4 volta sola, anche se abbiamo messo una e qu un due volte se ti ricordi.
+Erik Capoccetta: Sì.
+Davide Chieli: Poi c'è la il rentry e l'iscrizione ricevuta pagamento rentri e qui c'è la 5 per quell'altro. Ok, non ci sono doppioni in questo caso. Oltre questo, qua sono, vedi, come ti dicevo prima, qua ci sono i nuovi i nuovi documenti e per il questionario, quindi ISO 9001, ISO 14.000,
+Erik Capoccetta: Sì.
+Davide Chieli: eccetera. fa così. Allora, qui sono due pagine in realtà. Un attimo, questa l'allungherò un po'.
+Erik Capoccetta: M.
+Davide Chieli: Eccoli qua.
+Erik Capoccetta: Ok,
+Davide Chieli: Quindi certificato ISO 40 45.000, Questo qua quas diagnosi energetica e attestato in vio Enea. Pero, io questa roba ce l'abbiamo fatta noi, non ce l'hanno chiesta, però immagino sia corretta.
+
+
+00:12:34
+
+Erik Capoccetta: sì, sì, è corretta.
+Davide Chieli: Speriamo che non ci richiedono di rifarla.
+Erik Capoccetta: No, ok.
+Davide Chieli: Ok. E qua vabbè ho corretto le vabbè quelle quei piccoli errori erano derivati dalle parentesi quadre perché le i quadratini del
+Erik Capoccetta: Ah.
+Davide Chieli: banalmente script case vedeva le parentesi quadre eh diciamo dell'HTML che servivano per i quadratini li vedeva come macro e quindi li sostituiva.
+Erik Capoccetta: Ok.
+Davide Chieli: Quindi qua eccoli qua sono stati corretti questi qua. Stessa cosa ce laggiù. Qua ce n'erano nazionali, internazionale, questi erano buggati. Eh, pure qua mi pare c'era qualche cosina un po' più giù. Comunque c'erano se set errori del genere. Li ho corretti.
+Erik Capoccetta: M Ottimo.
+Davide Chieli: Ok. E poi eh vabbè, poi adesso insomma il flusso completo è questo qua. Aspetta che Sì,
+Erik Capoccetta: Ma direi che va bene adesso.
+Davide Chieli: sì. Eh, ti devo mettere un attimo le password. Quale messaggi? Non mi ricordo dove arrivano.
+Erik Capoccetta: Sì, arriva SMS.
+Davide Chieli: Ok, questa è la prima.
+
+
+00:14:14
+
+Davide Chieli: Questa si dovrebbe aggiornare tra pochi secondi. Il tempo che si carica qua. Ha acchiappato proprio il Esatto. Sì. Vabbè. Come puoi vedere se è ricaricato. Allora, alcune volte prima va istantaneo in effetti.
+Erik Capoccetta: M.
+Davide Chieli: Vabbè.
+Erik Capoccetta: Ok.
+Davide Chieli: 492. Qua questi documenti ce li devono dare.
+Erik Capoccetta: Eh sì.
+Davide Chieli: 84 717.
+Erik Capoccetta: che anche l'informativa privacy la dovranno compilare.
+Davide Chieli: Beh, sì, chiaro. Quando ovviamente io farò un'altra forma, tipo questa qua, eh, o la faccio qui direttamente questo step qui o non so se
+Erik Capoccetta: Mh.
+Davide Chieli: aggiungere un altro step solo per quello o magari stesso nella magari stesso nelle nelle domande faccio un'altra sezione per l'informativa privacy semplicemente.
+Erik Capoccetta: Eh sì, però l'informativa prob deve essere esplicita, eh, che tu stai compilando quella, quindi Sì,
+Davide Chieli: Cioè, allora deve essere una forma a parte.
+Erik Capoccetta: sì, sì.
+Davide Chieli: Va bene. Eh, poi dimmi tu se la integriamo direttamente qui, come ho fatto già in precedenza, oppure serve uno step nuovo. Lo step nuovo è una rogna perché devo rimettere devo devo spostare, diciamo, tutti gli step.
+
+
+00:15:58
+
+Erik Capoccetta: No,
+Davide Chieli: È un po' una rogna, vabbè.
+Erik Capoccetta: la metterei lì quella la metterei là.
+Davide Chieli: Mh. Ok. E questo è quanto.
+Erik Capoccetta: Non c'era là la firma.
+Davide Chieli: Eh no,
+Erik Capoccetta: Non non l'hai recuperata?
+Davide Chieli: è solo l'anteprima. Non non devo devo mettere il tastino per caricare il il per far vedere come ho fatto già precedentemente il documento salvato.
+Erik Capoccetta: Ok.
+Davide Chieli: Ok,
+Erik Capoccetta: Vabbè. E poi qua c'è da fare tutto il
+Davide Chieli: quindi qui allora adesso giusto per qua ci sta quei nuovi cambi che avevamo detto, appartenenza e riferimento. in particolare, vabbè,
+Erik Capoccetta: m No.
+Davide Chieli: qua sono i campi dell'azienda, i campi dell'autista e il nome dell'autista, campo del mezzo, quindi i documenti del mezzo, scusam, in questo caso è uno solo. E vabbè, altri documenti in questo caso dell'azienda, magari mi metto un order buy, non so se ordery azienda, eccetera. Questo è l'altro mezzo che abbiamo aggiunto, il semirimorchio eccetera. Qui sono manuale del vettore eccetera eccetera, tutti gli altri documenti che abbiamo messo.
+
+
+00:17:08
+
+Davide Chieli: Quindi vedi c'è un cat 4, un CAT 5, solo una rentry, questi qua due,
+Erik Capoccetta: Sì, sì.
+Davide Chieli: ehccetera eccetera.
+Erik Capoccetta: Se lui va in modifica che succede là? Vabbè, che ho ancora questa roba da fare,
+Davide Chieli: No,
+Erik Capoccetta: però
+Davide Chieli: lo può modificare banalmente il file. Questo qui è quello che c già c'era prima, diciamo, era il vecchio il vecchio modulo di di modifica della eh del documento, quindi funzionere in teoria funziona già perché già l'ho testato. Se se loro mettono se loro caricano un altro documento arriva la notifica che è stato caricato un altro documento al subvettore, quello che c'era prima Eric.
+Erik Capoccetta: sì, sì, sì. Aspetta che devo rispondere.
+Davide Chieli: Угуm.
+Erik Capoccetta: Devo rispondere a Filippo. Yeah.
+Davide Chieli: M. Ah, giusto, mi ero dimenticato questa cosa. Vabbè, te la faccio vedere.
+Erik Capoccetta: Eccomi. Dimmi tutto.
+Davide Chieli: Ah, niente, l'ultima cosa che ti dicevo ho aggiunto questa sezione dichiarazioni,
+Erik Capoccetta: Sì.
+Davide Chieli: eh, dove loro possono rivedere, senza modificarla però le dichiarazioni che hanno fatto.
+
+
+00:19:02
+
+Erik Capoccetta: Ah.
+Davide Chieli: è quello che ti dicevo, quando l'hanno, diciamo, questa cosa l'ho fatta perché quando partiranno gli allert della scadenza della della dichiarazione, verrà generato un altro record qua in bozza, quindi non stato firmato, ma è stato Bozza, 2027, eh, e che potranno modificare direttamente da qua.
+Erik Capoccetta: Eh, ok. Compilare. Sì, perfetto.
+Davide Chieli: Eh, sì, quindi non so se va va anche rifirmato,
+Erik Capoccetta: Eh, sì,
+Davide Chieli: eh.
+Erik Capoccetta: sì,
+Davide Chieli: Ok.
+Erik Capoccetta: sì.
+Davide Chieli: Sì, vabbè, penso di sì, infatti. Sì. Ok, quindi o diciamo l'idea è o rimandargli una mail con il form delle dichiarazioni eh e la firma oppure eh rifarglielo fare da qua.
+Erik Capoccetta: No, lo fanno da qua perché la media lo fanno da qua.
+Davide Chieli: Eh secondo me è meglio farlo fare da qua. Esatto.
+Erik Capoccetta: Eh, una volta ormai sono entrati lo fanno da qua.
+Davide Chieli: E quindi, diciamo, fanno direttamente compilazione e firma con due tastini, due di due action button. Qua
+Erik Capoccetta: Ok. La firma va sempre al rappresentante, a quello che ha indicato come rappresentante legale nella propria anagrafica.
+
+
+00:20:05
+
+Davide Chieli: rappresentante legale. Sì,
+Erik Capoccetta: E l'anagrafica azienda dove ce l'hanno?
+Davide Chieli: sì. una grafica azienda dettagli sul vettore questa qua.
+Erik Capoccetta: Ah, ok. Vabbè, mettici una grafica azienda, senò non si capisce. E mettila sotto una grafiche.
+Davide Chieli: Sì, anche questa va sotto una grafica,
+Erik Capoccetta: No,
+Davide Chieli: che è No,
+Erik Capoccetta: dichiarazioni, no.
+Davide Chieli: no, no, dettagli su vettore.
+Erik Capoccetta: Dettagli subvettore, sì. Così c'hanno tutte le anagrafiche. Ai autisti, mezzi, poi tratte non è un'anagrafica in realtà.
+Davide Chieli: Eh no, per adesso l'ho messo là, non so dove metterlo. Penso sia una sezione su
+Erik Capoccetta: No, sotto i contratti, contratti, tratte,
+Davide Chieli: Ah,
+Erik Capoccetta: documenti.
+Davide Chieli: ok. C'è una sezione a parte sotto contrattistico.
+Erik Capoccetta: Sì.
+Davide Chieli: Ok. Ok. Questo è già il questo è già 2at, eh, quindi te l'ho fatto provare proprio in in anonimo a inat.
+Erik Capoccetta: Perfetto. Allora, io direi che una volta
+Davide Chieli: Devo solo bruciare tutto, diciamo, devo rimettere il database pulito.
+
+
+00:21:15
+
+Erik Capoccetta: Allora, una volta fatti questi rimane là la validazione dell'IBAL, la validazione del codice SD.
+Davide Chieli: Sì,
+Erik Capoccetta: Poi per gli autisti hai fatto i blocchi per gruppo di documenti e scadenza l'hai fatti.
+Davide Chieli: sì, sì.
+Erik Capoccetta: Non metterei eh, vedi questo tavo detto, non metterei i campi con il nome del documento nella griglia o li nascondiamo. Metterei un'icona a forma di checkmark. Questo se lo riesce a fare.
+Davide Chieli: Eh, questa è una migliorativa. Che cos'era questa? Fammi ricorda. Mi ricordam
+Erik Capoccetta: Sta dentro sempre quel foglio interno al test.
+Davide Chieli: internal. Eh no, non ho capito proprio il task, perciò non
+Erik Capoccetta: Invece del nome del documento qua dove vedi Blan 160 Blank e passa qua nell'anagrafica.
+Davide Chieli: questi.
+Erik Capoccetta: Eh,
+Davide Chieli: Ok.
+Erik Capoccetta: o non lo metti oppure ci metti un'icona a forma di spunta se l'hanno caricata, perché è brutto vedere sto blank.
+Davide Chieli: Eh, perché loro possono direttamente, vabbè, sapere che cosa hanno caricato, però insomma metto una spunta.
+Erik Capoccetta: Eh no, allora ci metti l'iconcina che se ci clicca da sopra lo apre.
+
+
+00:22:24
+
+Erik Capoccetta: Qua deve essere un'icona,
+Davide Chieli: Ok.
+Erik Capoccetta: non il nome del file.
+Davide Chieli: Ok. Quindi ho faccio pure pure in realtà mi piaceva pure l'idea della come hai detto prima, della spunta.
+Erik Capoccetta: Eh, la spunta, la spunta,
+Davide Chieli: Tanto con i commenti comunque li vedono qua.
+Erik Capoccetta: la spunta che se ci cliccano sopra glielo fa pure vedere. Dai. G la apre in una nuova finestra.
+Davide Chieli: Gli apre il documento direttamente.
+Erik Capoccetta: Sì, in una nuova finestra.
+Davide Chieli: Mh. Vabbè, questa roba qui la devo fare un attimo. Vbè. Allora, quindi praticamente i documenti dell'autista sono diventano ehm un eh come si chiama? Un'icona.
+Erik Capoccetta: Sì, il al posto del nome del documento c'è un'icona. Ah, che è successo?
+Davide Chieli: Va bene. Ok, questo è quanto.
+Erik Capoccetta: Vabbè, poi allora aspetta, stam stamo rivedendo. Quindi questo è da fare. Validare IBAN e validare codice Stein grafica dell'azienda da fare.
+Davide Chieli: Sì, sì.
+Erik Capoccetta: Non mettere i campi come il nome del documento.
+
+
+00:23:53
+
+Davide Chieli: Ok,
+Erik Capoccetta: Ok, stessa cosa la fai sui mezzi.
+Davide Chieli: caduto il token.
+Erik Capoccetta: Raggruppare scadenze e documenti è stata fatta. Fare modifica su Hanga e Rentry è stata fatta. Compilazione allegato è stato fatto. Passo cinque li farei caricare dal dal modale. Ok. Eh,
+Davide Chieli: M.
+Erik Capoccetta: passo sei. Mi sembra che è pure fatto. Vabbè, poi dentro va fatta la dashboard, la cosa e tutti i cavoli. Vabbè, quello poi
+Davide Chieli: Sì, ho detto io. Te l' te l'avevo anticipato già che non so se ce l'avevi fatta a fare tutto in per oggi perché insomma mi ha richiesto un po' di tempo a spostare tutto quelli dei documenti, la eccetera, però insomma sono cose minuscole, sono sono giusti aggiustamenti grafici, non erano bug, quindi non gli ha dato priorità,
+Erik Capoccetta: sì. No, va bene.
+Davide Chieli: erano miglioramenti fighi.
+Erik Capoccetta: E comunque loro possono fare i test mentre tu fai queste cose,
+Davide Chieli: Sì, sì, sicuramente.
+Erik Capoccetta: quindi io adesso gli mando gli dico che magari gli scrivo domani che possono cominciare a fare i test.
+
+
+00:25:08
+
+Erik Capoccetta: Le credenziali ce l'hanno.
+Davide Chieli: Sì,
+Erik Capoccetta: Tu tutto quello che riesci a fare in più è meglio.
+Davide Chieli: la domanda. La sincronizza SGA attualmente comunque funziona già, cioè funziona, ma ovviamente andrà rifatta, gliela nascondo per adesso.
+Erik Capoccetta: Sì, sì, quello faglielo subito prima ancora che c ci entrano.
+Davide Chieli: Eh, ok. Sì, sì, perché sennò vabbè, creano contratti, creano, cioè, immagino, si fanno si fanno vabbè si idee strane.
+Erik Capoccetta: Ok,
+Davide Chieli: Ok.
+Erik Capoccetta: quindi diciamo che col flusso iniziale ci siamo.
+Davide Chieli: Sì,
+Erik Capoccetta: Adesso poi va fa la rivista tutta la parte della sincronizzazione con SGA e compagnia
+Davide Chieli: sì,
+Erik Capoccetta: e però comunque io adesso a lei gli scrivo,
+Davide Chieli: esattamente.
+Erik Capoccetta: guarda, gli dico da domen potete cominciare a fare i test così c'ai ancora tutto domani per
+Davide Chieli: Ok.
+Erik Capoccetta: sistemare queste cosette.
+Davide Chieli: E quindi per pulire il DB e tutte queste cose che ci siamo detti, va bene.
+Erik Capoccetta: Sì.
+Davide Chieli: Fare un altro test di sicurezza pure su AT.
+Erik Capoccetta: Eh sì, tu sappi che loro da Io domani scriverò che loro domani da venerdì mattina ah ti
+
+
+00:26:22
+
+Davide Chieli: Mamma!
+Erik Capoccetta: giro ti mandate uno è un Word che me
+Davide Chieli: Ah, i testi, giusto? I testi delle mail.
+Erik Capoccetta: mandavi
+Davide Chieli: He.
+Erik Capoccetta: lei qua parla pure di un video, ma un Pistola. Va bene Davide. Allora, ci aggiorniamo poi quando ci faranno sapere per i test. Nel frattempo tu vai avanti, comunque la pianificazione per delle altre attività ce l'hai. Magari io ci ridò un'occhiata e
+Davide Chieli: Dove sta la pianificazione? Scusami. Dove dove l'hai messa?
+Erik Capoccetta: no dico le altre attività in capo ce l'hai da fare, bisogna fare la pianificazione,
+Davide Chieli: Sì, sì,
+Erik Capoccetta: quindi magari ci ridò un'occhiata e e cerco di fartela una pianificazione, così cerchiamo anche di mettere delle scadenze in modo tale che possiamo arrivare a
+Davide Chieli: sì, è chiaro.
+Erik Capoccetta: almeno a una conclusione di questa di questa cosa. Vediamo pure come va con test che fanno loro.
+Davide Chieli: Però ripeto, io non ho proprio idea di, cioè, devo adesso devo non ho proprio Che cos'è sta roba?
+
+
+00:27:46
+
+Davide Chieli: Ah, questo è il Ok, c'è della riservata. Ok. Questo è il testo che vogliono.
+Erik Capoccetta: Sì.
+Davide Chieli: Ok, va bene così, eh. No, che ti volevo dire più eh dico no ehm vabbè eh sì, nel senso per quanto riguarda i contratti magari volevo fare giusto un un recap un recap di quello che c'era da fare poi per le i prossimi step. Non lo so se è opportuno farlo adesso o farlo lunedì.
+Erik Capoccetta: Possiamo pure farlo, tanto ci abbiamo ancora una mezz'oretta.
+Davide Chieli: Sì, allora, no, dimmi tu, diciamo, quello che manca da fare praticamente è abbiamo detto e scolpiamo la pietra, il ehm Adesso loro non volevano che il subettore venisse preso direttamente da, cioè il subettore viene preso da SGA, eh le se non attratte, quindi non ha mai non ha mai non attratte, diciamo, non non succedeva nulla. che succedeva? Quand'è che si siizzavano le tratte? Questo non mi ricordo.
+Erik Capoccetta: Eh, Lorlo no. Allora, loro vogliono separare la sincronizzazione dell'anagrafica da quella delle tratte.
+Davide Chieli: Eh, vogliono due tasti,
+
+
+00:29:06
+
+Erik Capoccetta: Quindi sono due cose separate.
+Davide Chieli: infatti mi pare.
+Erik Capoccetta: Quindi tu quel pulsante sincronizza SGA non lo devi mettere nel menù principale quanto ne devi fare due. Uno che va dentro l'anagrafica e uno che va dentro le tratte.
+Davide Chieli: Uno che va nell'anagrafica e uno che va nelle tratte. Ok. Ok,
+Erik Capoccetta: Quindi quando cliccano dentro l'anagrafica vettori sincronizza SGA gli importa tutti i vettori che non ci sono stati finora e questi partono con la procedura di di on board.
+Davide Chieli: quindi se io non ho tratte posso fare il sync.
+Erik Capoccetta: No, che vuol dire se non hai tratto? Le tratte tu per ora le devi solo una grafica le devi lasciare stare.
+Davide Chieli: No, no, no, scusa, mi sono espresso male. Mi sono espresso male, scusami, hai ragione. Nel senso, il SN parte a prescindere, perché mi pare che sia sia il job automatico che il manuale lo possono fare.
+Erik Capoccetta: Sì. No, ma loro lo vogliono fare manuale. Eh,
+Davide Chieli: Eh, non mi ricordo che cosa chiesero di fare manuale,
+
+
+00:30:00
+
+Erik Capoccetta: poi automatico tutto
+Davide Chieli: di fare anche manuale. Mi ricordo che c'era scritto da qualche parte tutto.
+Erik Capoccetta: tutto.
+Davide Chieli: Possono fare anche, quindi possono fare sia il SIG manuale dei visubettori e delle tratte.
+Erik Capoccetta: Sì, perché il il sync dei subvettori li inserisce i subvettori nuovi o li aggiorna quelli vecchi, tipo se loro hanno modificato unemail, hanno modificato l'indirizzo della sede legale e ci siamo.
+Davide Chieli: Ok.
+Erik Capoccetta: Quindi fanno la sincronia, importano tutti sti vettori e gli fanno fare la procedura di onboarding. E questa è quella che abbiamo finito, abbiamo visto adesso,
+Davide Chieli: Sì, sì.
+Erik Capoccetta: salvo questi piccoli accorgimenti e fatto. Quindi adesso il vettore è accreditato.
+Davide Chieli: Mh mh.
+Erik Capoccetta: Job invece della sincronia tratte, tu puoi sincronizzare le tratte solo di quei vettori che sono stati accreditati.
+Davide Chieli: Ok. Questa è l'accreditamento significa che ha finito il Wizard.
+Erik Capoccetta: finito il wins. Quindi quando tu importerai tutte le tratte da SGA, ti vai a controllare oltre a che la tratta abbia quei dati fondamentali che avevamo detto che era partenza, fine, prezzo, tutte quelle cose là, insomma,
+
+
+00:31:12
+
+Davide Chieli: Eh, queste me le devo andare a rivedere.
+Erik Capoccetta: devi controllare.
+Davide Chieli: M m m le devo rivedere un attimo se non mi ricordo.
+Erik Capoccetta: Sì, anche se mi sa già l'avevi fatto quello, eh.
+Davide Chieli: Eh, forse sì, penso di sì. su vettori che hanno eh già completato il Wizard.
+Erik Capoccetta: Eh, ti devi Esatto. Ti devi andare a vedere devi se la tratta appartiene a un subvettore che ha già completato il guiza. Se appartiene,
+Davide Chieli: Mh mh.
+Erik Capoccetta: ok, la inserisci e fai partire il modulo di di cont, altrimenti no.
+Davide Chieli: Allora, la domanda che mi faccio io è questa. Prima noi avevamo il job che pescava tutti i subvettori, tutte le tratte, tutte tutto, quindi e e li metteva in database perché avevo bisogno di farlo così perché noi avevamo delle tempistiche del job eh schedulate, cioè ogni mese, per esempio, ogni 10 giorni, non so se ti ricordi, no?
+Erik Capoccetta: Sì, sì.
+Davide Chieli: Per rendere più leggera la Quiri. Eh, però adesso che succede se io, per dirti, sono oggi è il 30, faccio invio un nuovo viaggio per il subvettore A, eh il subvettore B è ancora disattivato e loro inseriscono, cioè perché magari non ha completato ancora il Wizard semplicemente e però loro hanno aggiunto comunque dei viaggi per il subvettore B, perché loro fanno così, a quanto ho capito.
+
+
+00:32:42
+
+Erik Capoccetta: Eh sì, possono farlo. Sì, però pure per i subvettori vecchi,
+Davide Chieli: Eh eh,
+Erik Capoccetta: capito? Loro quello per loro ha già completato.
+Davide Chieli: però dico che il job che deve pescare solo le tratte del jobettori attivi dal 30.
+Erik Capoccetta: No, lui deve pescare le tratte di tutti i subvettori che noi abbiamo in anagrafica.
+Davide Chieli: Ok,
+Erik Capoccetta: Sia che questi siano attivi che non si che no.
+Davide Chieli: come come già succede. Quindi
+Erik Capoccetta: L'unica differenza è che L'unica differenza è che quando questo ha completato il Wizard che è attivo, allora se tu peschi una nuova tratta di un subvettore che è diventato attivo, se ha già delle tratte gli fai compilare solo l'allegato integrativo andando a pescare tutte quelle tratte che lui ha, cioè andando a pescare tutte le tratte vecchie più ci aggiungi quella nuova. Qua se invece è un subvettore che non ha nessuna tratta ancora, quindi è la prima che fa, deve firmare invece pure il contratto. Что?
+Davide Chieli: Ok, quindi in realtà banalmente, allora io faccio il check sui subvettori e sulle tratte come come le faccio già praticamente, però devo controllare so se il subvettore non ha ancora tratte.
+
+
+00:33:56
+
+Davide Chieli: Se il subvettore è a zero tratte, gli faccio firmare il il primo modulo là, il modulo eh di iscrizione, non mi ricordo come si chiamava,
+Erik Capoccetta: contratto, il contratto principale.
+Davide Chieli: è il contratto. Sì, quello là. Oltre all'allegato A, che sono i mezzi, però a proposito, i mezzi adesso che fine fanno? autisti e mezzi che prima erano due moduli al se ti ricordi erano eh allegati all'allegato, cioè erano allegati al al contratto oppure erano singoli nel caso di variazioni eh di tariffe o di cosa accade a quei moduli
+Erik Capoccetta: Eh
+Davide Chieli: là? Gli servono ancora?
+Erik Capoccetta: ti servono perché là ci carichi i dati che tu però hai già in anagrafica in questo
+Davide Chieli: Eh, io esattamente già ce l'ho.
+Erik Capoccetta: caso e quello te li può confermare o
+Davide Chieli: Quello è il fatto, solo che se loro se li può
+Erik Capoccetta: modificare.
+Davide Chieli: confermare o modificare. Quindi, perché io da SGA li prendo i mezzi, no? Non mi ricordo adesso questa cosa.
+Erik Capoccetta: No, no, li inseriva, inseriva il vettore.
+
+
+00:35:00
+
+Davide Chieli: E però noi perché abbiamo recuperato i mezzi ultimamente? Non mi ricordo.
+Erik Capoccetta: No, quella era per quell'altra. No, era per quell'altra. per la fatturazione era per il modulo 1. Quelli sono i mezzi di Pigliacelli.Invece questi che di cui parliamo adesso sono i mezzi del vettore.
+Davide Chieli: Ok. Mh, vabbè, devo ripetermi sta parte qua proprio a livello teorico di di analisi funzionale, me lo devo ripetere un attimo. Eh, quindi vabbè, semplicemente compilano tutto se non c'hanno tratte, altrimenti compilano solo la variazione di tratte con e stavolta vedono tutte le tratte.
+Erik Capoccetta: Esatto.
+Davide Chieli: Ora la non mi ricordo come cosa volevano che loro vedessero tutte le tratte stavolta dall'inizio?
+Erik Capoccetta: Tutte quelle dall'inizio. Sì,
+Davide Chieli: No, perché se tra le varie cose che abbiamo cambiato c'è stato un periodo in cui
+Erik Capoccetta: sì.
+Davide Chieli: la
+Erik Capoccetta: Però attenzione tutte le tratte dall'inizio solo se firmano il contratto. Eh, nel caso devono firmare,
+Davide Chieli: eh solo se firmano
+Erik Capoccetta: nel caso invece devono firmare solo l'allegato che hanno preso una nuova tratta, vedono solo la tratta,
+
+
+00:36:09
+
+Davide Chieli: vengono solo gli aggiornamenti nuovi,
+Erik Capoccetta: quella nuova.
+Davide Chieli: come già succede in realtà. Va bene. Ok. Cioè, oltre a questo, che cosa hanno cambiato? Ok.
+Erik Capoccetta: No, più niente oltre a questo, cioè era così, cioè il flusso è cambiato nel fatto che non crei più tutti in automatico, ma sono loro a dare l'input di sincronizzare le tratte.
+Davide Chieli: E poi questa cosa delle secondo me c'è qualcos'altro. Mi ricordava più roba, ti dico la verità.
+Erik Capoccetta: No, vabbè, era il wizard iniziale,
+Davide Chieli: Mh.
+Erik Capoccetta: il resto No, no.
+Davide Chieli: Ah, ecco il A proposito,
+Erik Capoccetta: C'era il fatto che potevano La
+Davide Chieli: la firma è uguale la
+Erik Capoccetta: firma di che cosa? Sì, la firma è uguale.
+Davide Chieli: firma,
+Erik Capoccetta: Sì.
+Davide Chieli: ti ricordi che c'era io feci il vecchio vecchio form che per il subvettore eh per il legale rappresentante, scusami, che deve essere mandata alla PEC, il legale rappresentante lo compilava.
+Erik Capoccetta: Quale modulo?
+Davide Chieli: No, è una forma una forma multistep che feci che mandavamo alle gale rappresentante via PEC per la firma del contratto.
+
+
+00:37:13
+
+Erik Capoccetta: No, quello è il coso. No, quello è il contratto.
+Davide Chieli: Eh sì,
+Erik Capoccetta: Quello è il contratto e quella rimane.
+Davide Chieli: sì, sì, perché anche lì c'erano, capito?
+Erik Capoccetta: Cioè il contratto no,
+Davide Chieli: Anche lì c'erano autisti e mezzi, ma a sto punto non servono più, vanno smontati.
+Erik Capoccetta: servono perché li deve caricare dall'anagrafica e lui se è li può modificare o no. Lasciacceli, comunque, lasciali.
+Davide Chieli: Eh, io gli lascerò, a parte che vanno rifatti perché ormai non sono più compatibili quei form lì,
+Erik Capoccetta: Eh, e vabbè.
+Davide Chieli: eh. Però diciamo vanno vanno vanno semplicemente io gli faccio rivedere quello che il subettore ha messo in prima istanza, che secondo me saranno gli stessi,
+Erik Capoccetta: Eh,
+Davide Chieli: però nel caso devo aggiungere nel caso li aggiunge,
+Erik Capoccetta: esatto. Gli elif eh
+Davide Chieli: questa è una cosa nuova che ti volevo chiedere, lui devo devo richiedere anche i nuovi documenti,
+Erik Capoccetta: sì.
+Davide Chieli: quindi eh non è più solo una firma, è anche la compilazione di documenti obbligatori e diventa, diciamo, un cioè lo stesso Wizard riprodotto di là praticamente.
+
+
+00:38:11
+
+Erik Capoccetta: Eh sì, ma tu anche nel caso lui da dentro la piattaforma, da dentro la sezione anagrafica autisti aggiunge un autista, gli devi richiedere comunque la patente,
+Davide Chieli: Eh, sì, sì, sì, sì.
+Erik Capoccetta: cioè tutti quei controlli che tu hai fatto nel wizard li devi mettere anche dopo quando lui modificherà un mezzo, modificherà un dista o aggiungerà un nodista, aggiungerà un mezzo. Se lui ti aggiunge un mezzo che ha 1 e questo hanga 1 non te l'ha mai caricato perché non ce l'ha mai avuto, li devi andare a mettere automaticamente dentro alla sezione documenti che deve caricare la roba dell'hangar. Entri
+Davide Chieli: No, già viene fatto questa cosa. Se lo se lui mi carica un autist un mezzo che ha un hanga di nuovo, già viene aggiunto o comunque se non c'è viene aggiunto già.
+Erik Capoccetta: perfetto. Ok.
+Davide Chieli: Questo però succede solo nel Wizard attualmente,
+Erik Capoccetta: Eh no,
+Davide Chieli: solo nel eh anche di là.
+Erik Capoccetta: lo devi replicare.
+Davide Chieli: Ok, va bene. Eh, va bene. Se se poi dicevo devo fare un approfondimento perché ripeto, ho come l'impressione che non era così semplice.
+
+
+00:39:14
+
+Erik Capoccetta: Io mi ricordo che era questa la cosa più grossa era sto Wizard, poi il fatto che andavano le modifiche.
+Davide Chieli: Posso fare apparire direttamente io?
+Erik Capoccetta: Sì.
+Davide Chieli: Io volevo fare così. Adesso volevo far apparire direttamente nei subvettori dopo loro dopo lo mandano il leil per diciamo per attivare il Wizard. Quando finiscono il Wizard si attiva un altro pulsante che è lo stesso pulsante che per inviare la firma. Eh, però in effetti non so se ha senso adesso.
+Erik Capoccetta: No, non serve, non serve.
+Davide Chieli: E la firma quando la mandano adesso quando sincronizzano.
+Erik Capoccetta: Firmati cosa?
+Davide Chieli: Quindi eh
+Erik Capoccetta: Del contratto la mandano solo nel caso sia un nuovo vettore, un nuovo vettore che non ha mai avuto tratte, stava avendo tratte per la prima volta.
+Davide Chieli: sì. E dico è quello. Quindi appare il pulsantino in quel caso lì.
+Erik Capoccetta: No, non appare il pulsantino, si crea automaticamente quello si fa in automatico. Se quando loro sincronizzano le tratte tu vedi che questo non ce le ha mai avute, va da sé che deve firmare il contratto generale,
+
+
+00:40:23
+
+Davide Chieli: Eh, dico, come lo fai fare a livello pratico?
+Erik Capoccetta: come facevi prima che gli creavi in automatico il record del contratto da firmare, no? Dentro contrattistica.
+Davide Chieli: Eh, però se ti ricordi prima succedeva che l'operatore doveva eh abbiamo fatto vari tre quattro cambiamenti.
+Erik Capoccetta: Ecco,
+Davide Chieli: La prima volta era automaticamente, poi detto no, non deve essere automatico, deve essere manuale,
+Erik Capoccetta: no, no, ti se adesso deve essere come ti sto dicendo io,
+Davide Chieli: quindi scrivomelo come deve essere.
+Erik Capoccetta: deve essere fatto in automatico quando, come ti dicevo prima, se tu quando lui sincronizza le tratte
+Davide Chieli: Quindi faccio il sync delle tratte. Poi cosa appare in UI?
+Erik Capoccetta: Appaiono le tratte. Lui no, niente, appare una rotella. sincronizzazione tratte in corso,
+Davide Chieli: Eh no, dico, ok, la sincronizzazione banalmente scarica la roba sul database, questo fa poi che fa più,
+Erik Capoccetta: eh, e gli fai un resoconto,
+Davide Chieli: cioè.
+Erik Capoccetta: che ne so, sincronizzate 847 tratte, eh, modificate 30, nuove 25 e poi li farei creati eh, che ne so, 30 allegati per la variazione e invece creati 25 nuovi contratti.
+
+
+00:41:53
+
+Erik Capoccetta: Ti fai un resoconto? No, lo mi fa uno specchietto.
+Davide Chieli: allegati a diciamo leati a per le variazioni. Ok. Sì, lo ok, dico. Ok, questo è tutto chiaro. Come invio però la mail poi per la mail al legale rappresent PEC.
+Erik Capoccetta: Eh,
+Davide Chieli: Chi la invia alla PEC?
+Erik Capoccetta: che non va le regare rappresentate, quella va all'uff alla PEC.
+Davide Chieli: Sì, che poi filma il legale rappresentante.
+Erik Capoccetta: Il regale rappresentata, però è un altro.
+Davide Chieli: Sì,
+Erik Capoccetta: C'ha un'altra email,
+Davide Chieli: sì, sì, sì, sì. C'è un'altra mail. Esatto.
+Erik Capoccetta: eh, gliela invii in automatico. Quando tu ti accorgi che questo qua ha un non ha mai avuto tratte,
+Davide Chieli: Cioè,
+Erik Capoccetta: gli invita
+Davide Chieli: Esatto. Comunque il il diciamo il documento va alla o meglio la mail va alla PEC del subvettore.
+Erik Capoccetta: e
+Davide Chieli: Poi chi deve firmare è il suo legale rappresentante che inserisce Esatto. nome, cognome, email e numero di telefono, come già succede.
+Erik Capoccetta: quello fa tutti i wizard com'era l'operatore che gli arriva la PEC.
+
+
+00:42:52
+
+Davide Chieli: Sì, sì, sì. Però dico, ripeto, il punto cruciale è capire chi deve abilitare il subvettore a questo al contratto.
+Erik Capoccetta: Nessuno.
+Davide Chieli: Cioè, l'operatore non deve mandare nulla.
+Erik Capoccetta: Eh no, l'operatore ha già sincronizzato le tratte, quindi è lui che dice inv. Allora, non è che non va non ne mandare nulla, l'operatore lo manda se lo trova nella sezione contrattistica. No,
+Davide Chieli: Allora, che esatto,
+Erik Capoccetta: siamo d'accordo?
+Davide Chieli: lui si troverà a un nuovo contratto in bozza, come succedeva prima,
+Erik Capoccetta: Eh, in bozza. Bravo.
+Davide Chieli: che ne so.
+Erik Capoccetta: E da lì schiaccia il pulsante In.
+Davide Chieli: Oh, ok, perfetto. Quindi è come succedeva prima che l'operatore a mano deve mandare come succedeva prima, tra virgolette,
+Erik Capoccetta: Eh,
+Davide Chieli: devi mandare Ok,
+Erik Capoccetta: certo.
+Davide Chieli: non è una cosa in automatico. L'operatore deve cliccare un pulsante
+Erik Capoccetta: No, no, non facciamo niente. No, noi salvo creare i record.
+Davide Chieli: per mandare per diciamo per avviare il flusso di firma. Eh, il flusso di firma per il nuovo contratto.
+
+
+00:44:00
+
+Erik Capoccetta: Noi, salvo creare i record, in automatico, non facciamo niente perché
+Davide Chieli: Ma sbaglio? In realtà loro firmavano anche la Ma che ci penso? loro fermavano anche le variazioni.
+Erik Capoccetta: e certo, loro firmavano tutto
+Davide Chieli: Esatto. Quindi va fatto sia per il nuovo contratto, come succedeva già, che per le variazioni. Quindi tutte e per le variazioni. Ok, ora mi ricordo qualcosa in più.
+Erik Capoccetta: e la variazione lui vedeva solo la tratta e la firmata.
+Davide Chieli: Sì. Ok, va bene. Adesso già un ricordo già meglio. Perfetto. Va bene.
+Erik Capoccetta: Ma in quel caso il form, diciamo, di per la firma del contratto diventa uguale
+Davide Chieli: Mh mh.
+Erik Capoccetta: a quello, diciamo, per la variazione, perché tu gli devi far vedere solo la tratta, eh, gli altri gli altri
+Davide Chieli: Il form per la firma del contratto. Sì. diventa uguale alla variazione. Mi pare che fossero uguali.
+Erik Capoccetta: Perché lui deve vedere solo le tratte là. L'anagrafica ce l'ha sulla piattaforma, l'anagrafica autisti ce l'ha sempre sulla piattaforma, l'anagrafica mezzi ce l'ha sulla L'unica cosa che non c'ha è le tratte, quindi deve solo vedere il la griglia con le tratte senza poterle modificare,
+
+
+00:45:16
+
+Davide Chieli: Eh,
+Erik Capoccetta: fare niente.
+Davide Chieli: ok. E non però loro aggiungevano eventualmente, appunto, i autisti e mezzi.
+Erik Capoccetta: E no, ma in questo caso non lo fanno più da là,
+Davide Chieli: Ok,
+Erik Capoccetta: lo fanno dall'anagrafica sulla piattaforma.
+Davide Chieli: perfetto. Ok, mi sembra sensato.
+Erik Capoccetta: Qui ti devi togliere al Wizard con quell'altro progetto,
+Davide Chieli: Devo togliere gli step del autisti mezzi là. Ho capito. Mettere praticamente solo l'anagrafica nel caso in cui sia, ma in realtà l'anagrafica semplicemente ripesca i campi che già c'ha.
+Erik Capoccetta: no? Ma eh,
+Davide Chieli: Eh,
+Erik Capoccetta: infatti pure ce la vogliamo mettere proprio per
+Davide Chieli: ma mh che legale rappresentante in teoria è obbligatorio, quindi lo devono mettere già all'inizio del wizard,
+Erik Capoccetta: Eh, infatti
+Davide Chieli: quindi già se lo trovano. Mh, vabbè, può essere semplificato, diciamo, in effetti quella eh quello step lì,
+Erik Capoccetta: di molto
+Davide Chieli: in modo tale che richiederò solo eh cioè di fatto che cosa devo richiedere? nulla.
+Erik Capoccetta: niente.
+Davide Chieli: Praticamente devono solo firmare.
+
+
+00:46:14
+
+Erik Capoccetta: No, gli devi solo far vedere che le tratte e basta.
+Davide Chieli: Ah, è solo le tratte, giusto? Praticamente. Ok. Ok. Ok. Perfetto.
+Erik Capoccetta: E e l'altra cosa che era da prevedere era il fatto che loro potess per i vecchi vettori
+Davide Chieli: Mh mh.
+Erik Capoccetta: potessero inviargli il il contratto generale, la contratto quadro da fargli rifirmare nuovo.
+Davide Chieli: Per i vecchi subettori potessero inviare il contratto quadro.
+Erik Capoccetta: Eh, quindi loro là nella form contrattistica ci sarà un pulsante per fare nuovo contratto quadro. selezionano chi è il vettore.
+Davide Chieli: Ah, questa era la cosa nuova che c'era.
+Erik Capoccetta: Eh, esatto. Lì gli va a ripescare tutte le tratte e gli fa rifirmare il
+Davide Chieli: Ok,
+Erik Capoccetta: contratto.
+Davide Chieli: però questa cosa cozza un attimo con se loro sincronizzano le tratte solo per i subvettori che abbiamo detto che hanno finito il Wizard.
+Erik Capoccetta: No, tu le sincronizzi per tutti. Noi in memoria ce le dobbiamo avere tutte.
+Davide Chieli: Quindi io sincronizzo a prescindere tutte le tratte anche per i vecchi subvettori o per poi ripeto, la la praticamente la l'attivazione del contratto nuovo si attiva solo se non hanno tratte.
+
+
+00:47:29
+
+Davide Chieli: Questa è l'unica differenza.
+Erik Capoccetta: Eh sì,
+Davide Chieli: Mi confermi questa cosa?
+Erik Capoccetta: sì, ma pure prima era così.
+Davide Chieli: Ok. Ok, lo ripeto, non c'era questo tratte a zero, c'era solo subettore, non nella prima era subettore non in anagrafica, banalmente.
+Erik Capoccetta: Eh, eh, vabbè, adesso cambia la logica.
+Davide Chieli: Sì, sì, sì, sì. Ok, perfetto. Va bene, grazie. Chiaro.
+Erik Capoccetta: Poi no, non mi sembra che ci fosse altro.
+Davide Chieli: Ok.
+Erik Capoccetta: C'erano, vabbè, quella il discorso dei reminder che potevano essere, cioè, tutta la la parte di di invio dei reminder,
+Davide Chieli: Eh,
+Erik Capoccetta: email e notifiche.
+Davide Chieli: io già l'ho sviluppata quella la parte lì, però devo uno non l'ho mai testata perché è complicato da testare, eh due comunque devo devo finirla perché, ripeto, cioè devo inserire anche questi documenti nuovi eh,
+Erik Capoccetta: Eh, esatto.
+Davide Chieli: tra cui le dichiarazioni e poi non so, mi pare che c'era qualche altro documento annuale che richiedeva un forum.
+Erik Capoccetta: No, che io sappia No, erano tutti quelli.
+Davide Chieli: Flavia non ci ha detto nulla sulle non mi ricordo.
+
+
+00:48:32
+
+Davide Chieli: Vabbè.
+Erik Capoccetta: Quindi, diciamo, il prossimo passaggio, secondo me, io mi concentrerei sui job sincronia
+Davide Chieli: Eh no, per forza. Sì, sono i job. Sì.
+Erik Capoccetta: e sulla revisione del flusso.
+Davide Chieli: Eh sì.
+Erik Capoccetta: Qua si fa una prova. Secondo me a quel punto è utile quei, diciamo, quei web che ti hai ricreato, così invece che interrogare SGA, ce li facciamo finti i viaggi per i vettori nostri.
+Davide Chieli: Eh, lo so, però non sono mai dei test attendibilissimi al 100%, capito?
+Erik Capoccetta: Eh, lo so, però come fai sennò devi andare,
+Davide Chieli: Eh, lo so, lo so. E infatti è l'unico modo che avevo testarli quelle cose là.
+Erik Capoccetta: eh.
+Davide Chieli: Vabbè, eh, poi al massimo poi le testeranno loro, ripeto, cioè alla fine anche questo è il lavoro e anche il testing, diciamo, da parte loro. Ci devono dire che cosa non va, cosa va.
+Erik Capoccetta: Sì, sì, vabbè, la comunicazione con SGA poi, cioè, io vederei di coinvolgerlo il più possibile questo SGA perché comunque visto quando fai le
+Davide Chieli: Eh,
+Erik Capoccetta: query un botto
+Davide Chieli: botto tempo sì. Ok.
+Erik Capoccetta: tempo se riusciamo a farlo in autonomia è meglio.
+Davide Chieli: Ok, va bene. Eh, mi puoi mandare giusto il appena stacchiamo mi puoi rimandare il la registrazione.
+Erik Capoccetta: Sì, sì, va bene. Ecco, io rispondo a delle mail qua e poi ti mando tutto appena mi arriva.
+Davide Chieli: Ok.
+Erik Capoccetta: Va bene, Davide, ci aggiorniamo per venerdì, allora.
+Davide Chieli: Ok. Io domani mattina finisco queste piccole cose pulisco il DB. Ok.
+Erik Capoccetta: Esatto.
+Davide Chieli: Eh, va bene. E quindi
+Erik Capoccetta: Poi domani a fine giornata ti chiedo giusto, magari ti scrivo per le 5, ti chiedo, guarda, mi confermi che possono iniziare a fare i test così siamo tranquilli.
+Davide Chieli: Sì, sì, sì, sì, sì. Ok.
+Erik Capoccetta: Va bene, buona serata.
+Davide Chieli: Ciao,
+Erik Capoccetta: Ciao.
+Davide Chieli: buona serata a te.
+Erik Capoccetta: Ciao.
+
+
+Trascrizione terminata dopo 00:50:48
+
+Questa trascrizione modificabile è stata generata dal computer e potrebbe contenere errori. È possibile anche modificare manualmente il testo dopo la creazione.

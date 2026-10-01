@@ -4,7 +4,7 @@
 **Partecipanti:** Davide Chieli, Erik Capoccetta (Digiweb)  
 **File originali:** [`pigliacelli_briefing_sal_2026-09-28.docx`](pigliacelli_briefing_sal_2026-09-28.docx) · [`pigliacelli_briefing_sal_2026-09-28.txt`](pigliacelli_briefing_sal_2026-09-28.txt)
 
-Vedi anche: [`pigliacelli_briefing_sal_2026-09-16.md`](pigliacelli_briefing_sal_2026-09-16.md) · [`chiarimento_anga_rentri_2026-09-17.md`](chiarimento_anga_rentri_2026-09-17.md)
+Vedi anche: [`pigliacelli_briefing_sal_2026-09-30.md`](pigliacelli_briefing_sal_2026-09-30.md) · [`pigliacelli_briefing_sal_2026-09-16.md`](pigliacelli_briefing_sal_2026-09-16.md) · [`chiarimento_anga_rentri_2026-09-17.md`](chiarimento_anga_rentri_2026-09-17.md)
 
 Questa call è l’elenco delle fix da chiudere sul wizard. Su **dove** si caricano ANGA e RENTRI prevale sul SAL 16/09 e sulla mail 17/09: i flag restano sul mezzo, i file vanno nello step documenti aziendale.
 

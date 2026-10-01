@@ -3,12 +3,13 @@
 Wiki operativa per agenti/LLM. Aggiornare quando cambiano requisiti o naming.
 
 **Gerarchia requisiti (prevale dall’alto):**
-1. `pigliacelli_briefing_sal_2026-09-28.md` — fix wizard; ANGA/RENTRI: flag sul mezzo, file nello step documenti
-2. `chiarimento_anga_rentri_2026-09-17.md` — nomi, cardinalità, scadenze (dove i file si caricano prevale il 28/09)
-3. `pigliacelli_briefing_sal_2026-09-16.md`
-4. `pigliacelli_briefing_sal_2026-07-21.md`
-5. `requisiti_pigliacelli_validazione_2026-07.md`
-6. `docs_elenco_documenti_subvettori.md` · `modello_flag_documenti.md`
+1. `pigliacelli_briefing_sal_2026-09-30.md` — test wizard, sync SGA spezzata, firma contratti solo tratte
+2. `pigliacelli_briefing_sal_2026-09-28.md` — fix wizard; ANGA/RENTRI: flag sul mezzo, file nello step documenti
+3. `chiarimento_anga_rentri_2026-09-17.md` — nomi, cardinalità, scadenze (dove i file si caricano prevale il 28/09)
+4. `pigliacelli_briefing_sal_2026-09-16.md`
+5. `pigliacelli_briefing_sal_2026-07-21.md`
+6. `requisiti_pigliacelli_validazione_2026-07.md`
+7. `docs_elenco_documenti_subvettori.md` · `modello_flag_documenti.md`
 
 ---
 

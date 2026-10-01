@@ -92,6 +92,7 @@ if ($isInline) {
     }
     sc_btn_display('exit', 'off');
     sc_btn_display('btn_chiudi_modale_2', 'off');
+    sc_ajax_javascript('docGridCheckmark');
 }
 
 $flag1 = ((int){has_cat_trasp_rifiuti_1} === 1) ?1 : 0;

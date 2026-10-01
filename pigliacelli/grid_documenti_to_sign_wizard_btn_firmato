@@ -1,0 +1,76 @@
+/**
+ * grid_documenti_to_sign_wizard → Action Bar show_signed_doc_btn (Ajax)
+ *
+ * Stessa app dei contratti firmati: easygn_download_file.
+ * Legge documenti.easygn_file_id e scarica il PDF da EasyGN.
+ * Visibile solo se firmato_il e valorizzato (onRecord).
+ */
+
+$documentoId = 0;
+if (isset({d.id}) && (int){d.id} > 0) {
+    $documentoId = (int){d.id};
+}
+
+if ($documentoId <= 0) {
+    sc_ajax_message('Documento non identificato.');
+    sc_error_exit();
+}
+
+sc_lookup(rsSignedDl, "
+    SELECT
+        COALESCE(easygn_file_id, ''),
+        COALESCE(firmato_il, ''),
+        COALESCE(easygn_workflow_id, ''),
+        COALESCE(tipo_documento_id, 0),
+        COALESCE(subvettore_id, 0)
+    FROM documenti
+    WHERE id = $documentoId
+    LIMIT 1
+", 'pigliacelli');
+
+$fileId = isset({rsSignedDl[0][0]}) ? trim((string){rsSignedDl[0][0]}) : '';
+$firmatoIl = isset({rsSignedDl[0][1]}) ? trim((string){rsSignedDl[0][1]}) : '';
+$wfId = isset({rsSignedDl[0][2]}) ? trim((string){rsSignedDl[0][2]}) : '';
+$tipoId = isset({rsSignedDl[0][3]}) ? (int){rsSignedDl[0][3]} : 0;
+$subId = isset({rsSignedDl[0][4]}) ? (int){rsSignedDl[0][4]} : 0;
+$firmato = (
+    $firmatoIl !== ''
+    && strcasecmp($firmatoIl, 'null') !== 0
+    && strpos($firmatoIl, '0000-00-00') !== 0
+);
+
+if (!$firmato) {
+    sc_ajax_message('Il documento firmato non e ancora disponibile.');
+    sc_error_exit();
+}
+
+if ($fileId === '' && $subId > 0 && $tipoId > 0) {
+    sc_lookup(rsSignedDlAlt, "
+        SELECT id, COALESCE(easygn_file_id, '')
+        FROM documenti
+        WHERE subvettore_id = $subId
+          AND tipo_documento_id = $tipoId
+          AND easygn_file_id IS NOT NULL
+          AND TRIM(easygn_file_id) <> ''
+        ORDER BY id DESC
+        LIMIT 1
+    ", 'pigliacelli');
+    if (!empty({rsSignedDlAlt[0][0]}) && trim((string){rsSignedDlAlt[0][1]}) !== '') {
+        $documentoId = (int){rsSignedDlAlt[0][0]};
+        $fileId = trim((string){rsSignedDlAlt[0][1]});
+    }
+}
+
+if ($fileId === '' && $wfId === '') {
+    sc_ajax_message('Sul documento ' . $documentoId . ' easygn_file_id e vuoto. Il valore presente per il subvettore e su un altra riga.');
+    sc_error_exit();
+}
+
+[documentoId] = $documentoId;
+$openUrl = '../easygn_download_file/?documentoId=' . $documentoId;
+
+if (function_exists('sc_ajax_javascript')) {
+    sc_ajax_javascript('window.open(' . json_encode($openUrl) . ', "_blank");');
+} else {
+    sc_redir('easygn_download_file', documentoId=[documentoId], '_blank');
+}

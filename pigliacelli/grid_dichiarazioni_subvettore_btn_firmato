@@ -1,0 +1,79 @@
+/**
+ * grid_dichiarazioni_subvettore → Action Bar show_signed_doc_btn (Ajax)
+ *
+ * Stessa app dei contratti firmati: easygn_download_file.
+ * Legge documenti.easygn_file_id e scarica il PDF da EasyGN.
+ * Visibile solo se firmato_il e valorizzato (onRecord).
+ */
+
+$dicId = isset({dic_id}) ? (int){dic_id} : 0;
+$subId = isset({dic_sub}) ? (int){dic_sub} : 0;
+if ($subId <= 0 && isset([subvettoreId])) {
+    $subId = (int)[subvettoreId];
+}
+
+if ($dicId <= 0 || $subId <= 0) {
+    sc_ajax_message('Documento firmato non identificato.');
+    sc_error_exit();
+}
+
+sc_lookup(rsDicSignedDl, "
+    SELECT
+        d.id,
+        COALESCE(d.easygn_file_id, ''),
+        COALESCE(d.firmato_il, ''),
+        COALESCE(d.easygn_workflow_id, ''),
+        COALESCE(d.tipo_documento_id, 0)
+    FROM subvettori_dichiarazioni sd
+    INNER JOIN documenti d ON d.id = sd.documento_id
+    WHERE sd.id = $dicId
+      AND sd.subvettore_id = $subId
+    LIMIT 1
+", 'pigliacelli');
+
+$documentoId = isset({rsDicSignedDl[0][0]}) ? (int){rsDicSignedDl[0][0]} : 0;
+$fileId = isset({rsDicSignedDl[0][1]}) ? trim((string){rsDicSignedDl[0][1]}) : '';
+$firmatoIl = isset({rsDicSignedDl[0][2]}) ? trim((string){rsDicSignedDl[0][2]}) : '';
+$wfId = isset({rsDicSignedDl[0][3]}) ? trim((string){rsDicSignedDl[0][3]}) : '';
+$tipoId = isset({rsDicSignedDl[0][4]}) ? (int){rsDicSignedDl[0][4]} : 0;
+$firmato = (
+    $firmatoIl !== ''
+    && strcasecmp($firmatoIl, 'null') !== 0
+    && strpos($firmatoIl, '0000-00-00') !== 0
+);
+
+if ($documentoId <= 0 || !$firmato) {
+    sc_ajax_message('Il documento firmato non e ancora disponibile.');
+    sc_error_exit();
+}
+
+if ($fileId === '' && $tipoId > 0) {
+    sc_lookup(rsDicSignedDlAlt, "
+        SELECT id, COALESCE(easygn_file_id, '')
+        FROM documenti
+        WHERE subvettore_id = $subId
+          AND tipo_documento_id = $tipoId
+          AND easygn_file_id IS NOT NULL
+          AND TRIM(easygn_file_id) <> ''
+        ORDER BY id DESC
+        LIMIT 1
+    ", 'pigliacelli');
+    if (!empty({rsDicSignedDlAlt[0][0]}) && trim((string){rsDicSignedDlAlt[0][1]}) !== '') {
+        $documentoId = (int){rsDicSignedDlAlt[0][0]};
+        $fileId = trim((string){rsDicSignedDlAlt[0][1]});
+    }
+}
+
+if ($fileId === '' && $wfId === '') {
+    sc_ajax_message('Sul documento ' . $documentoId . ' easygn_file_id e vuoto. Il valore presente per il subvettore e su un altra riga.');
+    sc_error_exit();
+}
+
+[documentoId] = $documentoId;
+$openUrl = '../easygn_download_file/?documentoId=' . $documentoId;
+
+if (function_exists('sc_ajax_javascript')) {
+    sc_ajax_javascript('window.open(' . json_encode($openUrl) . ', "_blank");');
+} else {
+    sc_redir('easygn_download_file', documentoId=[documentoId], '_blank');
+}

@@ -2,7 +2,8 @@
  * form_subvettori_starting_wizard → onValidate
  *
  * Form SINGOLA = solo step 1 anagrafica (wizard multi-step SC dismesso).
- * Avanzamento: onBeforeUpdate imposta wizard_step=2; onAfterUpdate redirige.
+ * Avanzamento: onBeforeUpdate porta wizard_step da 1 a 2, senza
+ * abbassare uno step già più avanti. onAfterUpdate apre gli autisti.
  * Non usare sc_error_exit (AJAX).
  */
 

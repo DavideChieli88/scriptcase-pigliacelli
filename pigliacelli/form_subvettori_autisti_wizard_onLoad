@@ -102,6 +102,7 @@ if ($isInline) {
     }
     sc_btn_display('btn_chiudi_modale', 'off');
     sc_btn_display('exit', 'off');
+    sc_ajax_javascript('docGridCheckmark');
 }
 
 sc_log_add(

@@ -3,7 +3,8 @@
  *
  * bozza:     Compila
  * compilata: Compila + Firma
- * firmata:   Apri
+ * firmata:   show_signed_doc_btn (PDF EasyGN). open_pdf_btn nascosto.
+ * Action Bar Ajax: compila_dichiarazione_btn, sign_doc_btn, open_pdf_btn, show_signed_doc_btn.
  */
 
 $stato = isset({dic_stato}) ? strtolower(trim((string){dic_stato})) : '';
@@ -17,13 +18,16 @@ $firmato = (
 if ($stato === 'firmata' || $firmato) {
     sc_actionbar_hide('compila_dichiarazione_btn');
     sc_actionbar_hide('sign_doc_btn');
-    sc_actionbar_show('open_pdf_btn');
+    sc_actionbar_hide('open_pdf_btn');
+    sc_actionbar_show('show_signed_doc_btn');
 } elseif ($stato === 'compilata') {
     sc_actionbar_show('compila_dichiarazione_btn');
     sc_actionbar_show('sign_doc_btn');
     sc_actionbar_hide('open_pdf_btn');
+    sc_actionbar_hide('show_signed_doc_btn');
 } else {
     sc_actionbar_show('compila_dichiarazione_btn');
     sc_actionbar_hide('sign_doc_btn');
     sc_actionbar_hide('open_pdf_btn');
+    sc_actionbar_hide('show_signed_doc_btn');
 }

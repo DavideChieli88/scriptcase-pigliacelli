@@ -23,7 +23,7 @@
  *
  * Campi negli eventi: {dic_id} {dic_sub} {dic_anno} {dic_stato} {dic_doc}
  *   {doc_firmato_il} {doc_scadenza} {doc_file}
- * Action Bar Ajax: compila_dichiarazione_btn, sign_doc_btn, open_pdf_btn
+ * Action Bar Ajax: compila_dichiarazione_btn, sign_doc_btn, open_pdf_btn, show_signed_doc_btn
  * Menu: voce Dichiarazioni, gruppo 2, applicazione grid_dichiarazioni_subvettore.
  *   Parametro: subvettoreId = [subvettoreId]
  */
