@@ -847,3 +847,44 @@ SET FOREIGN_KEY_CHECKS = 1;
 
 DROP TEMPORARY TABLE tmp_logins_g2;
 
+//versione piu solida per le FK 
+DROP TEMPORARY TABLE IF EXISTS tmp_logins_g2;
+CREATE TEMPORARY TABLE tmp_logins_g2 AS
+SELECT g.login
+FROM sec_users_groups g
+WHERE g.group_id = 2
+  AND NOT EXISTS (
+      SELECT 1
+      FROM sec_users_groups g2
+      WHERE g2.login = g.login
+        AND g2.group_id <> 2
+  );
+
+SET FOREIGN_KEY_CHECKS = 0;
+
+DELETE FROM documenti;
+DELETE FROM subvettori_dichiarazioni;
+DELETE FROM subvettori_autisti_mezzi;
+DELETE FROM subvettori_autisti;
+DELETE FROM subvettori_mezzi;
+DELETE FROM contratti_tratte;
+DELETE FROM tratte_localita;
+DELETE FROM subvettori_contratti;
+DELETE FROM contratti;
+DELETE FROM tratte;
+
+DELETE FROM sec_users_groups WHERE group_id = 2;
+
+DELETE su
+FROM sec_users su
+INNER JOIN tmp_logins_g2 t ON t.login = su.login;
+
+UPDATE sec_users
+SET subvettore_id = NULL
+WHERE subvettore_id IS NOT NULL;
+
+DELETE FROM subvettori;
+
+SET FOREIGN_KEY_CHECKS = 1;
+
+DROP TEMPORARY TABLE IF EXISTS tmp_logins_g2;
