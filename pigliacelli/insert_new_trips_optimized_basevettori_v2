@@ -1,217 +1,178 @@
-// Import tratte da SGA (SQL Server via PDO) verso pigliacelli (MySQL) — versione ottimizzata _v2.
-// Come insert_new_trips_optimized_basevettori ma popola merce, caricatore, proprietario_merce da SGA.
-// Versione T2BaseVettori: stesso filtro vettore di insert_new_trips_basevettori
-// (JOIN T2BaseVettori ATTIVO = 'S' al posto di BaCliFor in insert_new_trips_optimized).
-// App parallela a insert_new_trips_optimized (originale BaCliFor).
-// Eseguire dopo insert_new_subvectors_basevettori (richiede subvettori gia' presenti).
-// Viaggi: da export_viaggi_anno (sec_settings, default 2023) fino all'ANNO corrente,
-// elaborati UN ANNO ALLA VOLTA (scaglionato in un'unica run, per limitare il picco di memoria).
-// Tratte: una riga per sub+carico+scarico (come check_new_trips). Stesso hash+sub=skip;
-// stessa tratta tariffa diversa=UPDATE tariffa (version invariata; version++ solo in check_new_trips).
-// Ottimizzazioni: niente N+1 (localita/extra/subvettori/tariffe/indice tratte in bulk),
-// limiti di esecuzione alzati, lock anti doppio avvio, logging a step, sync_date aggiornato a fine run.
+// Scriptcase app: insert_new_trips_optimized_basevettori_v2
+// Una tantum, prima del job incrementale check_new_trips_nuovo_contratto_basevettori_v2.
+// Un anno alla volta,
+// localita/extra/allegato in blocco, subvettori/tariffe/hash in memoria.
+// Regole T0: ANNO >= export_viaggi_anno, codici gia in anagrafica, legacy = 1 sulle insert.
+// Stesso hash o stessa tratta: la tariffa si aggiorna solo se cambia.
+// merce, caricatore e proprietario_merce si scrivono anche su una tratta già presente,
+// quando il viaggio li ha. Un viaggio con il campo vuoto non cancella il valore salvato.
+// Non crea contratti. A fine corsa sync_date diventa l ora di fine import.
+// Prima di eseguire: migration_tratte_legacy.sql.
 
-function log_insert_trips($step, $msg = '')
-{
-    $text = 'STEP ' . $step;
-    if ($msg !== '') {
-        $text .= ' | ' . $msg;
-    }
-    sc_log_add('INSERT_TRIPS_OPT', $text);
+@set_time_limit(0);
+@ini_set('memory_limit', '1024M');
+@ignore_user_abort(true);
+if (function_exists('session_status') && session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
 }
 
-function sql_quote($v)
-{
-    if ($v === null) {
-        return "NULL";
-    }
-    $v = (string)$v;
-    return "'" . str_replace("'", "''", $v) . "'";
+function t0_log($azione, $messaggio) {
+    sc_log_add('EXPORT_TRATTE_T0_' . $azione, (string)$messaggio);
 }
-
-function sql_num($v)
-{
-    if ($v === null || $v === '') {
-        return "NULL";
-    }
+function t0_sql_quote($v) {
+    if ($v === null) return "NULL";
+    return "'" . str_replace("'", "''", (string)$v) . "'";
+}
+function t0_sql_num($v) {
+    if ($v === null || $v === '') return "NULL";
     return (string)(0 + $v);
 }
-
-function allegato_testo_sql($v)
-{
+function t0_testo_sql($v) {
     $v = trim((string)$v);
-    if ($v === '') {
-        return "NULL";
-    }
-    return sql_quote($v);
+    if ($v === '') return "NULL";
+    return t0_sql_quote($v);
 }
-
-function merce_label_da_riga($codice, $descrizione)
-{
-    $codice = trim((string)$codice);
-    $descrizione = trim((string)$descrizione);
-    if ($codice !== '' && $descrizione !== '') {
-        return $codice . ' - ' . $descrizione;
-    }
-    if ($codice !== '') {
-        return $codice;
-    }
-    if ($descrizione !== '') {
-        return $descrizione;
-    }
-    return '';
-}
-
-function split_localita($s)
-{
+function t0_split_localita($s) {
     $s = trim((string)$s);
-    if ($s === '') {
-        return [];
-    }
-
+    if ($s === '') return array();
     $parts = preg_split('/\s*\+\s*/', $s);
-
-    $out = [];
+    $out = array();
     foreach ($parts as $part) {
         $part = trim($part);
-        if ($part !== '') {
-            $out[] = $part;
-        }
+        if ($part !== '') $out[] = $part;
     }
-
     return $out;
 }
-
-function normalizza_stringa($s)
-{
-    $s = trim((string)$s);
-    $s = strtoupper($s);
-    $s = preg_replace('/\s+/', ' ', $s);
-    return $s;
+function t0_norm($s) {
+    $s = strtoupper(trim((string)$s));
+    return preg_replace('/\s+/', ' ', $s);
 }
-
-function importo_unitario_valido($value)
-{
-    if ($value === null) {
-        return false;
+function t0_hash($carico_str, $scarico_str, $codice_vettore, $importo_unitario) {
+    $carichi = array();
+    foreach (t0_split_localita($carico_str) as $loc) {
+        $carichi[] = t0_norm($loc);
     }
-    if (is_string($value) && trim($value) === '') {
-        return false;
+    $scarichi = array();
+    foreach (t0_split_localita($scarico_str) as $loc) {
+        $scarichi[] = t0_norm($loc);
     }
-    if (!is_numeric($value)) {
+    $importo = number_format((float)$importo_unitario, 2, '.', '');
+    return hash('sha256', implode('|', $carichi) . '#' . implode('|', $scarichi) . '#' . t0_norm($codice_vettore) . '#' . $importo);
+}
+function t0_importo_valido($value) {
+    if ($value === null || (is_string($value) && trim($value) === '') || !is_numeric($value)) {
         return false;
     }
     return round((float)$value, 2) > 0;
 }
-
-function crea_hash_tratta($carico_str, $scarico_str, $codice_vettore, $importo_unitario)
-{
-    $carichi = [];
-    foreach (split_localita($carico_str) as $loc) {
-        $carichi[] = normalizza_stringa($loc);
-    }
-
-    $scarichi = [];
-    foreach (split_localita($scarico_str) as $loc) {
-        $scarichi[] = normalizza_stringa($loc);
-    }
-
-    $carico_norm  = implode('|', $carichi);
-    $scarico_norm = implode('|', $scarichi);
-    $vettore      = normalizza_stringa($codice_vettore);
-    $importo      = number_format((float)$importo_unitario, 2, '.', '');
-
-    return hash('sha256', $carico_norm . '#' . $scarico_norm . '#' . $vettore . '#' . $importo);
+function t0_merce_label($codice, $descrizione) {
+    $codice = trim((string)$codice);
+    $descrizione = trim((string)$descrizione);
+    if ($codice !== '' && $descrizione !== '') return $codice . ' - ' . $descrizione;
+    if ($codice !== '') return $codice;
+    if ($descrizione !== '') return $descrizione;
+    return '';
 }
-
-function data_compare_value($value)
-{
-    if ($value === null || $value === '') {
-        return PHP_INT_MIN;
-    }
-
+function t0_ts($value) {
+    if ($value === null || $value === '') return PHP_INT_MIN;
     $ts = strtotime((string)$value);
     return $ts === false ? PHP_INT_MIN : $ts;
 }
-
-function viaggio_piu_recente($nuovo, $corrente)
-{
-    $nuovo_partenza = data_compare_value($nuovo['partenza_data_ora']);
-    $corrente_partenza = data_compare_value($corrente['partenza_data_ora']);
-
+function t0_viaggio_piu_recente($nuovo, $corrente) {
+    $nuovo_partenza = t0_ts($nuovo['partenza_data_ora']);
+    $corrente_partenza = t0_ts($corrente['partenza_data_ora']);
     if ($nuovo_partenza !== $corrente_partenza) {
         return $nuovo_partenza > $corrente_partenza;
     }
-
-    $nuovo_sync = data_compare_value(isset($nuovo['sync_data_ora']) ? $nuovo['sync_data_ora'] : '');
-    $corrente_sync = data_compare_value(isset($corrente['sync_data_ora']) ? $corrente['sync_data_ora'] : '');
-
+    $nuovo_sync = t0_ts(isset($nuovo['sync_data_ora']) ? $nuovo['sync_data_ora'] : '');
+    $corrente_sync = t0_ts(isset($corrente['sync_data_ora']) ? $corrente['sync_data_ora'] : '');
     if ($nuovo_sync !== $corrente_sync) {
         return $nuovo_sync > $corrente_sync;
     }
-
-    if ((int)$nuovo['ANNO'] !== (int)$corrente['ANNO']) {
-        return (int)$nuovo['ANNO'] > (int)$corrente['ANNO'];
+    if ((int)$nuovo['anno'] !== (int)$corrente['anno']) {
+        return (int)$nuovo['anno'] > (int)$corrente['anno'];
     }
-
-    return (int)$nuovo['NUMERO'] > (int)$corrente['NUMERO'];
+    return (int)$nuovo['numero'] > (int)$corrente['numero'];
 }
-
-function carica_indice_tratte_pigliacelli()
-{
-    $tratte_route_map = array();
-    $hash_sub_map = array();
-
+function t0_campo_vuoto($v) {
+    return trim((string)$v) === '';
+}
+function t0_confronto_viaggio($viaggio) {
+    return array(
+        'partenza_data_ora' => $viaggio['partenza_data_ora'],
+        'sync_data_ora' => isset($viaggio['sync_data_ora']) ? $viaggio['sync_data_ora'] : '',
+        'anno' => $viaggio['anno'],
+        'numero' => $viaggio['numero'],
+    );
+}
+function t0_tieni_allegato(&$dest, $src) {
+    $confronto = t0_confronto_viaggio($src);
+    foreach (array('caricatore', 'proprietario', 'merce') as $campo) {
+        if (t0_campo_vuoto($src[$campo])) continue;
+        $src_key = $campo . '_src';
+        if (!isset($dest[$src_key]) || t0_viaggio_piu_recente($confronto, $dest[$src_key])) {
+            $dest[$campo] = $src[$campo];
+            $dest[$src_key] = $confronto;
+        }
+    }
+}
+function t0_aggiorna_allegato($tratta_id, $viaggio) {
+    $set = array();
+    if (!t0_campo_vuoto($viaggio['merce'])) $set[] = "merce = " . t0_testo_sql($viaggio['merce']);
+    if (!t0_campo_vuoto($viaggio['caricatore'])) $set[] = "caricatore = " . t0_testo_sql($viaggio['caricatore']);
+    if (!t0_campo_vuoto($viaggio['proprietario'])) $set[] = "proprietario_merce = " . t0_testo_sql($viaggio['proprietario']);
+    if (count($set) === 0) return false;
+    sc_exec_sql("
+        UPDATE tratte
+        SET " . implode(', ', $set) . "
+        WHERE id = " . t0_sql_num($tratta_id) . "
+    ", "pigliacelli");
+    return true;
+}
+function t0_lock() {
+    sc_lookup(rsT0Lock, "SELECT GET_LOCK('check_new_trips_t0', 0)", "pigliacelli");
+    return !empty({rsT0Lock}) && (int){rsT0Lock[0][0]} === 1;
+}
+function t0_unlock() {
+    sc_exec_sql("SELECT RELEASE_LOCK('check_new_trips_t0')", "pigliacelli");
+}
+function t0_indice_tratte() {
+    $route_map = array();
+    $hash_map = array();
     $loc_carico = array();
     $loc_scarico = array();
-    sc_lookup(locRows, "
+    sc_lookup(rsT0Loc, "
         SELECT tratta_id, tipo_tratta, localita, progressivo
         FROM tratte_localita
         ORDER BY tratta_id, tipo_tratta, progressivo
     ", "pigliacelli");
-    if (!empty({locRows})) {
-        foreach ({locRows} as $locRow) {
+    if (!empty({rsT0Loc})) {
+        foreach ({rsT0Loc} as $locRow) {
             $tratta_id_loc = (int)$locRow[0];
             $tipo_loc = (string)$locRow[1];
-            $localita_loc = (string)$locRow[2];
             if ($tipo_loc === 'C') {
-                if (!isset($loc_carico[$tratta_id_loc])) {
-                    $loc_carico[$tratta_id_loc] = array();
-                }
-                $loc_carico[$tratta_id_loc][] = $localita_loc;
-            } elseif ($tipo_loc === 'S') {
-                if (!isset($loc_scarico[$tratta_id_loc])) {
-                    $loc_scarico[$tratta_id_loc] = array();
-                }
-                $loc_scarico[$tratta_id_loc][] = $localita_loc;
+                if (!isset($loc_carico[$tratta_id_loc])) $loc_carico[$tratta_id_loc] = array();
+                $loc_carico[$tratta_id_loc][] = (string)$locRow[2];
+            } else if ($tipo_loc === 'S') {
+                if (!isset($loc_scarico[$tratta_id_loc])) $loc_scarico[$tratta_id_loc] = array();
+                $loc_scarico[$tratta_id_loc][] = (string)$locRow[2];
             }
         }
     }
-
-    sc_lookup(tratteRows, "
+    sc_lookup(rsT0Tratte, "
         SELECT id, subvettore_id, tariffa, extra, totale, version, hash
         FROM tratte
     ", "pigliacelli");
-    if (!empty({tratteRows})) {
-        foreach ({tratteRows} as $trattaRow) {
+    if (!empty({rsT0Tratte})) {
+        foreach ({rsT0Tratte} as $trattaRow) {
             $tratta_id = (int)$trattaRow[0];
             $subvettore_id = (int)$trattaRow[1];
-            if ($subvettore_id <= 0) {
-                continue;
-            }
-
-            $carico_str = isset($loc_carico[$tratta_id])
-                ? implode(' + ', $loc_carico[$tratta_id])
-                : '';
-            $scarico_str = isset($loc_scarico[$tratta_id])
-                ? implode(' + ', $loc_scarico[$tratta_id])
-                : '';
-            if ($carico_str === '' || $scarico_str === '') {
-                continue;
-            }
-
+            if ($subvettore_id <= 0) continue;
+            $carico_str = isset($loc_carico[$tratta_id]) ? implode(' + ', $loc_carico[$tratta_id]) : '';
+            $scarico_str = isset($loc_scarico[$tratta_id]) ? implode(' + ', $loc_scarico[$tratta_id]) : '';
+            if ($carico_str === '' || $scarico_str === '') continue;
             $hash_val = trim((string)$trattaRow[6]);
-            $entry = array(
+            $route_map[$subvettore_id . '|' . $carico_str . '|' . $scarico_str] = array(
                 'id' => $tratta_id,
                 'tariffa' => $trattaRow[2],
                 'extra' => $trattaRow[3],
@@ -219,66 +180,168 @@ function carica_indice_tratte_pigliacelli()
                 'version' => $trattaRow[5],
                 'hash' => $hash_val,
             );
-
-            $route_key = $subvettore_id . '|' . $carico_str . '|' . $scarico_str;
-            $tratte_route_map[$route_key] = $entry;
-
             if ($hash_val !== '') {
-                $hash_sub_map[$subvettore_id . '|' . $hash_val] = true;
+                $hash_map[$subvettore_id . '|' . $hash_val] = $tratta_id;
             }
         }
     }
-
-    return array($tratte_route_map, $hash_sub_map);
+    return array($route_map, $hash_map);
 }
-
-function carica_localita_bulk($pdo_sga, $societa, $anno)
-{
+function t0_stmt_errore($stmt) {
+    $info = $stmt->errorInfo();
+    if (!is_array($info) || !isset($info[0]) || $info[0] === '00000' || $info[0] === null || $info[0] === '') {
+        return '';
+    }
+    return trim(isset($info[2]) ? (string)$info[2] : (string)$info[0]);
+}
+function t0_errore_connessione($msg) {
+    $m = strtolower((string)$msg);
+    return strpos($m, 'connection') !== false
+        || strpos($m, 'communication link') !== false
+        || strpos($m, 'login') !== false
+        || strpos($m, 'server is not') !== false;
+}
+function t0_estremi_numeri($pdo, $societa, $anno) {
+    $stmt = $pdo->prepare("
+        SELECT MIN(NUMERO), MAX(NUMERO)
+        FROM T2ViaggiVettori
+        WHERE SOCIETA = :societa
+          AND ANNO = :anno
+    ");
+    $stmt->execute(array('societa' => $societa, 'anno' => $anno));
+    $row = $stmt->fetch(PDO::FETCH_NUM);
+    $stmt->closeCursor();
+    if (!$row || $row[0] === null || $row[1] === null) return null;
+    return array((int)$row[0], (int)$row[1]);
+}
+function t0_accumula_localita(&$carichi, &$scarichi, $row) {
+    $key = (int)$row[0] . '|' . (int)$row[1];
+    $op = trim((string)$row[2]);
+    $loc = trim((string)$row[3]);
+    if ($loc === '') return;
+    if ($op === 'C') {
+        if (!isset($carichi[$key])) $carichi[$key] = array();
+        $carichi[$key][] = $loc;
+    } else if ($op === 'S') {
+        if (!isset($scarichi[$key])) $scarichi[$key] = array();
+        $scarichi[$key][] = $loc;
+    }
+}
+function t0_leggi_localita_intervallo($pdo, $societa, $anno, $da, $a, &$carichi, &$scarichi, &$skip) {
+    if ($da > $a) return;
+    if (($a - $da) > 1000) {
+        for ($cursor = $da; $cursor <= $a; $cursor += 1001) {
+            $fine = $a < ($cursor + 1000) ? $a : ($cursor + 1000);
+            t0_leggi_localita_intervallo($pdo, $societa, $anno, $cursor, $fine, $carichi, $scarichi, $skip);
+        }
+        return;
+    }
     $sql = "
         SELECT ANNO, NUMERO, OPERAZIONE, LOCALITA
         FROM T2ViaggiVettoriClienti
         WHERE SOCIETA = :societa
           AND ANNO = :anno
+          AND NUMERO >= :da
+          AND NUMERO <= :a
           AND OPERAZIONE IN ('C', 'S')
         ORDER BY ANNO, NUMERO, OPERAZIONE, PROGRESSIVO
     ";
-    $params = array('societa' => $societa, 'anno' => $anno);
-    $stmt = $pdo_sga->prepare($sql);
-    $stmt->execute($params);
-
-    // Due mappe separate per evitare array annidati (ScriptCase interpreta [ ] come variabili globali).
-    $carichi_map = array();
-    $scarichi_map = array();
-    while (($row = $stmt->fetch(PDO::FETCH_NUM)) !== false) {
-        $key = (int)$row[0] . '|' . (int)$row[1];
-        if ($row[2] === 'C') {
-            if (!isset($carichi_map[$key])) {
-                $carichi_map[$key] = array();
-            }
-            $carichi_map[$key][] = $row[3];
-        } elseif ($row[2] === 'S') {
-            if (!isset($scarichi_map[$key])) {
-                $scarichi_map[$key] = array();
-            }
-            $scarichi_map[$key][] = $row[3];
+    $stmt = null;
+    $buffer_carichi = array();
+    $buffer_scarichi = array();
+    try {
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute(array('societa' => $societa, 'anno' => $anno, 'da' => $da, 'a' => $a));
+        while (($row = $stmt->fetch(PDO::FETCH_NUM)) !== false) {
+            t0_accumula_localita($buffer_carichi, $buffer_scarichi, $row);
         }
+        $err = t0_stmt_errore($stmt);
+        $stmt->closeCursor();
+        $stmt = null;
+        if ($err !== '') throw new RuntimeException($err);
+        foreach ($buffer_carichi as $key => $locs) {
+            if (!isset($carichi[$key])) $carichi[$key] = array();
+            foreach ($locs as $loc) $carichi[$key][] = $loc;
+        }
+        foreach ($buffer_scarichi as $key => $locs) {
+            if (!isset($scarichi[$key])) $scarichi[$key] = array();
+            foreach ($locs as $loc) $scarichi[$key][] = $loc;
+        }
+    } catch (Throwable $e) {
+        if ($stmt instanceof PDOStatement) $stmt->closeCursor();
+        if (t0_errore_connessione($e->getMessage())) throw $e;
+        if ($da >= $a) {
+            $skip[] = $da;
+            if (count($skip) <= 8) t0_log('SKIP', 'localita anno=' . $anno . ' numero=' . $da . ' — ' . $e->getMessage());
+            return;
+        }
+        $mid = (int)(($da + $a) / 2);
+        t0_leggi_localita_intervallo($pdo, $societa, $anno, $da, $mid, $carichi, $scarichi, $skip);
+        t0_leggi_localita_intervallo($pdo, $societa, $anno, $mid + 1, $a, $carichi, $scarichi, $skip);
+    }
+}
+function t0_localita_bulk($pdo, $societa, $anno) {
+    $carichi = array();
+    $scarichi = array();
+    $skip = array();
+    $estremi = t0_estremi_numeri($pdo, $societa, $anno);
+    if ($estremi !== null) {
+        t0_leggi_localita_intervallo($pdo, $societa, $anno, $estremi[0], $estremi[1], $carichi, $scarichi, $skip);
+    }
+    t0_log('ANNO', $anno . ' localita carichi=' . count($carichi) . ' scarichi=' . count($scarichi) . ' skip=' . count($skip));
+    return array($carichi, $scarichi);
+}
+function t0_extra_bulk($pdo, $societa, $anno) {
+    $stmt = $pdo->prepare("
+        SELECT ANNO, NUMERO, COALESCE(SUM(IMPORTO_TOTALE), 0)
+        FROM T2ViaggiVettoriAddebiti
+        WHERE SOCIETA = :societa
+          AND ANNO = :anno
+        GROUP BY ANNO, NUMERO
+    ");
+    $stmt->execute(array('societa' => $societa, 'anno' => $anno));
+    $map = array();
+    while (($row = $stmt->fetch(PDO::FETCH_NUM)) !== false) {
+        $map[(int)$row[0] . '|' . (int)$row[1]] = $row[2];
     }
     $stmt->closeCursor();
-
-    return array($carichi_map, $scarichi_map);
+    return $map;
 }
-
-function carica_allegato_bulk($pdo_sga, $societa, $anno)
-{
+function t0_accumula_allegato(&$map, $row) {
+    $key = (int)$row[0] . '|' . (int)$row[1];
+    if (!isset($map[$key])) {
+        $map[$key] = array(
+            'caricatore' => null,
+            'proprietario' => null,
+            'merce_parts' => array(),
+        );
+    }
+    $c = trim((string)$row[2]);
+    if ($map[$key]['caricatore'] === null && $c !== '') $map[$key]['caricatore'] = $c;
+    $p = trim((string)$row[3]);
+    if ($map[$key]['proprietario'] === null && $p !== '') $map[$key]['proprietario'] = $p;
+    $label = t0_merce_label($row[4], $row[5]);
+    if ($label !== '' && !in_array($label, $map[$key]['merce_parts'], true)) {
+        $map[$key]['merce_parts'][] = $label;
+    }
+}
+function t0_leggi_allegato_intervallo($pdo, $societa, $anno, $da, $a, &$map, &$skip) {
+    if ($da > $a) return;
+    if (($a - $da) > 1000) {
+        for ($cursor = $da; $cursor <= $a; $cursor += 1001) {
+            $fine = $a < ($cursor + 1000) ? $a : ($cursor + 1000);
+            t0_leggi_allegato_intervallo($pdo, $societa, $anno, $cursor, $fine, $map, $skip);
+        }
+        return;
+    }
     $sql = "
         SELECT
             vc.ANNO,
             vc.NUMERO,
-            RTRIM(t.CARICO_RAGIONE_SOCIALE) AS caricatore,
-            RTRIM(b.RAGIONE_SOCIALE) AS proprietario_merce,
-            RTRIM(m.MERCE_CODICE) AS merce_codice,
-            RTRIM(m.MERCE_DESCRIZIONE) AS merce_descrizione,
-            vc.PROGRESSIVO
+            RTRIM(t.CARICO_RAGIONE_SOCIALE),
+            RTRIM(b.RAGIONE_SOCIALE),
+            RTRIM(m.MERCE_CODICE),
+            RTRIM(m.MERCE_DESCRIZIONE)
         FROM T2ViaggiVettoriClienti vc
         INNER JOIN T2ViaggiClientiCarichiScarichi t
             ON t.SOCIETA = vc.SOCIETA
@@ -286,12 +349,12 @@ function carica_allegato_bulk($pdo_sga, $societa, $anno)
            AND t.FILIALE = vc.CLIENTE_FILIALE
            AND t.NUMERO = vc.CLIENTE_NUMERO
            AND t.NUMERO_CARICO_SCARICO = vc.CLIENTE_NUMERO_CARICO_SCARICO
-        INNER JOIN T2ViaggiClienti vcl
+        LEFT JOIN T2ViaggiClienti vcl
             ON vcl.SOCIETA = t.SOCIETA
            AND vcl.ANNO = t.ANNO
            AND vcl.FILIALE = t.FILIALE
            AND vcl.NUMERO = t.NUMERO
-        INNER JOIN BaCliFor b
+        LEFT JOIN BaCliFor b
             ON b.SOCIETA = vcl.SOCIETA
            AND b.CLIENTE_FORNITORE = 'C'
            AND b.CODICE = vcl.CLIENTE
@@ -303,203 +366,148 @@ function carica_allegato_bulk($pdo_sga, $societa, $anno)
            AND m.NUMERO_CARICO_SCARICO = t.NUMERO_CARICO_SCARICO
         WHERE vc.SOCIETA = :societa
           AND vc.ANNO = :anno
+          AND vc.NUMERO >= :da
+          AND vc.NUMERO <= :a
           AND vc.OPERAZIONE = 'C'
         ORDER BY vc.ANNO, vc.NUMERO, vc.PROGRESSIVO, m.MERCE_CODICE
     ";
-    $stmt = $pdo_sga->prepare($sql);
-    $stmt->execute(['societa' => $societa, 'anno' => $anno]);
-
-    $map = array();
-    while (($row = $stmt->fetch(PDO::FETCH_NUM)) !== false) {
-        $key = (int)$row[0] . '|' . (int)$row[1];
-        if (!isset($map[$key])) {
-            $map[$key] = array(
-                'caricatore' => null,
-                'proprietario_merce' => null,
-                'merce_parts' => array(),
-            );
+    $stmt = null;
+    $buffer = array();
+    try {
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute(array('societa' => $societa, 'anno' => $anno, 'da' => $da, 'a' => $a));
+        while (($row = $stmt->fetch(PDO::FETCH_NUM)) !== false) {
+            t0_accumula_allegato($buffer, $row);
         }
-
-        $c = trim((string)$row[2]);
-        if ($map[$key]['caricatore'] === null && $c !== '') {
-            $map[$key]['caricatore'] = $c;
+        $err = t0_stmt_errore($stmt);
+        $stmt->closeCursor();
+        $stmt = null;
+        if ($err !== '') throw new RuntimeException($err);
+        foreach ($buffer as $key => $entry) {
+            if (!isset($map[$key])) {
+                $map[$key] = $entry;
+                continue;
+            }
+            if ($map[$key]['caricatore'] === null && $entry['caricatore'] !== null) $map[$key]['caricatore'] = $entry['caricatore'];
+            if ($map[$key]['proprietario'] === null && $entry['proprietario'] !== null) $map[$key]['proprietario'] = $entry['proprietario'];
+            foreach ($entry['merce_parts'] as $label) {
+                if (!in_array($label, $map[$key]['merce_parts'], true)) $map[$key]['merce_parts'][] = $label;
+            }
         }
-
-        $p = trim((string)$row[3]);
-        if ($map[$key]['proprietario_merce'] === null && $p !== '') {
-            $map[$key]['proprietario_merce'] = $p;
+    } catch (Throwable $e) {
+        if ($stmt instanceof PDOStatement) $stmt->closeCursor();
+        if (t0_errore_connessione($e->getMessage())) throw $e;
+        if ($da >= $a) {
+            $skip[] = $da;
+            if (count($skip) <= 8) t0_log('SKIP', 'allegato anno=' . $anno . ' numero=' . $da . ' — ' . $e->getMessage());
+            return;
         }
-
-        $label = merce_label_da_riga($row[4], $row[5]);
-        if ($label !== '' && !in_array($label, $map[$key]['merce_parts'], true)) {
-            $map[$key]['merce_parts'][] = $label;
-        }
+        $mid = (int)(($da + $a) / 2);
+        t0_leggi_allegato_intervallo($pdo, $societa, $anno, $da, $mid, $map, $skip);
+        t0_leggi_allegato_intervallo($pdo, $societa, $anno, $mid + 1, $a, $map, $skip);
     }
-    $stmt->closeCursor();
-
+}
+function t0_allegato_bulk($pdo, $societa, $anno) {
+    $map = array();
+    $skip = array();
+    $estremi = t0_estremi_numeri($pdo, $societa, $anno);
+    if ($estremi !== null) {
+        t0_leggi_allegato_intervallo($pdo, $societa, $anno, $estremi[0], $estremi[1], $map, $skip);
+    }
     $out = array();
     foreach ($map as $key => $entry) {
         $out[$key] = array(
             'caricatore' => $entry['caricatore'],
-            'proprietario_merce' => $entry['proprietario_merce'],
+            'proprietario' => $entry['proprietario'],
             'merce' => count($entry['merce_parts']) > 0 ? implode('; ', $entry['merce_parts']) : null,
         );
     }
-
+    t0_log('ANNO', $anno . ' allegato viaggi=' . count($out) . ' skip=' . count($skip));
     return $out;
 }
 
-function carica_extra_bulk($pdo_sga, $societa, $anno)
-{
-    $sql = "
-        SELECT ANNO, NUMERO, COALESCE(SUM(IMPORTO_TOTALE), 0)
-        FROM T2ViaggiVettoriAddebiti
-        WHERE SOCIETA = :societa
-          AND ANNO = :anno
-        GROUP BY ANNO, NUMERO
-    ";
-    $stmt = $pdo_sga->prepare($sql);
-    $stmt->execute(['societa' => $societa, 'anno' => $anno]);
-
-    $map = [];
-    while (($row = $stmt->fetch(PDO::FETCH_NUM)) !== false) {
-        $map[(int)$row[0] . '|' . (int)$row[1]] = $row[2];
-    }
-    $stmt->closeCursor();
-
-    return $map;
-}
-
-function acquisisci_lock_insert_trips()
-{
-    sc_lookup(lockRow, "SELECT GET_LOCK('insert_new_trips', 0)", "pigliacelli");
-    if (empty({lockRow}) || (int){lockRow[0][0]} !== 1) {
-        return false;
-    }
-
-    return true;
-}
-
-function rilascia_lock_insert_trips()
-{
-    sc_exec_sql("SELECT RELEASE_LOCK('insert_new_trips')", "pigliacelli");
-}
-
-function connetti_pdo_sga()
-{
-    $set_names = ['sgam_user', 'sgam_pswd', 'sgam_db', 'sgam_server'];
-
-    sc_lookup(settingsRows, "
-        SELECT set_name, set_value
-        FROM sec_settings
-        WHERE set_name IN (
-            'sgam_user', 'sgam_pswd', 'sgam_db', 'sgam_server',
-            'export_viaggi_anno', 'export_viaggi_societa'
-        )
-    ", "pigliacelli");
-
-    $settings = [];
-    if (!empty({settingsRows})) {
-        foreach ({settingsRows} as $settingRow) {
-            $settings[$settingRow[0]] = $settingRow[1];
-        }
-    }
-
-    foreach ($set_names as $set_name) {
-        if (!array_key_exists($set_name, $settings)) {
-            log_insert_trips('003', "Parametro sec_settings mancante: " . $set_name);
-            sc_error_message("Parametro '" . $set_name . "' non trovato in sec_settings.");
-            return null;
-        }
-    }
-
-    $societa = isset($settings['export_viaggi_societa']) && trim((string)$settings['export_viaggi_societa']) !== ''
-        ? (int)$settings['export_viaggi_societa']
-        : 1;
-    $anno_da = isset($settings['export_viaggi_anno']) && trim((string)$settings['export_viaggi_anno']) !== ''
-        ? (int)$settings['export_viaggi_anno']
-        : 2023;
-
-    log_insert_trips('003', 'sec_settings OK | societa=' . $societa . ' | anno_da=' . $anno_da);
-
-    try {
-        log_insert_trips('004', 'Connessione PDO SGA in corso');
-        $dsn_sga = "sqlsrv:Server=" . $settings['sgam_server'] .
-                   ";Database=" . $settings['sgam_db'] .
-                   ";Encrypt=1" .
-                   ";TrustServerCertificate=1";
-
-        $pdo_sga = new PDO(
-            $dsn_sga,
-            $settings['sgam_user'],
-            $settings['sgam_pswd'],
-            [
-                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_NUM,
-            ]
-        );
-
-        log_insert_trips('004', 'Connessione PDO SGA OK');
-
-        return [
-            'pdo' => $pdo_sga,
-            'societa' => $societa,
-            'anno_da' => $anno_da,
-        ];
-    } catch (PDOException $e) {
-        log_insert_trips('004', 'Errore connessione PDO SGA: ' . $e->getMessage());
-        sc_error_message("Errore connessione PDO SGA: " . $e->getMessage());
-        return null;
-    }
-}
-
-if (!acquisisci_lock_insert_trips()) {
-    sc_log_add("INSERT_TRIPS_OPT", "Run ignorata: import gia' in corso (lock attivo)");
-    sc_error_message("Import tratte gia' in esecuzione. Attendere il completamento e riprovare.");
+if (!t0_lock()) {
+    t0_log('LOCK', 'import gia in corso');
+    sc_error_message("Import storico T0 gia in esecuzione. Attendere il completamento.");
     return;
 }
 
-log_insert_trips('001', 'Avvio run');
-log_insert_trips('002', 'Lock acquisito');
+sc_lookup(rsT0Set, "
+    SELECT set_name, set_value
+    FROM sec_settings
+    WHERE set_name IN ('sgam_user', 'sgam_pswd', 'sgam_db', 'sgam_server', 'export_viaggi_anno')
+", "pigliacelli");
+$settings = array();
+if (!empty({rsT0Set})) {
+    foreach ({rsT0Set} as $row) {
+        $settings[$row[0]] = $row[1];
+    }
+}
+foreach (array('sgam_user', 'sgam_pswd', 'sgam_db', 'sgam_server', 'export_viaggi_anno') as $nome) {
+    if (!array_key_exists($nome, $settings) || trim((string)$settings[$nome]) === '') {
+        t0_unlock();
+        sc_error_message("Parametro '" . $nome . "' non trovato in sec_settings.");
+        return;
+    }
+}
 
-// Import massivo: evita 500 da timeout / memoria.
-@set_time_limit(0);
-@ini_set('memory_limit', '1024M');
-@ignore_user_abort(true);
-
-// Nota: il lock MySQL (GET_LOCK) viene rilasciato automaticamente alla chiusura della
-// connessione di sessione, quindi non serve un register_shutdown_function (che fallirebbe:
-// a shutdown la connessione ScriptCase/ADOdb e' gia' chiusa). Sui percorsi normali e di
-// errore chiamiamo comunque rilascia_lock_insert_trips().
-
-$conn = connetti_pdo_sga();
-if ($conn === null) {
-    log_insert_trips('999', 'Run terminata: connessione SGA non disponibile');
-    rilascia_lock_insert_trips();
+$anno_da = (int)$settings['export_viaggi_anno'];
+if ($anno_da <= 0) {
+    t0_unlock();
+    sc_error_message("Parametro 'export_viaggi_anno' non valido.");
     return;
 }
 
-$pdo_sga = $conn['pdo'];
-$societa = $conn['societa'];
-$anno_da = $conn['anno_da'];
-
-// Limite superiore = anno corrente. Importa tutti gli anni da anno_da a oggi, uno alla volta.
+$societa = 1;
 $anno_a = (int)date('Y');
-if ($anno_da > $anno_a) {
-    $anno_a = $anno_da;
-}
-log_insert_trips('004b', 'Intervallo anni da elaborare: ' . $anno_da . ' .. ' . $anno_a);
+if ($anno_da > $anno_a) $anno_a = $anno_da;
+$now_data_ora = date('Y-m-d H:i:s');
 
-$sql_viaggi_base = "
+t0_log('START', 'storico ANNO ' . $anno_da . '..' . $anno_a . ' fino a ' . $now_data_ora . ' | build=opt_bulk');
+
+try {
+    $pdo = new PDO(
+        "sqlsrv:Server=" . $settings['sgam_server'] . ";Database=" . $settings['sgam_db'] . ";Encrypt=1;TrustServerCertificate=1",
+        $settings['sgam_user'],
+        $settings['sgam_pswd'],
+        array(PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_NUM)
+    );
+} catch (PDOException $e) {
+    t0_log('ERROR', $e->getMessage());
+    t0_unlock();
+    sc_error_message("Errore connessione PDO SGA: " . $e->getMessage());
+    return;
+}
+
+$sub_map = array();
+sc_lookup(rsT0Sub, "SELECT TRIM(codice_sga), id FROM subvettori WHERE codice_sga IS NOT NULL AND TRIM(codice_sga) <> ''", "pigliacelli");
+if (!empty({rsT0Sub})) {
+    foreach ({rsT0Sub} as $r) {
+        $sub_map[trim((string)$r[0])] = (int)$r[1];
+    }
+}
+$tariffe_map = array();
+sc_lookup(rsT0Tar, "SELECT UPPER(descrizione), id FROM tipo_tariffe", "pigliacelli");
+if (!empty({rsT0Tar})) {
+    foreach ({rsT0Tar} as $r) {
+        $tariffe_map[trim((string)$r[0])] = (int)$r[1];
+    }
+}
+list($route_map, $hash_map) = t0_indice_tratte();
+t0_log(
+    'MAPPE',
+    'subvettori=' . count($sub_map) . ' tariffe=' . count($tariffe_map) . ' tratte=' . count($route_map) . ' hash=' . count($hash_map)
+);
+
+$sql_viaggi = "
     SELECT
-      v.SOCIETA,
       v.ANNO,
       v.NUMERO,
-      v.VETTORE AS codice_vettore,
-      v.TARIFFA,
+      RTRIM(v.VETTORE),
+      RTRIM(v.TARIFFA),
       v.IMPORTO_UNITARIO,
-      v.PARTENZA_DATA_ORA AS partenza_data_ora,
-      COALESCE(v.UPDATE_DATA_ORA, v.INSERT_DATA_ORA, '1900-01-01 00:00:00') AS sync_data_ora
+      v.PARTENZA_DATA_ORA,
+      COALESCE(v.UPDATE_DATA_ORA, v.INSERT_DATA_ORA, '1900-01-01 00:00:00')
     FROM T2ViaggiVettori v
     INNER JOIN T2BaseVettori t
       ON t.CODICE = v.VETTORE
@@ -507,419 +515,272 @@ $sql_viaggi_base = "
      AND t.ATTIVO = 'S'
     WHERE v.SOCIETA = :societa
       AND v.ANNO = :anno
-    ORDER BY v.ANNO, v.NUMERO
+      AND COALESCE(v.UPDATE_DATA_ORA, v.INSERT_DATA_ORA, '1900-01-01 00:00:00') <= :fine
 ";
+$stmt_viaggi = $pdo->prepare($sql_viaggi);
 
-// Precarico mappe MySQL una sola volta (valide per tutti gli anni): niente lookup per viaggio.
-log_insert_trips('009', 'Precarico mappe pigliacelli (subvettori, tariffe, indice tratte)');
-
-$subvettori_map = [];
-sc_lookup(subRows, "SELECT codice_sga, id FROM subvettori WHERE codice_sga IS NOT NULL", "pigliacelli");
-if (!empty({subRows})) {
-    foreach ({subRows} as $r) {
-        $subvettori_map[(string)$r[0]] = $r[1];
-    }
-}
-
-$tariffe_map = [];
-sc_lookup(tariffeRows, "SELECT UPPER(descrizione), id FROM tipo_tariffe", "pigliacelli");
-if (!empty({tariffeRows})) {
-    foreach ({tariffeRows} as $r) {
-        $tariffe_map[(string)$r[0]] = $r[1];
-    }
-}
-
-list($tratte_route_map, $hash_sub_map) = carica_indice_tratte_pigliacelli();
-
-log_insert_trips(
-    '009',
-    'Mappe pronte | subvettori=' . count($subvettori_map) .
-    ' | tariffe=' . count($tariffe_map) .
-    ' | tratte_route=' . count($tratte_route_map) .
-    ' | hash_sub=' . count($hash_sub_map)
-);
-
-// Contatori globali (cumulati su tutti gli anni).
-$tot_inseriti = 0;
-$tot_aggiornati = 0;
-$tot_saltati_hash = 0;
-$tot_saltati_invariati = 0;
-$tot_saltati_subvettore = 0;
-$tot_saltati_importo = 0;
-$subvettori_mancanti = [];
-$ultima_sync_data_ora = null;
+$nLette = 0;
+$nInserite = 0;
+$nAggiornate = 0;
+$nGiaPresenti = 0;
+$nInvariate = 0;
+$nSkipImporto = 0;
+$nSkipLocalita = 0;
+$nSkipSub = 0;
+$nAllegato = 0;
 
 try {
-    $stmt_viaggi_base = $pdo_sga->prepare($sql_viaggi_base);
-} catch (PDOException $e) {
-    log_insert_trips('005', 'Errore prepare PDO SGA: ' . $e->getMessage());
-    sc_error_message("Errore prepare PDO SGA: " . $e->getMessage());
-    log_insert_trips('999', 'Run terminata con errore STEP 005');
-    rilascia_lock_insert_trips();
-    return;
-}
-
-// ---- Ciclo per anno: ogni anno e' una mini-import indipendente, con memoria liberata a fine ciclo ----
 for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
-    $ultimo_viaggio_log = null;
-
-    try {
-        log_insert_trips('100', 'ANNO ' . $anno . ' | execute viaggi base');
-        $stmt_viaggi_base->execute(['societa' => $societa, 'anno' => $anno]);
-        $viaggi_base_rows = $stmt_viaggi_base->fetchAll(PDO::FETCH_NUM);
-        $stmt_viaggi_base->closeCursor();
-        $tot_righe_base = count($viaggi_base_rows);
-        log_insert_trips('100', 'ANNO ' . $anno . ' | viaggi base righe=' . $tot_righe_base);
-
-        if ($tot_righe_base === 0) {
-            log_insert_trips('100', 'ANNO ' . $anno . ' | nessun viaggio, salto');
-            unset($viaggi_base_rows);
-            continue;
-        }
-
-        log_insert_trips('101', 'ANNO ' . $anno . ' | carico bulk localita');
-        $localita_bulk = carica_localita_bulk($pdo_sga, $societa, $anno);
-        $carichi_map = $localita_bulk[0];
-        $scarichi_map = $localita_bulk[1];
-
-        log_insert_trips('101', 'ANNO ' . $anno . ' | carico bulk extra');
-        $extra_map = carica_extra_bulk($pdo_sga, $societa, $anno);
-
-        log_insert_trips('101', 'ANNO ' . $anno . ' | carico bulk allegato');
-        $allegato_map = carica_allegato_bulk($pdo_sga, $societa, $anno);
-
-        // Dedup viaggi dell'anno.
-        $viaggi_unici = [];
-        $viaggi_letti = 0;
-        $viaggi_senza_localita = 0;
-        $viaggi_importo_non_valido = 0;
-
-        foreach ($viaggi_base_rows as $row_sga) {
-            $viaggi_letti++;
-
-            $row_anno    = $row_sga[1];
-            $numero      = $row_sga[2];
-            $codice_vettore   = $row_sga[3];
-            $tariffa_sigla    = trim((string)$row_sga[4]);
-            $importo_unitario = $row_sga[5];
-            $partenza_data_ora = $row_sga[6];
-            $sync_data_ora     = $row_sga[7];
-            $ultimo_viaggio_log = (int)$row_anno . '/' . (int)$numero . ' vettore=' . (string)$codice_vettore;
-
-            if ($sync_data_ora !== null && ($ultima_sync_data_ora === null || $sync_data_ora > $ultima_sync_data_ora)) {
-                $ultima_sync_data_ora = $sync_data_ora;
-            }
-
-            $viaggio_key = (int)$row_anno . '|' . (int)$numero;
-
-            $carico_str = '';
-            $scarico_str = '';
-            if (isset($carichi_map[$viaggio_key])) {
-                $carico_str = implode(' + ', $carichi_map[$viaggio_key]);
-            }
-            if (isset($scarichi_map[$viaggio_key])) {
-                $scarico_str = implode(' + ', $scarichi_map[$viaggio_key]);
-            }
-
-            if ($carico_str === '' || $scarico_str === '') {
-                $viaggi_senza_localita++;
-                continue;
-            }
-
-            if (!importo_unitario_valido($importo_unitario)) {
-                $viaggi_importo_non_valido++;
-                continue;
-            }
-
-            $extra_totale = isset($extra_map[$viaggio_key]) ? $extra_map[$viaggio_key] : 0;
-            $caricatore = null;
-            $proprietario_merce = null;
-            $merce = null;
-            if (isset($allegato_map[$viaggio_key])) {
-                $caricatore = $allegato_map[$viaggio_key]['caricatore'];
-                $proprietario_merce = $allegato_map[$viaggio_key]['proprietario_merce'];
-                $merce = $allegato_map[$viaggio_key]['merce'];
-            }
-            $key = (string)$codice_vettore . '|' . $carico_str . '|' . $scarico_str;
-
-            $viaggio = [
-                'ANNO' => $row_anno,
-                'NUMERO' => $numero,
-                'codice_vettore' => $codice_vettore,
-                'carico_str' => $carico_str,
-                'scarico_str' => $scarico_str,
-                'caricatore' => $caricatore,
-                'proprietario_merce' => $proprietario_merce,
-                'merce' => $merce,
-                'tariffa_sigla' => $tariffa_sigla,
-                'importo_unitario' => $importo_unitario,
-                'extra_totale' => $extra_totale,
-                'partenza_data_ora' => $partenza_data_ora,
-                'sync_data_ora' => $sync_data_ora,
-            ];
-
-            if (!isset($viaggi_unici[$key]) || viaggio_piu_recente($viaggio, $viaggi_unici[$key])) {
-                $viaggi_unici[$key] = $viaggio;
-            }
-        }
-
-        unset($viaggi_base_rows, $localita_bulk, $carichi_map, $scarichi_map, $extra_map, $allegato_map);
-
-        $candidati_insert = count($viaggi_unici);
-        log_insert_trips(
-            '102',
-            'ANNO ' . $anno . ' | dedup completato | letti=' . $viaggi_letti .
-            ' | senza_localita=' . $viaggi_senza_localita .
-            ' | importo_non_valido=' . $viaggi_importo_non_valido .
-            ' | candidati=' . $candidati_insert
-        );
-    } catch (PDOException $e) {
-        $ctx = $ultimo_viaggio_log !== null ? ' | ultimo_viaggio=' . $ultimo_viaggio_log : '';
-        log_insert_trips('100', 'ANNO ' . $anno . ' | errore lettura SGA: ' . $e->getMessage() . $ctx);
-        sc_error_message("Errore lettura dati SGA (anno " . $anno . "): " . $e->getMessage());
-        log_insert_trips('999', 'Run terminata con errore ANNO ' . $anno . $ctx);
-        rilascia_lock_insert_trips();
-        return;
-    } catch (Throwable $e) {
-        $ctx = $ultimo_viaggio_log !== null ? ' | ultimo_viaggio=' . $ultimo_viaggio_log : '';
-        log_insert_trips('100', 'ANNO ' . $anno . ' | errore generico: ' . $e->getMessage() . $ctx);
-        sc_error_message("Errore elaborazione SGA (anno " . $anno . "): " . $e->getMessage());
-        log_insert_trips('999', 'Run terminata con errore ANNO ' . $anno . $ctx);
-        rilascia_lock_insert_trips();
-        return;
+    t0_log('ANNO', $anno . ' lettura viaggi');
+    $stmt_viaggi->execute(array('societa' => $societa, 'anno' => $anno, 'fine' => $now_data_ora));
+    $righe = $stmt_viaggi->fetchAll(PDO::FETCH_NUM);
+    $stmt_viaggi->closeCursor();
+    $nAnno = count($righe);
+    $nLette += $nAnno;
+    t0_log('ANNO', $anno . ' viaggi=' . $nAnno);
+    if ($nAnno === 0) {
+        unset($righe);
+        continue;
     }
 
-    // ---- Insert/UPDATE MySQL per l'anno ----
-    $inseriti = 0;
-    $aggiornati = 0;
-    $saltati_hash = 0;
-    $saltati_invariati = 0;
-    $saltati_subvettore = 0;
-    $saltati_importo = 0;
-    $insert_elaborati = 0;
+    t0_log('ANNO', $anno . ' bulk localita');
+    $loc_bulk = t0_localita_bulk($pdo, $societa, $anno);
+    $carichi_map = $loc_bulk[0];
+    $scarichi_map = $loc_bulk[1];
+    t0_log('ANNO', $anno . ' bulk extra');
+    $extra_map = t0_extra_bulk($pdo, $societa, $anno);
+    t0_log('ANNO', $anno . ' bulk allegato');
+    $allegato_map = t0_allegato_bulk($pdo, $societa, $anno);
 
-    log_insert_trips('110', 'ANNO ' . $anno . ' | inizio upsert MySQL | candidati=' . $candidati_insert);
-
-    foreach ($viaggi_unici as $viaggio) {
-        $insert_elaborati++;
-        if ($insert_elaborati === 1 || $insert_elaborati % 500 === 0) {
-            log_insert_trips(
-                '110',
-                'ANNO ' . $anno . ' | upsert ' . $insert_elaborati . '/' . $candidati_insert .
-                ' | inseriti=' . $inseriti . ' | aggiornati=' . $aggiornati
-            );
-        }
-        $codice_vettore   = $viaggio['codice_vettore'];
-        $carico_str       = $viaggio['carico_str'];
-        $scarico_str      = $viaggio['scarico_str'];
-        $caricatore       = $viaggio['caricatore'] ?? null;
-        $proprietario_merce = $viaggio['proprietario_merce'] ?? null;
-        $merce            = $viaggio['merce'] ?? null;
-        $tariffa_sigla    = $viaggio['tariffa_sigla'];
-        $importo_unitario = $viaggio['importo_unitario'];
-        $extra_totale     = $viaggio['extra_totale'];
-
-        if (!importo_unitario_valido($importo_unitario)) {
-            $saltati_importo++;
+    $unici = array();
+    foreach ($righe as $row) {
+        $numero = $row[1];
+        $codice = trim((string)$row[2]);
+        $importo = $row[4];
+        $key_viaggio = (int)$row[0] . '|' . (int)$numero;
+        $carico = isset($carichi_map[$key_viaggio]) ? implode(' + ', $carichi_map[$key_viaggio]) : '';
+        $scarico = isset($scarichi_map[$key_viaggio]) ? implode(' + ', $scarichi_map[$key_viaggio]) : '';
+        if ($carico === '' || $scarico === '') {
+            $nSkipLocalita++;
             continue;
         }
-
-        $codice_vettore_key = (string)$codice_vettore;
-        if (!isset($subvettori_map[$codice_vettore_key])) {
-            $saltati_subvettore++;
-            if (!isset($subvettori_mancanti[$codice_vettore_key])) {
-                $subvettori_mancanti[$codice_vettore_key] = 0;
+        if (!t0_importo_valido($importo)) {
+            $nSkipImporto++;
+            continue;
+        }
+        $caricatore = null;
+        $proprietario = null;
+        $merce = null;
+        if (isset($allegato_map[$key_viaggio])) {
+            $caricatore = $allegato_map[$key_viaggio]['caricatore'];
+            $proprietario = $allegato_map[$key_viaggio]['proprietario'];
+            $merce = $allegato_map[$key_viaggio]['merce'];
+        }
+        $viaggio = array(
+            'anno' => $row[0],
+            'numero' => $numero,
+            'codice' => $codice,
+            'sigla' => trim((string)$row[3]),
+            'importo' => $importo,
+            'extra' => isset($extra_map[$key_viaggio]) ? $extra_map[$key_viaggio] : 0,
+            'carico' => $carico,
+            'scarico' => $scarico,
+            'caricatore' => $caricatore,
+            'proprietario' => $proprietario,
+            'merce' => $merce,
+            'partenza_data_ora' => $row[5],
+            'sync_data_ora' => $row[6],
+        );
+        $route_dedup = $codice . '|' . $carico . '|' . $scarico;
+        if (!isset($unici[$route_dedup])) {
+            $unici[$route_dedup] = $viaggio;
+            t0_tieni_allegato($unici[$route_dedup], $viaggio);
+        } else if (t0_viaggio_piu_recente($viaggio, $unici[$route_dedup])) {
+            $precedente = $unici[$route_dedup];
+            $unici[$route_dedup] = $viaggio;
+            foreach (array('caricatore', 'proprietario', 'merce') as $campo) {
+                $unici[$route_dedup][$campo] = $precedente[$campo];
+                $src_key = $campo . '_src';
+                if (isset($precedente[$src_key])) $unici[$route_dedup][$src_key] = $precedente[$src_key];
             }
-            $subvettori_mancanti[$codice_vettore_key]++;
+            t0_tieni_allegato($unici[$route_dedup], $viaggio);
+        } else {
+            t0_tieni_allegato($unici[$route_dedup], $viaggio);
+        }
+    }
+    unset($righe, $loc_bulk, $carichi_map, $scarichi_map, $extra_map, $allegato_map);
+
+    $nCandidati = count($unici);
+    t0_log('ANNO', $anno . ' candidati=' . $nCandidati);
+    $fatti = 0;
+    foreach ($unici as $viaggio) {
+        $fatti++;
+        if ($fatti === 1 || $fatti % 500 === 0) {
+            t0_log('ANNO', $anno . ' upsert ' . $fatti . '/' . $nCandidati . ' inserite=' . $nInserite);
+        }
+        $codice = $viaggio['codice'];
+        if ($codice === '' || !isset($sub_map[$codice])) {
+            $nSkipSub++;
+            continue;
+        }
+        $subId = (int)$sub_map[$codice];
+        $importo = $viaggio['importo'];
+        $extra = $viaggio['extra'];
+        if ($extra === null || $extra === false) $extra = 0;
+        $totale = (0 + $importo) + (0 + $extra);
+        $hash = t0_hash($viaggio['carico'], $viaggio['scarico'], $codice, $importo);
+        $hash_key = $subId . '|' . $hash;
+        if (isset($hash_map[$hash_key])) {
+            $nGiaPresenti++;
+            if (t0_aggiorna_allegato((int)$hash_map[$hash_key], $viaggio)) $nAllegato++;
             continue;
         }
 
-        $subvettore_id = (int)$subvettori_map[$codice_vettore_key];
-        $hash = crea_hash_tratta($carico_str, $scarico_str, $codice_vettore, $importo_unitario);
-        $hash_sub_key = $subvettore_id . '|' . $hash;
-
-        if (isset($hash_sub_map[$hash_sub_key])) {
-            $saltati_hash++;
-            continue;
+        $sigla = strtoupper(trim((string)$viaggio['sigla']));
+        $tipoTarSql = "NULL";
+        if ($sigla !== '' && isset($tariffe_map[$sigla])) {
+            $tipoTarSql = t0_sql_num($tariffe_map[$sigla]);
         }
 
-        if ($tariffa_sigla === '') {
-            $tariffa_sigla = null;
-        }
-        $totale = (0 + $importo_unitario) + (0 + $extra_totale);
-
-        $tipo_tariffa_id = null;
-        if ($tariffa_sigla !== null) {
-            $tariffa_sigla = strtoupper($tariffa_sigla);
-            if (isset($tariffe_map[$tariffa_sigla])) {
-                $tipo_tariffa_id = $tariffe_map[$tariffa_sigla];
-            }
-        }
-
-        $tipo_tariffa_sql = $tipo_tariffa_id === null ? "NULL" : sql_num($tipo_tariffa_id);
-
-        $route_key = $subvettore_id . '|' . $carico_str . '|' . $scarico_str;
-        if (isset($tratte_route_map[$route_key])) {
-            $exist = $tratte_route_map[$route_key];
-            $has_modifica_tratta = (
-                abs((float)$exist['tariffa'] - (float)$importo_unitario) > 0.0001 ||
-                abs((float)$exist['extra'] - (float)$extra_totale) > 0.0001 ||
+        $route_key = $subId . '|' . $viaggio['carico'] . '|' . $viaggio['scarico'];
+        if (isset($route_map[$route_key])) {
+            $exist = $route_map[$route_key];
+            $diversa = (
+                abs((float)$exist['tariffa'] - (float)$importo) > 0.0001 ||
+                abs((float)$exist['extra'] - (float)$extra) > 0.0001 ||
                 abs((float)$exist['totale'] - (float)$totale) > 0.0001
             );
-
-            if (!$has_modifica_tratta) {
-                $saltati_invariati++;
-                if ($exist['hash'] !== '') {
-                    $hash_sub_map[$subvettore_id . '|' . $exist['hash']] = true;
-                }
+            if (!$diversa) {
+                $nInvariate++;
+                if ($exist['hash'] !== '') $hash_map[$subId . '|' . $exist['hash']] = (int)$exist['id'];
+                if (t0_aggiorna_allegato((int)$exist['id'], $viaggio)) $nAllegato++;
                 continue;
             }
-
-            $tratta_id_esistente = (int)$exist['id'];
-            $old_hash = (string)$exist['hash'];
-
+            $set_allegato = '';
+            if (!t0_campo_vuoto($viaggio['merce'])) $set_allegato .= ", merce = " . t0_testo_sql($viaggio['merce']);
+            if (!t0_campo_vuoto($viaggio['caricatore'])) $set_allegato .= ", caricatore = " . t0_testo_sql($viaggio['caricatore']);
+            if (!t0_campo_vuoto($viaggio['proprietario'])) $set_allegato .= ", proprietario_merce = " . t0_testo_sql($viaggio['proprietario']);
+            if ($set_allegato !== '') $nAllegato++;
             sc_exec_sql("
                 UPDATE tratte
-                SET tipo_tariffa_id = " . $tipo_tariffa_sql . ",
-                    tariffa = " . sql_num($importo_unitario) . ",
-                    extra = " . sql_num($extra_totale) . ",
-                    totale = " . sql_num($totale) . ",
-                    hash = " . sql_quote($hash) . "
-                WHERE id = " . sql_num($tratta_id_esistente) . "
+                SET tipo_tariffa_id = " . $tipoTarSql . ",
+                    tariffa = " . t0_sql_num($importo) . ",
+                    extra = " . t0_sql_num($extra) . ",
+                    totale = " . t0_sql_num($totale) . ",
+                    hash = " . t0_sql_quote($hash) . $set_allegato . "
+                WHERE id = " . t0_sql_num($exist['id']) . "
             ", "pigliacelli");
-
-            if ($old_hash !== '' && $old_hash !== $hash) {
-                unset($hash_sub_map[$subvettore_id . '|' . $old_hash]);
+            if ($exist['hash'] !== '' && $exist['hash'] !== $hash) {
+                unset($hash_map[$subId . '|' . $exist['hash']]);
             }
-            $hash_sub_map[$hash_sub_key] = true;
-            $tratte_route_map[$route_key] = array(
-                'id' => $tratta_id_esistente,
-                'tariffa' => $importo_unitario,
-                'extra' => $extra_totale,
+            $hash_map[$hash_key] = (int)$exist['id'];
+            $route_map[$route_key] = array(
+                'id' => $exist['id'],
+                'tariffa' => $importo,
+                'extra' => $extra,
                 'totale' => $totale,
                 'version' => $exist['version'],
                 'hash' => $hash,
             );
-            $aggiornati++;
+            $nAggiornate++;
             continue;
         }
 
-        $insTratta = "
-          INSERT INTO tratte
-            (subvettore_id, merce, caricatore, proprietario_merce, tipo_tariffa_id, tariffa, extra, totale, hash, version)
-          VALUES
-            (" . sql_num($subvettore_id) . ",
-             " . allegato_testo_sql($merce) . ",
-             " . allegato_testo_sql($caricatore) . ",
-             " . allegato_testo_sql($proprietario_merce) . ",
-             " . $tipo_tariffa_sql . ",
-             " . sql_num($importo_unitario) . ",
-             " . sql_num($extra_totale) . ",
-             " . sql_num($totale) . ",
-             " . sql_quote($hash) . ",
-             1)
-        ";
-        sc_exec_sql($insTratta, "pigliacelli");
-
-        sc_lookup(lastId, "SELECT LAST_INSERT_ID()", "pigliacelli");
-        if (empty({lastId}) || {lastId[0][0]} === null || {lastId[0][0]} === '') {
-            sc_log_add("INSERT_TRIPS_OPT_ERROR", "LAST_INSERT_ID vuoto per hash " . $hash);
+        sc_exec_sql("
+            INSERT INTO tratte
+              (subvettore_id, merce, caricatore, proprietario_merce, tipo_tariffa_id, tariffa, extra, totale, hash, version, legacy)
+            VALUES
+              (" . t0_sql_num($subId) . ",
+               " . t0_testo_sql($viaggio['merce']) . ",
+               " . t0_testo_sql($viaggio['caricatore']) . ",
+               " . t0_testo_sql($viaggio['proprietario']) . ",
+               " . $tipoTarSql . ",
+               " . t0_sql_num($importo) . ",
+               " . t0_sql_num($extra) . ",
+               " . t0_sql_num($totale) . ",
+               " . t0_sql_quote($hash) . ",
+               1, 1)
+        ", "pigliacelli");
+        sc_lookup(rsT0Ins, "SELECT LAST_INSERT_ID()", "pigliacelli");
+        if (empty({rsT0Ins}) || (int){rsT0Ins[0][0]} <= 0) {
+            t0_log('ERROR', 'LAST_INSERT_ID vuoto sub=' . $subId . ' hash=' . $hash);
             continue;
         }
-
-        $tratta_id = (int){lastId[0][0]};
-        $hash_sub_map[$hash_sub_key] = true;
-        $tratte_route_map[$route_key] = array(
-            'id' => $tratta_id,
-            'tariffa' => $importo_unitario,
-            'extra' => $extra_totale,
+        $trattaId = (int){rsT0Ins[0][0]};
+        $hash_map[$hash_key] = $trattaId;
+        $route_map[$route_key] = array(
+            'id' => $trattaId,
+            'tariffa' => $importo,
+            'extra' => $extra,
             'totale' => $totale,
             'version' => 1,
             'hash' => $hash,
         );
-
         $i = 1;
-        foreach (split_localita($carico_str) as $loc) {
+        foreach (t0_split_localita($viaggio['carico']) as $loc) {
             sc_exec_sql("
-              INSERT INTO tratte_localita (tratta_id, tipo_tratta, localita, progressivo)
-              VALUES (" . sql_num($tratta_id) . ", 'C', " . sql_quote($loc) . ", " . sql_num($i) . ")
+                INSERT INTO tratte_localita (tratta_id, tipo_tratta, localita, progressivo)
+                VALUES (" . t0_sql_num($trattaId) . ", 'C', " . t0_sql_quote($loc) . ", " . t0_sql_num($i) . ")
             ", "pigliacelli");
             $i++;
         }
-
         $i = 1;
-        foreach (split_localita($scarico_str) as $loc) {
+        foreach (t0_split_localita($viaggio['scarico']) as $loc) {
             sc_exec_sql("
-              INSERT INTO tratte_localita (tratta_id, tipo_tratta, localita, progressivo)
-              VALUES (" . sql_num($tratta_id) . ", 'S', " . sql_quote($loc) . ", " . sql_num($i) . ")
+                INSERT INTO tratte_localita (tratta_id, tipo_tratta, localita, progressivo)
+                VALUES (" . t0_sql_num($trattaId) . ", 'S', " . t0_sql_quote($loc) . ", " . t0_sql_num($i) . ")
             ", "pigliacelli");
             $i++;
         }
-
-        $inseriti++;
+        $nInserite++;
     }
-
-    unset($viaggi_unici);
-
-    $tot_inseriti += $inseriti;
-    $tot_aggiornati += $aggiornati;
-    $tot_saltati_hash += $saltati_hash;
-    $tot_saltati_invariati += $saltati_invariati;
-    $tot_saltati_subvettore += $saltati_subvettore;
-    $tot_saltati_importo += $saltati_importo;
-
-    log_insert_trips(
-        '112',
-        'ANNO ' . $anno . ' | completato | inseriti=' . $inseriti .
-        ' | aggiornati=' . $aggiornati .
-        ' | hash_skip=' . $saltati_hash .
-        ' | invariati=' . $saltati_invariati .
-        ' | subvettore_skip=' . $saltati_subvettore .
-        ' | importo_skip=' . $saltati_importo
+    unset($unici);
+    t0_log(
+        'ANNO',
+        $anno . ' fine inserite=' . $nInserite . ' aggiornate=' . $nAggiornate . ' hash=' . $nGiaPresenti
     );
 }
 
-sc_log_add(
-    "INSERT_TRIPS_OPT",
-    "Totale tratte inserite: " . $tot_inseriti .
-    ", aggiornate: " . $tot_aggiornati .
-    ", hash gia' presenti: " . $tot_saltati_hash .
-    ", invariate: " . $tot_saltati_invariati .
-    ", subvettore mancante: " . $tot_saltati_subvettore .
-    ", importo non valido: " . $tot_saltati_importo .
-    ", anni=" . $anno_da . ".." . $anno_a
-);
+sc_exec_sql("
+    UPDATE sec_settings
+    SET set_value = " . t0_sql_quote($now_data_ora) . "
+    WHERE set_name = 'sync_date'
+", "pigliacelli");
 
-if (!empty($subvettori_mancanti)) {
-    $dettaglio_mancanti = [];
-    foreach ($subvettori_mancanti as $codice_sga => $num_tratte) {
-        $dettaglio_mancanti[] = $codice_sga . ' (' . (int)$num_tratte . ' tratte)';
-    }
-    sc_log_add(
-        "INSERT_TRIPS_OPT_SUB_MANC",
-        "codice_sga non presenti in subvettori: " . implode(', ', $dettaglio_mancanti)
+$riepilogo = 'lette=' . $nLette
+    . ' inserite=' . $nInserite
+    . ' aggiornate=' . $nAggiornate
+    . ' gia_presenti=' . $nGiaPresenti
+    . ' invariate=' . $nInvariate
+    . ' skip_importo=' . $nSkipImporto
+    . ' skip_localita=' . $nSkipLocalita
+    . ' skip_sub_assente=' . $nSkipSub
+    . ' allegato=' . $nAllegato
+    . ' sync_date=' . $now_data_ora;
+t0_log('RIEPILOGO', $riepilogo);
+
+$syncManuale = isset([syncManuale]) ? (int)[syncManuale] : 0;
+if ($syncManuale === 1) {
+    sc_alert(
+        "Import storico T0\n"
+        . "Viaggi letti: " . $nLette . "\n"
+        . "Tratte legacy inserite: " . $nInserite . "\n"
+        . "Tariffe aggiornate: " . $nAggiornate . "\n"
+        . "Gia presenti: " . $nGiaPresenti . "\n"
+        . "Invariate: " . $nInvariate . "\n"
+        . "Scartate (importo): " . $nSkipImporto . "\n"
+        . "Scartate (localita): " . $nSkipLocalita . "\n"
+        . "Subvettore assente: " . $nSkipSub . "\n"
+        . "Allegato aggiornato: " . $nAllegato . "\n"
+        . "sync_date: " . $now_data_ora
     );
 }
 
-// Aggiorna sync_date come check_new_trips_nuovo_contratto: massimo UPDATE/INSERT_DATA_ORA
-// tra i viaggi importati, senza mai farlo arretrare rispetto al valore corrente.
-if ($ultima_sync_data_ora !== null) {
-    sc_lookup(syncRow, "SELECT set_value FROM sec_settings WHERE set_name = 'sync_date'", "pigliacelli");
-    $sync_corrente = !empty({syncRow}) ? (string){syncRow[0][0]} : '';
-
-    if ($sync_corrente === '' || $ultima_sync_data_ora > $sync_corrente) {
-        sc_exec_sql("
-            UPDATE sec_settings
-            SET set_value = " . sql_quote($ultima_sync_data_ora) . "
-            WHERE set_name = 'sync_date'
-        ", "pigliacelli");
-        log_insert_trips('013', 'sync_date aggiornato a ' . $ultima_sync_data_ora);
-    } else {
-        log_insert_trips('013', 'sync_date invariato (corrente ' . $sync_corrente . ' >= ' . $ultima_sync_data_ora . ')');
-    }
-} else {
-    log_insert_trips('013', 'sync_date invariato: nessun viaggio letto');
+} catch (Throwable $e) {
+    t0_log('ERROR', $e->getMessage());
+    t0_unlock();
+    sc_error_message("Import storico T0 interrotto: " . $e->getMessage());
+    return;
 }
 
-log_insert_trips('999', 'Run completata OK | lock rilasciato');
-rilascia_lock_insert_trips();
+t0_unlock();

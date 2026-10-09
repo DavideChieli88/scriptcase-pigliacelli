@@ -1,7 +1,8 @@
 // Scriptcase blank: backfill_tratte_allegato_basevettori
 // Backfill merce, caricatore, proprietario_merce su tratte già importate (v1 / pre-_v2).
-// Legge i dati da SGA con la stessa logica di insert_new_trips_optimized_basevettori_v2
-// e aggiorna solo i campi ancora vuoti su tratte + contratti_tratte collegati.
+// Per ogni campo usa l'ultimo viaggio di quella tratta che ha il valore,
+// non solo l'ultimo viaggio in assoluto (che può averlo vuoto).
+// Aggiorna solo i campi ancora vuoti su tratte + contratti_tratte collegati.
 //
 // Parametri URL:
 //   ?run=1           esegue (dopo conferma)
@@ -96,6 +97,19 @@ function bf_allegato_viaggio_piu_recente($nuovo, $corrente)
     return (int)$nuovo['NUMERO'] > (int)$corrente['NUMERO'];
 }
 
+function bf_allegato_fondi_campo(&$dest, $field, $valore, $viaggio)
+{
+    $valore = trim((string)$valore);
+    if ($valore === '') {
+        return;
+    }
+    $src_key = $field . '_src';
+    if (!isset($dest[$src_key]) || bf_allegato_viaggio_piu_recente($viaggio, $dest[$src_key])) {
+        $dest[$field] = $valore;
+        $dest[$src_key] = $viaggio;
+    }
+}
+
 function bf_allegato_utente_admin()
 {
     $usrLogin = trim((string)[usr_login]);
@@ -181,51 +195,207 @@ function bf_allegato_connetti_sga()
     }
 }
 
-function bf_allegato_carica_localita_bulk($pdo_sga, $societa, $anno)
+function bf_allegato_stmt_errore($stmt)
 {
+    $info = $stmt->errorInfo();
+    if (!is_array($info) || !isset($info[0]) || $info[0] === '00000' || $info[0] === null || $info[0] === '') {
+        return '';
+    }
+    return trim(isset($info[2]) ? (string)$info[2] : (string)$info[0]);
+}
+
+function bf_allegato_errore_connessione($msg)
+{
+    $m = strtolower((string)$msg);
+    return strpos($m, 'connection') !== false
+        || strpos($m, 'communication link') !== false
+        || strpos($m, 'login') !== false
+        || strpos($m, 'server is not') !== false;
+}
+
+function bf_allegato_estremi_numeri($pdo_sga, $societa, $anno)
+{
+    $stmt = $pdo_sga->prepare("
+        SELECT MIN(NUMERO), MAX(NUMERO)
+        FROM T2ViaggiVettori
+        WHERE SOCIETA = :societa
+          AND ANNO = :anno
+    ");
+    $stmt->execute(array('societa' => $societa, 'anno' => $anno));
+    $row = $stmt->fetch(PDO::FETCH_NUM);
+    $stmt->closeCursor();
+    if (!$row || $row[0] === null || $row[1] === null) {
+        return null;
+    }
+    return array((int)$row[0], (int)$row[1]);
+}
+
+function bf_allegato_accumula_localita(&$carichi_map, &$scarichi_map, $row)
+{
+    $key = (int)$row[0] . '|' . (int)$row[1];
+    $op = trim((string)$row[2]);
+    $loc = trim((string)$row[3]);
+    if ($loc === '') {
+        return;
+    }
+    if ($op === 'C') {
+        if (!isset($carichi_map[$key])) {
+            $carichi_map[$key] = array();
+        }
+        $carichi_map[$key][] = $loc;
+    } elseif ($op === 'S') {
+        if (!isset($scarichi_map[$key])) {
+            $scarichi_map[$key] = array();
+        }
+        $scarichi_map[$key][] = $loc;
+    }
+}
+
+function bf_allegato_leggi_localita_intervallo($pdo_sga, $societa, $anno, $da, $a, &$carichi_map, &$scarichi_map, &$skip)
+{
+    if ($da > $a) {
+        return;
+    }
+    if (($a - $da) > 1000) {
+        for ($cursor = $da; $cursor <= $a; $cursor += 1001) {
+            $fine = $a < ($cursor + 1000) ? $a : ($cursor + 1000);
+            bf_allegato_leggi_localita_intervallo($pdo_sga, $societa, $anno, $cursor, $fine, $carichi_map, $scarichi_map, $skip);
+        }
+        return;
+    }
+
     $sql = "
         SELECT ANNO, NUMERO, OPERAZIONE, LOCALITA
         FROM T2ViaggiVettoriClienti
         WHERE SOCIETA = :societa
           AND ANNO = :anno
+          AND NUMERO >= :da
+          AND NUMERO <= :a
           AND OPERAZIONE IN ('C', 'S')
         ORDER BY ANNO, NUMERO, OPERAZIONE, PROGRESSIVO
     ";
-    $stmt = $pdo_sga->prepare($sql);
-    $stmt->execute(array('societa' => $societa, 'anno' => $anno));
-
-    $carichi_map = array();
-    $scarichi_map = array();
-    while (($row = $stmt->fetch(PDO::FETCH_NUM)) !== false) {
-        $key = (int)$row[0] . '|' . (int)$row[1];
-        if ($row[2] === 'C') {
+    $stmt = null;
+    $buffer_carichi = array();
+    $buffer_scarichi = array();
+    try {
+        $stmt = $pdo_sga->prepare($sql);
+        $stmt->execute(array(
+            'societa' => $societa,
+            'anno' => $anno,
+            'da' => $da,
+            'a' => $a,
+        ));
+        while (($row = $stmt->fetch(PDO::FETCH_NUM)) !== false) {
+            bf_allegato_accumula_localita($buffer_carichi, $buffer_scarichi, $row);
+        }
+        $err = bf_allegato_stmt_errore($stmt);
+        $stmt->closeCursor();
+        $stmt = null;
+        if ($err !== '') {
+            throw new RuntimeException($err);
+        }
+        foreach ($buffer_carichi as $key => $locs) {
             if (!isset($carichi_map[$key])) {
                 $carichi_map[$key] = array();
             }
-            $carichi_map[$key][] = $row[3];
-        } elseif ($row[2] === 'S') {
+            foreach ($locs as $loc) {
+                $carichi_map[$key][] = $loc;
+            }
+        }
+        foreach ($buffer_scarichi as $key => $locs) {
             if (!isset($scarichi_map[$key])) {
                 $scarichi_map[$key] = array();
             }
-            $scarichi_map[$key][] = $row[3];
+            foreach ($locs as $loc) {
+                $scarichi_map[$key][] = $loc;
+            }
         }
+    } catch (Throwable $e) {
+        if ($stmt instanceof PDOStatement) {
+            $stmt->closeCursor();
+        }
+        if (bf_allegato_errore_connessione($e->getMessage())) {
+            throw $e;
+        }
+        if ($da >= $a) {
+            $skip[] = $da;
+            if (count($skip) <= 8) {
+                bf_allegato_log('SKIP localita anno=' . $anno . ' numero=' . $da . ' — ' . $e->getMessage());
+            }
+            return;
+        }
+        $mid = (int)(($da + $a) / 2);
+        bf_allegato_leggi_localita_intervallo($pdo_sga, $societa, $anno, $da, $mid, $carichi_map, $scarichi_map, $skip);
+        bf_allegato_leggi_localita_intervallo($pdo_sga, $societa, $anno, $mid + 1, $a, $carichi_map, $scarichi_map, $skip);
     }
-    $stmt->closeCursor();
+}
+
+function bf_allegato_carica_localita_bulk($pdo_sga, $societa, $anno)
+{
+    $carichi_map = array();
+    $scarichi_map = array();
+    $skip = array();
+    $estremi = bf_allegato_estremi_numeri($pdo_sga, $societa, $anno);
+    if ($estremi !== null) {
+        bf_allegato_leggi_localita_intervallo(
+            $pdo_sga,
+            $societa,
+            $anno,
+            $estremi[0],
+            $estremi[1],
+            $carichi_map,
+            $scarichi_map,
+            $skip
+        );
+    }
+    bf_allegato_log(
+        'Localita anno=' . $anno
+        . ' carichi=' . count($carichi_map)
+        . ' scarichi=' . count($scarichi_map)
+        . ' skip=' . count($skip)
+    );
 
     return array($carichi_map, $scarichi_map);
 }
 
-function bf_allegato_carica_allegato_bulk($pdo_sga, $societa, $anno)
+function bf_allegato_accumula_riga(&$map, $row)
 {
-    $sql = "
-        SELECT
-            vc.ANNO,
-            vc.NUMERO,
-            RTRIM(t.CARICO_RAGIONE_SOCIALE) AS caricatore,
-            RTRIM(b.RAGIONE_SOCIALE) AS proprietario_merce,
-            RTRIM(m.MERCE_CODICE) AS merce_codice,
-            RTRIM(m.MERCE_DESCRIZIONE) AS merce_descrizione,
-            vc.PROGRESSIVO
+    $key = (int)$row[0] . '|' . (int)$row[1];
+    if (!isset($map[$key])) {
+        $map[$key] = array(
+            'caricatore' => null,
+            'proprietario_merce' => null,
+            'merce_parts' => array(),
+        );
+    }
+
+    $c = trim((string)$row[2]);
+    if ($map[$key]['caricatore'] === null && $c !== '') {
+        $map[$key]['caricatore'] = $c;
+    }
+
+    $p = trim((string)$row[3]);
+    if ($map[$key]['proprietario_merce'] === null && $p !== '') {
+        $map[$key]['proprietario_merce'] = $p;
+    }
+
+    $label = bf_allegato_merce_label($row[4], $row[5]);
+    if ($label !== '' && !in_array($label, $map[$key]['merce_parts'], true)) {
+        $map[$key]['merce_parts'][] = $label;
+    }
+}
+
+function bf_allegato_sql_testo($expr, $sanitized)
+{
+    if (!$sanitized) {
+        return 'RTRIM(' . $expr . ')';
+    }
+    return "CONVERT(NVARCHAR(400), REPLACE(REPLACE(REPLACE(COALESCE(RTRIM(" . $expr . "), ''), CHAR(0), ''), CHAR(1), ''), CHAR(127), ''))";
+}
+
+function bf_allegato_sql_from($societa, $anno, $da, $a)
+{
+    return "
         FROM T2ViaggiVettoriClienti vc
         INNER JOIN T2ViaggiClientiCarichiScarichi t
             ON t.SOCIETA = vc.SOCIETA
@@ -233,12 +403,12 @@ function bf_allegato_carica_allegato_bulk($pdo_sga, $societa, $anno)
            AND t.FILIALE = vc.CLIENTE_FILIALE
            AND t.NUMERO = vc.CLIENTE_NUMERO
            AND t.NUMERO_CARICO_SCARICO = vc.CLIENTE_NUMERO_CARICO_SCARICO
-        INNER JOIN T2ViaggiClienti vcl
+        LEFT JOIN T2ViaggiClienti vcl
             ON vcl.SOCIETA = t.SOCIETA
            AND vcl.ANNO = t.ANNO
            AND vcl.FILIALE = t.FILIALE
            AND vcl.NUMERO = t.NUMERO
-        INNER JOIN BaCliFor b
+        LEFT JOIN BaCliFor b
             ON b.SOCIETA = vcl.SOCIETA
            AND b.CLIENTE_FORNITORE = 'C'
            AND b.CODICE = vcl.CLIENTE
@@ -248,41 +418,162 @@ function bf_allegato_carica_allegato_bulk($pdo_sga, $societa, $anno)
            AND m.FILIALE = t.FILIALE
            AND m.NUMERO = t.NUMERO
            AND m.NUMERO_CARICO_SCARICO = t.NUMERO_CARICO_SCARICO
-        WHERE vc.SOCIETA = :societa
-          AND vc.ANNO = :anno
+        WHERE vc.SOCIETA = " . (int)$societa . "
+          AND vc.ANNO = " . (int)$anno . "
+          AND vc.NUMERO >= " . (int)$da . "
+          AND vc.NUMERO <= " . (int)$a . "
           AND vc.OPERAZIONE = 'C'
+    ";
+}
+
+function bf_allegato_conta_righe($pdo_sga, $societa, $anno, $da, $a)
+{
+    $stmt = $pdo_sga->query("SELECT COUNT(*) " . bf_allegato_sql_from($societa, $anno, $da, $a));
+    $row = $stmt->fetch(PDO::FETCH_NUM);
+    $stmt->closeCursor();
+    return (int)$row[0];
+}
+
+function bf_allegato_probe_direct($pdo_sga, $societa, $anno, $numero)
+{
+    $sql = "
+        SELECT
+            vc.ANNO,
+            vc.NUMERO,
+            " . bf_allegato_sql_testo('t.CARICO_RAGIONE_SOCIALE', true) . ",
+            " . bf_allegato_sql_testo('b.RAGIONE_SOCIALE', true) . ",
+            " . bf_allegato_sql_testo('m.MERCE_CODICE', true) . ",
+            " . bf_allegato_sql_testo('m.MERCE_DESCRIZIONE', true) . "
+        " . bf_allegato_sql_from($societa, $anno, $numero, $numero);
+    try {
+        $stmt = $pdo_sga->query($sql);
+        $n = 0;
+        $caric = '';
+        $prop = '';
+        $parts = array();
+        while (($row = $stmt->fetch(PDO::FETCH_NUM)) !== false) {
+            $n++;
+            if ($caric === '' && trim((string)$row[2]) !== '') {
+                $caric = trim((string)$row[2]);
+            }
+            if ($prop === '' && trim((string)$row[3]) !== '') {
+                $prop = trim((string)$row[3]);
+            }
+            $label = bf_allegato_merce_label($row[4], $row[5]);
+            if ($label !== '' && !in_array($label, $parts, true)) {
+                $parts[] = $label;
+            }
+        }
+        $stmt->closeCursor();
+        return 'righe=' . $n
+            . ' caric=[' . $caric . ']'
+            . ' prop=[' . $prop . ']'
+            . ' merce=[' . implode('; ', $parts) . ']';
+    } catch (Throwable $e) {
+        return 'ERRORE ' . $e->getMessage();
+    }
+}
+
+function bf_allegato_leggi_allegato_intervallo($pdo_sga, $societa, $anno, $da, $a, &$map, &$skip, $sanitized = false)
+{
+    if ($da > $a) {
+        return;
+    }
+    if (($a - $da) > 1000) {
+        for ($cursor = $da; $cursor <= $a; $cursor += 1001) {
+            $fine = $a < ($cursor + 1000) ? $a : ($cursor + 1000);
+            bf_allegato_leggi_allegato_intervallo($pdo_sga, $societa, $anno, $cursor, $fine, $map, $skip, $sanitized);
+        }
+        return;
+    }
+
+    $sql = "
+        SELECT
+            vc.ANNO,
+            vc.NUMERO,
+            " . bf_allegato_sql_testo('t.CARICO_RAGIONE_SOCIALE', $sanitized) . ",
+            " . bf_allegato_sql_testo('b.RAGIONE_SOCIALE', $sanitized) . ",
+            " . bf_allegato_sql_testo('m.MERCE_CODICE', $sanitized) . ",
+            " . bf_allegato_sql_testo('m.MERCE_DESCRIZIONE', $sanitized) . "
+        " . bf_allegato_sql_from($societa, $anno, $da, $a) . "
         ORDER BY vc.ANNO, vc.NUMERO, vc.PROGRESSIVO, m.MERCE_CODICE
     ";
-    $stmt = $pdo_sga->prepare($sql);
-    $stmt->execute(array('societa' => $societa, 'anno' => $anno));
-
-    $map = array();
-    while (($row = $stmt->fetch(PDO::FETCH_NUM)) !== false) {
-        $key = (int)$row[0] . '|' . (int)$row[1];
-        if (!isset($map[$key])) {
-            $map[$key] = array(
-                'caricatore' => null,
-                'proprietario_merce' => null,
-                'merce_parts' => array(),
-            );
+    $stmt = null;
+    $buffer = array();
+    try {
+        $stmt = $pdo_sga->query($sql);
+        $nFetched = 0;
+        while (($row = $stmt->fetch(PDO::FETCH_NUM)) !== false) {
+            bf_allegato_accumula_riga($buffer, $row);
+            $nFetched++;
         }
-
-        $c = trim((string)$row[2]);
-        if ($map[$key]['caricatore'] === null && $c !== '') {
-            $map[$key]['caricatore'] = $c;
+        $err = bf_allegato_stmt_errore($stmt);
+        $stmt->closeCursor();
+        $stmt = null;
+        if ($err !== '') {
+            throw new RuntimeException($err);
         }
-
-        $p = trim((string)$row[3]);
-        if ($map[$key]['proprietario_merce'] === null && $p !== '') {
-            $map[$key]['proprietario_merce'] = $p;
+        $attese = bf_allegato_conta_righe($pdo_sga, $societa, $anno, $da, $a);
+        if ($nFetched < $attese) {
+            throw new RuntimeException('fetch incompleto ' . $nFetched . '/' . $attese);
         }
-
-        $label = bf_allegato_merce_label($row[4], $row[5]);
-        if ($label !== '' && !in_array($label, $map[$key]['merce_parts'], true)) {
-            $map[$key]['merce_parts'][] = $label;
+        foreach ($buffer as $key => $entry) {
+            if (!isset($map[$key])) {
+                $map[$key] = $entry;
+                continue;
+            }
+            if ($map[$key]['caricatore'] === null && $entry['caricatore'] !== null) {
+                $map[$key]['caricatore'] = $entry['caricatore'];
+            }
+            if ($map[$key]['proprietario_merce'] === null && $entry['proprietario_merce'] !== null) {
+                $map[$key]['proprietario_merce'] = $entry['proprietario_merce'];
+            }
+            foreach ($entry['merce_parts'] as $label) {
+                if (!in_array($label, $map[$key]['merce_parts'], true)) {
+                    $map[$key]['merce_parts'][] = $label;
+                }
+            }
         }
+    } catch (Throwable $e) {
+        if ($stmt instanceof PDOStatement) {
+            $stmt->closeCursor();
+        }
+        if (bf_allegato_errore_connessione($e->getMessage())) {
+            throw $e;
+        }
+        if ($da >= $a) {
+            if (!$sanitized) {
+                bf_allegato_leggi_allegato_intervallo($pdo_sga, $societa, $anno, $da, $a, $map, $skip, true);
+                return;
+            }
+            $skip[] = $da;
+            if (count($skip) <= 8) {
+                bf_allegato_log('SKIP allegato anno=' . $anno . ' numero=' . $da . ' — ' . $e->getMessage());
+            }
+            return;
+        }
+        $mid = (int)(($da + $a) / 2);
+        bf_allegato_leggi_allegato_intervallo($pdo_sga, $societa, $anno, $da, $mid, $map, $skip, $sanitized);
+        bf_allegato_leggi_allegato_intervallo($pdo_sga, $societa, $anno, $mid + 1, $a, $map, $skip, $sanitized);
     }
-    $stmt->closeCursor();
+}
+
+function bf_allegato_carica_allegato_bulk($pdo_sga, $societa, $anno)
+{
+    $map = array();
+    $skip = array();
+    $estremi = bf_allegato_estremi_numeri($pdo_sga, $societa, $anno);
+    if ($estremi !== null) {
+        bf_allegato_leggi_allegato_intervallo(
+            $pdo_sga,
+            $societa,
+            $anno,
+            $estremi[0],
+            $estremi[1],
+            $map,
+            $skip
+        );
+    }
 
     $out = array();
     foreach ($map as $key => $entry) {
@@ -292,6 +583,12 @@ function bf_allegato_carica_allegato_bulk($pdo_sga, $societa, $anno)
             'merce' => count($entry['merce_parts']) > 0 ? implode('; ', $entry['merce_parts']) : null,
         );
     }
+
+    bf_allegato_log(
+        'Allegato anno=' . $anno
+        . ' viaggi=' . count($out)
+        . ' skip=' . count($skip)
+    );
 
     return $out;
 }
@@ -328,7 +625,23 @@ function bf_allegato_costruisci_indice_sga($pdo_sga, $societa, $anno_da, $anno_a
         list($carichi_map, $scarichi_map) = bf_allegato_carica_localita_bulk($pdo_sga, $societa, $anno);
         $allegato_map = bf_allegato_carica_allegato_bulk($pdo_sga, $societa, $anno);
 
-        $viaggi_unici = array();
+        if ((int)$anno === 2024) {
+            $probe_key = '2024|133715';
+            $probe_carico = isset($carichi_map[$probe_key]) ? implode(' + ', $carichi_map[$probe_key]) : '';
+            $probe_scarico = isset($scarichi_map[$probe_key]) ? implode(' + ', $scarichi_map[$probe_key]) : '';
+            $probe_all = isset($allegato_map[$probe_key]) ? $allegato_map[$probe_key] : null;
+            bf_allegato_log(
+                'PROBE viaggio ' . $probe_key
+                . ' carico=[' . $probe_carico . ']'
+                . ' scarico=[' . $probe_scarico . ']'
+                . ' caric=[' . ($probe_all ? (string)$probe_all['caricatore'] : '') . ']'
+                . ' prop=[' . ($probe_all ? (string)$probe_all['proprietario_merce'] : '') . ']'
+                . ' merce=[' . ($probe_all ? (string)$probe_all['merce'] : '') . ']'
+                . ($probe_all ? '' : ' allegato=ASSENTE')
+            );
+            bf_allegato_log('PROBE direct ' . $probe_key . ' ' . bf_allegato_probe_direct($pdo_sga, $societa, 2024, 133715));
+        }
+
         foreach ($viaggi_rows as $row_sga) {
             $row_anno = $row_sga[1];
             $numero = $row_sga[2];
@@ -359,35 +672,37 @@ function bf_allegato_costruisci_indice_sga($pdo_sga, $societa, $anno_da, $anno_a
             }
 
             $route_key = bf_allegato_route_key($codice_vettore, $carico_str, $scarico_str);
-            $viaggio = array(
+            if (!isset($route_map[$route_key])) {
+                $route_map[$route_key] = array(
+                    'caricatore' => null,
+                    'proprietario_merce' => null,
+                    'merce' => null,
+                );
+            }
+            $confronto = array(
                 'ANNO' => $row_anno,
                 'NUMERO' => $numero,
-                'codice_vettore' => $codice_vettore,
-                'carico_str' => $carico_str,
-                'scarico_str' => $scarico_str,
-                'caricatore' => $caricatore,
-                'proprietario_merce' => $proprietario_merce,
-                'merce' => $merce,
                 'partenza_data_ora' => $partenza_data_ora,
                 'sync_data_ora' => $sync_data_ora,
             );
-
-            if (!isset($viaggi_unici[$route_key]) || bf_allegato_viaggio_piu_recente($viaggio, $viaggi_unici[$route_key])) {
-                $viaggi_unici[$route_key] = $viaggio;
-            }
+            bf_allegato_fondi_campo($route_map[$route_key], 'caricatore', $caricatore, $confronto);
+            bf_allegato_fondi_campo($route_map[$route_key], 'proprietario_merce', $proprietario_merce, $confronto);
+            bf_allegato_fondi_campo($route_map[$route_key], 'merce', $merce, $confronto);
         }
 
-        foreach ($viaggi_unici as $route_key => $viaggio) {
-            if (!isset($route_map[$route_key]) || bf_allegato_viaggio_piu_recente($viaggio, $route_map[$route_key])) {
-                $route_map[$route_key] = array(
-                    'caricatore' => $viaggio['caricatore'],
-                    'proprietario_merce' => $viaggio['proprietario_merce'],
-                    'merce' => $viaggio['merce'],
-                );
-            }
-        }
+        unset($viaggi_rows, $carichi_map, $scarichi_map, $allegato_map);
+    }
 
-        unset($viaggi_rows, $carichi_map, $scarichi_map, $allegato_map, $viaggi_unici);
+    $probe_route = bf_allegato_route_key('1128', 'Supino', 'LONIGO');
+    if (isset($route_map[$probe_route])) {
+        bf_allegato_log(
+            'PROBE route ' . $probe_route
+            . ' caric=[' . (string)$route_map[$probe_route]['caricatore'] . ']'
+            . ' prop=[' . (string)$route_map[$probe_route]['proprietario_merce'] . ']'
+            . ' merce=[' . (string)$route_map[$probe_route]['merce'] . ']'
+        );
+    } else {
+        bf_allegato_log('PROBE route ' . $probe_route . ' ASSENTE');
     }
 
     return $route_map;
@@ -536,6 +851,7 @@ function bf_allegato_mostra_conferma()
     echo '<li>Aggiorna solo campi ancora <strong>vuoti</strong> su <code>tratte</code></li>';
     echo '<li>Propaga su <code>contratti_tratte</code> collegati (solo campi vuoti)</li>';
     echo '<li>Match tratta ↔ SGA: <code>codice_sga + carico + scarico</code> (case-insensitive)</li>';
+    echo '<li>Per ogni campo usa l\'ultimo viaggio che ha quel valore, non solo l\'ultimo viaggio</li>';
     echo '</ul>';
     echo '<p class="warn">Operazione riservata agli admin. Può richiedere diversi minuti.</p>';
     echo '<p><a class="btn go" href="?run=1">Esegui backfill</a>';

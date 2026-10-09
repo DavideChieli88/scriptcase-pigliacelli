@@ -160,13 +160,14 @@ if (
 // 7 Rifiutato dal subvettore
 // 8 Rifiutato dal committente
 
-// select_new_contract, show_contract_signed, send_contract_to_sign, send_magic_link_to_subvector, change_subvector_email
+// select_new_contract, show_contract_signed, send_contract_to_sign, send_magic_link_to_subvector, change_subvector_email, resend_committente_sign_link
 switch ($stato) {
     case 6: // Completato
         sc_actionbar_hide("select_new_contract");
         sc_actionbar_show("show_contract_signed");
         sc_actionbar_hide("send_contract_to_sign");
         sc_actionbar_hide("send_magic_link_to_subvector");
+        sc_actionbar_hide("resend_committente_sign_link");
         break;
 
     case 7: // Rifiutato dal subvettore
@@ -175,6 +176,7 @@ switch ($stato) {
         sc_actionbar_hide("show_contract_signed");
         sc_actionbar_hide("send_contract_to_sign");
         sc_actionbar_hide("send_magic_link_to_subvector");
+        sc_actionbar_hide("resend_committente_sign_link");
         break;
 
     case 3: // Compilato dal subvettore — revisione admin + avvio firma
@@ -182,6 +184,7 @@ switch ($stato) {
         sc_actionbar_hide("show_contract_signed");
         sc_actionbar_show("send_contract_to_sign");
         sc_actionbar_hide("send_magic_link_to_subvector");
+        sc_actionbar_hide("resend_committente_sign_link");
         break;
 
     case 4: // In attesa della firma subvettore
@@ -189,6 +192,7 @@ switch ($stato) {
         sc_actionbar_show("show_contract_signed");
         sc_actionbar_show("send_contract_to_sign");
         sc_actionbar_hide("send_magic_link_to_subvector");
+        sc_actionbar_hide("resend_committente_sign_link");
         break;
 
     case 5: // In attesa della firma committente
@@ -196,6 +200,7 @@ switch ($stato) {
         sc_actionbar_show("show_contract_signed");
         sc_actionbar_hide("send_contract_to_sign");
         sc_actionbar_hide("send_magic_link_to_subvector");
+        sc_actionbar_show("resend_committente_sign_link");
         break;
 
     case 1: // Da inviare al subvettore
@@ -205,5 +210,6 @@ switch ($stato) {
         sc_actionbar_show("select_new_contract");
         sc_actionbar_hide("show_contract_signed");
         sc_actionbar_hide("send_contract_to_sign");
+        sc_actionbar_hide("resend_committente_sign_link");
         break;
 }

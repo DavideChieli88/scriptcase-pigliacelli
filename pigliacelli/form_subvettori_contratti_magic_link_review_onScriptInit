@@ -6,3 +6,11 @@
  */
 
 sc_ajax_javascript('mlReviewHideSaveInit');
+
+sc_apl_conf('form_contratti_tratte', 'insert', 'off');
+sc_apl_conf('form_contratti_tratte', 'update', 'off');
+sc_apl_conf('form_contratti_tratte', 'delete', 'off');
+
+sc_apl_conf('subvettori_autisti', 'insert', 'off');
+sc_apl_conf('subvettori_autisti', 'update', 'off');
+sc_apl_conf('subvettori_autisti', 'delete', 'off');

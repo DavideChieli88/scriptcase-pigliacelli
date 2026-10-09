@@ -1,15 +1,14 @@
 // Scriptcase app: check_new_trips_nuovo_contratto_basevettori_v2
-// Come _basevettori ma popola merce, caricatore, proprietario_merce da SGA (Cerroni 09/07/2026).
-// Versione T2BaseVettori: JOIN T2BaseVettori al posto di BaCliFor per anagrafica vettore.
-// App parallela a check_new_trips_nuovo_contratto (originale BaCliFor).
-// A fine job: un contratto per run con SOLO le tratte rilevate in quel ciclo.
-// Subvettore NUOVO (creato nel run): un solo contratto tipo 1 con tutte le nuove tratte.
-// Subvettore ESISTENTE: contratto tipo 2 con le nuove tratte (assenti in `tratte`
-// per quel subvettore_id, non globalmente); tipo 3 se variano tariffe su tratte
-// gia' presenti a DB per quel subvettore prima del run.
-// Senza mail automatica (credenziali: app _credenziali).
-// Multi-utenza: email SGA diversa → nuova utenza, disabilita vecchia, aggiorna login_subvettore.
-// Autisti onboarding: aggancia_autisti_onboarding_a_contratto() in crea_contratto_subvettore.
+// Job incrementale (pulsante manuale e schedulato). Lo storico cartaceo e' insert_new_trips_optimized_basevettori_v2.
+// Non crea subvettori ne utenze. Codice SGA gia in anagrafica (upsert_subvectors_basevettori).
+// Wizard non completo: il viaggio non si importa. sync_date avanza lo stesso.
+// Al run successivo, se wizard_complete = 1 e il subvettore non ha nessuna tratta,
+// si importano tutti i viaggi SGA ANNO >= 2024 e nasce un solo tipo 1.
+// Se ha gia tratte (anche legacy = 1): tipo 2 tratta nuova, tipo 3 tariffa cambiata. Mai un tipo 1.
+// Senza mail. Resoconto HTML se la richiesta arriva da un browser (click da menu).
+// Non passare syncManuale nell'URL del menu: app_menu si ricarica in continuazione.
+// Lock check_new_trips: un secondo click o uno schedule sovrapposto esce subito.
+// Prima di eseguire: migration_tratte_legacy.sql (colonna tratte.legacy).
 function sql_quote($v) {
     if ($v === null) return "NULL";
     return "'" . str_replace("'", "''", (string)$v) . "'";
@@ -22,6 +21,20 @@ function allegato_testo_sql($v) {
     $v = trim((string)$v);
     if ($v === '') return "NULL";
     return sql_quote($v);
+}
+function allegato_campo_vuoto($v) {
+    return trim((string)$v) === '';
+}
+function aggiorna_allegato_tratta($tratta_id, $merce, $caricatore, $proprietario_merce) {
+    $set = array();
+    if (!allegato_campo_vuoto($merce)) $set[] = "merce = " . allegato_testo_sql($merce);
+    if (!allegato_campo_vuoto($caricatore)) $set[] = "caricatore = " . allegato_testo_sql($caricatore);
+    if (!allegato_campo_vuoto($proprietario_merce)) $set[] = "proprietario_merce = " . allegato_testo_sql($proprietario_merce);
+    if (count($set) === 0) return;
+    sc_exec_sql(
+        "UPDATE tratte SET " . implode(', ', $set) . " WHERE id = " . sql_num($tratta_id),
+        "pigliacelli"
+    );
 }
 function merce_label_da_riga($codice, $descrizione) {
     $codice = trim((string)$codice);
@@ -100,16 +113,6 @@ function crea_contratto_subvettore($tipo_contratto_id, $intestatario, $subvettor
         VALUES
           (" . sql_num($subvettore_id) . ", " . sql_num($contratto_id) . ")
     ", "pigliacelli");
-
-    sc_lookup(lastSubContrattoId, "SELECT LAST_INSERT_ID()", "pigliacelli");
-    $subvettore_contratto_id = 0;
-    if (!empty({lastSubContrattoId[0][0]})) {
-        $subvettore_contratto_id = (int){lastSubContrattoId[0][0]};
-    }
-
-    if ($subvettore_contratto_id > 0) {
-        aggancia_autisti_onboarding_a_contratto((int)$subvettore_id, $subvettore_contratto_id);
-    }
 
     return $contratto_id;
 }
@@ -362,6 +365,89 @@ function consolida_contratto_tipo3_run($subvettore_id, $intestatario, $tratte_mo
 }
 
 /**
+ * Wizard finito e nessun tipo 1: crea il quadro con tutte le tratte a tariffa valida.
+ * Copre anche le tratte salvate nei giri precedenti, fuori dalla finestra sync_date.
+ */
+function crea_quadri_wizard_senza_tipo1() {
+    sc_lookup(rsQuadriMancanti, "
+        SELECT s.id,
+               COALESCE(NULLIF(TRIM(s.login_subvettore), ''), CONCAT('SUBVETTORE_', s.id))
+        FROM subvettori s
+        WHERE COALESCE(s.wizard_complete, 0) = 1
+          AND NOT EXISTS (
+                SELECT 1
+                FROM subvettori_contratti sc
+                INNER JOIN contratti c ON c.id = sc.contratto_id
+                WHERE sc.subvettore_id = s.id
+                  AND c.tipo_contratto_id = 1
+          )
+          AND EXISTS (
+                SELECT 1
+                FROM tratte t
+                WHERE t.subvettore_id = s.id
+                  AND t.tariffa IS NOT NULL
+                  AND t.tariffa > 0
+          )
+    ", "pigliacelli");
+
+    $subs = array();
+    if (!empty({rsQuadriMancanti})) {
+        foreach ({rsQuadriMancanti} as $row) {
+            $subs[] = array((int)$row[0], trim((string)$row[1]));
+        }
+    }
+
+    $nContratti = 0;
+    $nTratte = 0;
+    foreach ($subs as $pair) {
+        $sid = (int)$pair[0];
+        $intest = $pair[1] !== '' ? $pair[1] : ('SUBVETTORE_' . $sid);
+        if ($sid <= 0) {
+            continue;
+        }
+
+        sc_lookup(rsTratteQuadro, "
+            SELECT id
+            FROM tratte
+            WHERE subvettore_id = " . sql_num($sid) . "
+              AND tariffa IS NOT NULL
+              AND tariffa > 0
+        ", "pigliacelli");
+
+        $ids = array();
+        if (!empty({rsTratteQuadro})) {
+            foreach ({rsTratteQuadro} as $tr) {
+                $ids[] = (int)$tr[0];
+            }
+        }
+        $ids = filtra_tratte_importo_valido($ids);
+        if (empty($ids)) {
+            continue;
+        }
+
+        $contratto_id = crea_contratto_subvettore(1, $intest, $sid);
+        if ($contratto_id === null) {
+            continue;
+        }
+
+        foreach ($ids as $tratta_id) {
+            allega_tratta_a_contratto($contratto_id, $tratta_id);
+        }
+
+        $nContratti++;
+        $nTratte += count($ids);
+        log_export_tratte(
+            'NUOVO_CONTRATTO',
+            'tipo=1 subvettore=' . $sid .
+            ' contratto=' . (int)$contratto_id .
+            ' tratte=' . count($ids)
+        );
+    }
+
+    return array($nContratti, $nTratte);
+}
+
+/**
  * Solo per assicurare un legame gia esistente (nessuna variazione): riusa il contratto
  * gia collegato alla tratta, senza crearne uno nuovo.
  */
@@ -554,12 +640,33 @@ function importo_unitario_valido($value) {
     return round((float)$value, 2) > 0;
 }
 
+function importo_unitario_testo($value) {
+    if ($value === null) {
+        return '';
+    }
+    $value = trim((string)$value);
+    if ($value === '') {
+        return '';
+    }
+    $value = str_replace(' ', '', $value);
+    if (strpos($value, ',') !== false && strpos($value, '.') !== false) {
+        $value = str_replace('.', '', $value);
+        $value = str_replace(',', '.', $value);
+    } elseif (strpos($value, ',') !== false) {
+        $value = str_replace(',', '.', $value);
+    }
+    return $value;
+}
+
 function importo_unitario_normalizzato($value) {
     if ($value === null) {
         return null;
     }
-    if (is_string($value) && trim($value) === '') {
-        return null;
+    if (is_string($value)) {
+        $value = importo_unitario_testo($value);
+        if ($value === '') {
+            return null;
+        }
     }
     if (!is_numeric($value)) {
         return null;
@@ -1171,21 +1278,52 @@ function viaggio_piu_recente($nuovo, $corrente) {
     return (int)$nuovo['NUMERO'] > (int)$corrente['NUMERO'];
 }
 
-function carica_localita_viaggio($stmt_localita, $societa, $anno, $numero) {
-    $stmt_localita->execute([
-        'societa' => $societa,
-        'anno' => $anno,
-        'numero' => $numero,
-    ]);
+function tieni_allegato_viaggio(&$dest, $src) {
+    $confronto = array(
+        'partenza_data_ora' => $src['partenza_data_ora'],
+        'ANNO' => $src['ANNO'],
+        'NUMERO' => $src['NUMERO'],
+    );
+    foreach (array('caricatore', 'proprietario_merce', 'merce') as $campo) {
+        if (trim((string)$src[$campo]) === '') {
+            continue;
+        }
+        $src_key = $campo . '_src';
+        if (!isset($dest[$src_key]) || viaggio_piu_recente($confronto, $dest[$src_key])) {
+            $dest[$campo] = $src[$campo];
+            $dest[$src_key] = $confronto;
+        }
+    }
+}
+
+function sga_sql_int($v) {
+    return (string)(int)$v;
+}
+
+function carica_localita_viaggio($pdo_sga, $societa, $anno, $numero) {
+    $stmt_localita = $pdo_sga->query("
+        SELECT OPERAZIONE, LOCALITA
+        FROM T2ViaggiVettoriClienti
+        WHERE SOCIETA = " . sga_sql_int($societa) . "
+          AND ANNO = " . sga_sql_int($anno) . "
+          AND NUMERO = " . sga_sql_int($numero) . "
+          AND OPERAZIONE IN ('C', 'S')
+        ORDER BY OPERAZIONE, PROGRESSIVO
+    ");
 
     $carichi = [];
     $scarichi = [];
 
     while (($row = $stmt_localita->fetch(PDO::FETCH_NUM)) !== false) {
-        if ($row[0] === 'C') {
-            $carichi[] = $row[1];
-        } elseif ($row[0] === 'S') {
-            $scarichi[] = $row[1];
+        $op = trim((string)$row[0]);
+        $loc = trim((string)$row[1]);
+        if ($loc === '') {
+            continue;
+        }
+        if ($op === 'C') {
+            $carichi[] = $loc;
+        } elseif ($op === 'S') {
+            $scarichi[] = $loc;
         }
     }
     $stmt_localita->closeCursor();
@@ -1196,39 +1334,68 @@ function carica_localita_viaggio($stmt_localita, $societa, $anno, $numero) {
     ];
 }
 
-function carica_extra_viaggio($stmt_extra, $societa, $anno, $numero) {
-    $stmt_extra->execute([
-        'societa' => $societa,
-        'anno' => $anno,
-        'numero' => $numero,
-    ]);
+function carica_extra_viaggio($pdo_sga, $societa, $anno, $numero) {
+    $stmt_extra = $pdo_sga->query("
+        SELECT COALESCE(SUM(IMPORTO_TOTALE), 0)
+        FROM T2ViaggiVettoriAddebiti
+        WHERE SOCIETA = " . sga_sql_int($societa) . "
+          AND ANNO = " . sga_sql_int($anno) . "
+          AND NUMERO = " . sga_sql_int($numero) . "
+    ");
 
     $extra = $stmt_extra->fetchColumn();
     $stmt_extra->closeCursor();
     return $extra === null || $extra === false ? 0 : $extra;
 }
 
-function carica_allegato_viaggio($stmt_allegato, $societa, $anno, $numero) {
-    $stmt_allegato->execute([
-        'societa' => $societa,
-        'anno' => $anno,
-        'numero' => $numero,
-    ]);
+function carica_allegato_viaggio($pdo_sga, $societa, $anno, $numero) {
+    $stmt_allegato = $pdo_sga->query("
+        SELECT
+            RTRIM(t.CARICO_RAGIONE_SOCIALE) AS caricatore,
+            RTRIM(b.RAGIONE_SOCIALE) AS proprietario_merce,
+            RTRIM(m.MERCE_CODICE) AS merce_codice,
+            RTRIM(m.MERCE_DESCRIZIONE) AS merce_descrizione
+        FROM T2ViaggiVettoriClienti vc
+        INNER JOIN T2ViaggiClientiCarichiScarichi t
+            ON t.SOCIETA = vc.SOCIETA
+           AND t.ANNO = vc.CLIENTE_ANNO
+           AND t.FILIALE = vc.CLIENTE_FILIALE
+           AND t.NUMERO = vc.CLIENTE_NUMERO
+           AND t.NUMERO_CARICO_SCARICO = vc.CLIENTE_NUMERO_CARICO_SCARICO
+        LEFT JOIN T2ViaggiClienti vcl
+            ON vcl.SOCIETA = t.SOCIETA
+           AND vcl.ANNO = t.ANNO
+           AND vcl.FILIALE = t.FILIALE
+           AND vcl.NUMERO = t.NUMERO
+        LEFT JOIN BaCliFor b
+            ON b.SOCIETA = vcl.SOCIETA
+           AND b.CLIENTE_FORNITORE = 'C'
+           AND b.CODICE = vcl.CLIENTE
+        LEFT JOIN T2ViaggiClientiCarichiScarichiMerci m
+            ON m.SOCIETA = t.SOCIETA
+           AND m.ANNO = t.ANNO
+           AND m.FILIALE = t.FILIALE
+           AND m.NUMERO = t.NUMERO
+           AND m.NUMERO_CARICO_SCARICO = t.NUMERO_CARICO_SCARICO
+        WHERE vc.SOCIETA = " . sga_sql_int($societa) . "
+          AND vc.ANNO = " . sga_sql_int($anno) . "
+          AND vc.NUMERO = " . sga_sql_int($numero) . "
+          AND vc.OPERAZIONE = 'C'
+        ORDER BY vc.PROGRESSIVO, m.MERCE_CODICE
+    ");
 
     $caricatore = null;
     $proprietario_merce = null;
     $merce_parts = [];
 
     while (($row = $stmt_allegato->fetch(PDO::FETCH_NUM)) !== false) {
-        if ($caricatore === null) {
-            $c = trim((string)$row[0]);
-            if ($c !== '') {
-                $caricatore = $c;
-            }
-            $p = trim((string)$row[1]);
-            if ($p !== '') {
-                $proprietario_merce = $p;
-            }
+        $c = trim((string)$row[0]);
+        if ($caricatore === null && $c !== '') {
+            $caricatore = $c;
+        }
+        $p = trim((string)$row[1]);
+        if ($proprietario_merce === null && $p !== '') {
+            $proprietario_merce = $p;
         }
 
         $label = merce_label_da_riga($row[2], $row[3]);
@@ -1241,6 +1408,55 @@ function carica_allegato_viaggio($stmt_allegato, $societa, $anno, $numero) {
     $merce = count($merce_parts) > 0 ? implode('; ', $merce_parts) : null;
 
     return [$caricatore, $proprietario_merce, $merce];
+}
+
+function html_resoconto_sync($titolo, $nota, array $voci) {
+    echo '<div style="width:100%;display:flex;justify-content:center">';
+    echo '<div style="font-family:Segoe UI,Tahoma,sans-serif;width:100%;max-width:760px;margin:12px 0 28px;background:#fff;border:1px solid #e4dced;border-radius:14px;overflow:hidden;box-shadow:0 8px 24px rgba(80,40,110,.08)">';
+    echo '<div style="background:#6d3d91;color:#fff;padding:16px 20px;font-size:18px;font-weight:650;letter-spacing:.01em">' . htmlspecialchars($titolo, ENT_QUOTES, 'UTF-8') . '</div>';
+    echo '<div style="padding:18px 20px 20px">';
+    if ($nota !== '') {
+        echo '<p style="display:inline-block;margin:0 0 16px;padding:6px 12px;border-radius:999px;background:#efe6f6;color:#5b2d82;font-size:14px;font-weight:650;line-height:1.3">' . htmlspecialchars($nota, ENT_QUOTES, 'UTF-8') . '</p>';
+    }
+    if (count($voci) > 0) {
+        echo '<div style="display:flex;flex-wrap:wrap;gap:12px">';
+        foreach ($voci as $label => $valore) {
+            echo '<div style="flex:1 1 130px;min-width:130px;background:#f6f2fa;border-radius:12px;padding:14px 16px">';
+            echo '<div style="font-size:26px;font-weight:700;color:#3b2458;line-height:1">' . (int)$valore . '</div>';
+            echo '<div style="margin-top:6px;font-size:12px;color:#6d647c;line-height:1.3">' . htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . '</div>';
+            echo '</div>';
+        }
+        echo '</div>';
+    }
+    echo '</div></div></div>';
+}
+
+function acquisisci_lock_check_new_trips() {
+    sc_lookup(rsLockCnt, "SELECT GET_LOCK('check_new_trips_run', 0)", "pigliacelli");
+    return !empty({rsLockCnt}) && (int){rsLockCnt[0][0]} === 1;
+}
+function rilascia_lock_check_new_trips() {
+    sc_lookup(rsUnlockCnt, "SELECT RELEASE_LOCK('check_new_trips_run')", "pigliacelli");
+}
+
+$syncManualeRichiesto = 0;
+$agentMenu = isset($_SERVER['HTTP_USER_AGENT']) ? trim((string)$_SERVER['HTTP_USER_AGENT']) : '';
+if ($agentMenu !== '') {
+    $syncManualeRichiesto = 1;
+} elseif (isset([syncManuale]) && (int)[syncManuale] === 1) {
+    $syncManualeRichiesto = 1;
+}
+
+if (!acquisisci_lock_check_new_trips()) {
+    log_export_tratte('LOCK', 'sync gia in corso | manuale=' . $syncManualeRichiesto);
+    if ($syncManualeRichiesto === 1) {
+        html_resoconto_sync(
+            'Sincronizzazione tratte',
+            'Già in esecuzione. Attendere il completamento.',
+            array()
+        );
+    }
+    return;
 }
 
 $set_names = [
@@ -1274,6 +1490,7 @@ if (!empty({settingsRows})) {
 foreach ($set_names as $set_name) {
     if (!array_key_exists($set_name, $settings)) {
         sc_error_message("Parametro '" . $set_name . "' non trovato in sec_settings.");
+        rilascia_lock_check_new_trips();
         return;
     }
 }
@@ -1306,7 +1523,8 @@ log_export_tratte(
     'START',
     'finestra sync da ' . $soglia_data_ora . ' a ' . $fine_sync_data_ora .
     ' | batch_minutes=' . $batch_minutes .
-    ' | build=importo_guard_v3'
+    ' | manuale=' . $syncManualeRichiesto .
+    ' | build=tipo1_loc_v2'
 );
 
 $sgam_user   = $settings['sgam_user'];
@@ -1332,6 +1550,7 @@ try {
 } catch (PDOException $e) {
     log_export_tratte('ERROR', 'Connessione PDO SGA fallita: ' . $e->getMessage());
     sc_error_message("Errore connessione PDO SGA: " . $e->getMessage());
+    rilascia_lock_check_new_trips();
     return;
 }
 
@@ -1403,12 +1622,12 @@ $sql_allegato = "
        AND t.FILIALE = vc.CLIENTE_FILIALE
        AND t.NUMERO = vc.CLIENTE_NUMERO
        AND t.NUMERO_CARICO_SCARICO = vc.CLIENTE_NUMERO_CARICO_SCARICO
-    INNER JOIN T2ViaggiClienti vcl
+    LEFT JOIN T2ViaggiClienti vcl
         ON vcl.SOCIETA = t.SOCIETA
        AND vcl.ANNO = t.ANNO
        AND vcl.FILIALE = t.FILIALE
        AND vcl.NUMERO = t.NUMERO
-    INNER JOIN BaCliFor b
+    LEFT JOIN BaCliFor b
         ON b.SOCIETA = vcl.SOCIETA
        AND b.CLIENTE_FORNITORE = 'C'
        AND b.CODICE = vcl.CLIENTE
@@ -1438,6 +1657,7 @@ try {
 } catch (PDOException $e) {
     log_export_tratte('ERROR', 'Prepare/execute viaggi SGA fallito: ' . $e->getMessage());
     sc_error_message("Errore select PDO SGA: " . $e->getMessage());
+    rilascia_lock_check_new_trips();
     return;
 }
 
@@ -1477,8 +1697,8 @@ try {
             $ultima_sync_data_ora = $sync_data_ora;
         }
 
-        [$carico_str, $scarico_str] = carica_localita_viaggio($stmt_localita, $societa, $anno, $numero);
-        [$caricatore, $proprietario_merce, $merce] = carica_allegato_viaggio($stmt_allegato, $societa, $anno, $numero);
+        [$carico_str, $scarico_str] = carica_localita_viaggio($pdo_sga, $societa, $anno, $numero);
+        [$caricatore, $proprietario_merce, $merce] = carica_allegato_viaggio($pdo_sga, $societa, $anno, $numero);
 
         // Mantiene il comportamento dei JOIN della query originale: senza carico o scarico il viaggio non entra.
         if ($carico_str === '' || $scarico_str === '') {
@@ -1507,7 +1727,7 @@ try {
             continue;
         }
 
-        $extra_totale = carica_extra_viaggio($stmt_extra, $societa, $anno, $numero);
+        $extra_totale = carica_extra_viaggio($pdo_sga, $societa, $anno, $numero);
         $key = (string)$codice_vettore . '|' . $carico_str . '|' . $scarico_str;
 
         $viaggio = [
@@ -1537,8 +1757,22 @@ try {
             'sync_data_ora' => $sync_data_ora,
         ];
 
-        if (!isset($viaggi_unici[$key]) || viaggio_piu_recente($viaggio, $viaggi_unici[$key])) {
+        if (!isset($viaggi_unici[$key])) {
             $viaggi_unici[$key] = $viaggio;
+            tieni_allegato_viaggio($viaggi_unici[$key], $viaggio);
+        } elseif (viaggio_piu_recente($viaggio, $viaggi_unici[$key])) {
+            $precedente = $viaggi_unici[$key];
+            $viaggi_unici[$key] = $viaggio;
+            foreach (array('caricatore', 'proprietario_merce', 'merce') as $campo) {
+                $viaggi_unici[$key][$campo] = $precedente[$campo];
+                $src_key = $campo . '_src';
+                if (isset($precedente[$src_key])) {
+                    $viaggi_unici[$key][$src_key] = $precedente[$src_key];
+                }
+            }
+            tieni_allegato_viaggio($viaggi_unici[$key], $viaggio);
+        } else {
+            tieni_allegato_viaggio($viaggi_unici[$key], $viaggio);
         }
     }
 } catch (PDOException $e) {
@@ -1548,6 +1782,7 @@ try {
         ' | viaggi_letti=' . $stat_viaggi_sga
     );
     sc_error_message("Errore elaborazione dati PDO SGA: " . $e->getMessage());
+    rilascia_lock_check_new_trips();
     return;
 }
 
@@ -1580,8 +1815,14 @@ $stat_run = array(
     'tratte_invariate'       => 0,
     'tratte_dup_concorrente' => 0,
     'skip_contratto'         => 0,
+    'skip_sub_assente'       => 0,
+    'skip_wizard'            => 0,
+    'skip_attesa_tipo1'      => 0,
     'errori'                 => 0,
 );
+
+$cache_tipo1 = array();
+$cache_ha_tratte = array();
 
 foreach ($viaggi_unici as $viaggio) {
     $stat_run['elaborati']++;
@@ -1626,53 +1867,64 @@ foreach ($viaggi_unici as $viaggio) {
         log_skip_contratto_viaggio($viaggio, $motivo_skip_contratto);
     }
 
-    // Recupera o crea il subvettore su pigliacelli.
-    $qSub = "SELECT id FROM subvettori WHERE codice_sga = " . sql_quote($codice_vettore) . " LIMIT 1";
-    sc_lookup(sub, $qSub, "pigliacelli");
+    sc_lookup(sub, "
+        SELECT id, COALESCE(wizard_complete, 0), COALESCE(login_subvettore, '')
+        FROM subvettori
+        WHERE codice_sga = " . sql_quote($codice_vettore) . "
+        LIMIT 1
+    ", "pigliacelli");
     if (empty({sub})) {
-        $insSub = "
-          INSERT INTO subvettori
-            (login_subvettore, ragione_sociale, cod_fiscale, piva, phone, cellphone,
-             indirizzo, sede_citta, sede_prov, codice_sga, pec)
-          VALUES
-            (" . sql_quote($email) . ",
-             " . sql_quote($ragione_sociale) . ",
-             " . sql_quote($cod_fiscale) . ",
-             " . sql_quote($piva) . ",
-             " . sql_quote($phone) . ",
-             " . sql_quote($cellphone) . ",
-             " . sql_quote($indirizzo) . ",
-             " . sql_quote($sede_citta) . ",
-             " . sql_quote($sede_prov) . ",
-             " . sql_quote($codice_vettore) . ",
-             " . sql_quote($pec !== '' ? $pec : null) . ")
-        ";
-        sc_exec_sql($insSub, "pigliacelli");
-
-        sc_lookup(lastSubId, "SELECT LAST_INSERT_ID()", "pigliacelli");
-        if (empty({lastSubId})) {
-            log_viaggio_esito($viaggio, 'errore_sub_insert');
-            continue;
-        }
-        $subvettore_id = {lastSubId[0][0]};
-        $stat_run['subvettori_creati']++;
-        $subvettori_nuovi_run[(int)$subvettore_id] = true;
-        log_viaggio_esito($viaggio, 'sub_nuovo', 'sub=' . (int)$subvettore_id . ' mail=' . trim((string)$email));
-
-        $intestatario_contratto = recupera_intestatario_contratto($subvettore_id, $email, $ragione_sociale, $phone_utenza);
-    } else {
-        $subvettore_id = {sub[0][0]};
-        sync_pec_subvettore_da_sga($subvettore_id, $pec);
-        log_viaggio_esito($viaggio, 'sub_esistente', 'sub=' . (int)$subvettore_id);
-        $intestatario_contratto = recupera_intestatario_contratto($subvettore_id, $email, $ragione_sociale, $phone_utenza);
+        $stat_run['skip_sub_assente']++;
+        log_viaggio_esito($viaggio, 'sub_assente', 'vet=' . trim((string)$codice_vettore));
+        continue;
     }
 
-    if ($intestatario_contratto === null) {
-        $intestatario_contratto = 'SUBVETTORE_' . $subvettore_id;
-    }
+    $subvettore_id = (int){sub[0][0]};
+    $wizardComplete = (int){sub[0][1]};
+    $loginSub = trim((string){sub[0][2]});
+    $intestatario_contratto = $loginSub !== '' ? $loginSub : ('SUBVETTORE_' . $subvettore_id);
     $intestatari_sub[$subvettore_id] = $intestatario_contratto;
+    log_viaggio_esito(
+        $viaggio,
+        'sub_esistente',
+        'sub=' . $subvettore_id . ' wizard=' . $wizardComplete
+    );
 
-    $tipo_contratto_nuove = tipo_contratto_nuove_tratte($subvettore_id, $subvettori_nuovi_run);
+    if ($wizardComplete !== 1) {
+        $stat_run['skip_wizard']++;
+        log_viaggio_esito($viaggio, 'wizard_non_completo', 'sub=' . $subvettore_id . ' vet=' . trim((string)$codice_vettore));
+        continue;
+    }
+
+    if (!isset($cache_ha_tratte[$subvettore_id])) {
+        sc_lookup(rsHaTratte, "
+            SELECT id
+            FROM tratte
+            WHERE subvettore_id = " . sql_num($subvettore_id) . "
+            LIMIT 1
+        ", "pigliacelli");
+        $cache_ha_tratte[$subvettore_id] = !empty({rsHaTratte});
+    }
+    if (!$cache_ha_tratte[$subvettore_id]) {
+        $stat_run['skip_attesa_tipo1']++;
+        log_viaggio_esito($viaggio, 'attesa_import_tipo1', 'sub=' . $subvettore_id);
+        continue;
+    }
+
+    if (!isset($cache_tipo1[$subvettore_id])) {
+        sc_lookup(rsHaTipo1, "
+            SELECT c.id
+            FROM contratti c
+            INNER JOIN subvettori_contratti sc ON sc.contratto_id = c.id
+            WHERE sc.subvettore_id = " . sql_num($subvettore_id) . "
+              AND c.tipo_contratto_id = 1
+            LIMIT 1
+        ", "pigliacelli");
+        $cache_tipo1[$subvettore_id] = !empty({rsHaTipo1});
+    }
+    $haTipo1 = $cache_tipo1[$subvettore_id];
+    $lega_variazione = $crea_contratto && !empty($cache_ha_tratte[$subvettore_id]);
+    $tipo_contratto_nuove = 2;
 
     if ($tariffa_sigla === '') $tariffa_sigla = null;
     $totale  = (0 + $importo_unitario) + (0 + $extra_totale);
@@ -1701,7 +1953,8 @@ foreach ($viaggi_unici as $viaggio) {
     if (!empty({hashRow})) {
         $stat_run['tratte_hash_esistente']++;
         $tratta_id_esistente = {hashRow[0][0]};
-        if ($crea_contratto) {
+        aggiorna_allegato_tratta($tratta_id_esistente, $merce, $caricatore, $proprietario_merce);
+        if ($lega_variazione) {
             $contratto_id = contratto_per_assicura($tratta_id_esistente, $tipo_contratto_nuove, $intestatario_contratto, $subvettore_id);
             if ($contratto_id !== null) {
                 assicura_contratto_tratta(
@@ -1751,6 +2004,7 @@ foreach ($viaggi_unici as $viaggio) {
 
     if (!empty({existRow})) {
         $tratta_id_esistente = {existRow[0][0]};
+        aggiorna_allegato_tratta($tratta_id_esistente, $merce, $caricatore, $proprietario_merce);
         $importo_esistente   = {existRow[0][1]};
         $extra_esistente     = {existRow[0][2]};
         $totale_esistente    = {existRow[0][3]};
@@ -1789,7 +2043,7 @@ foreach ($viaggi_unici as $viaggio) {
                 WHERE id = " . sql_num($tratta_id_esistente),
                 "pigliacelli");
 
-            if ($crea_contratto) {
+            if ($lega_variazione) {
                 aggiungi_modifica_tariffa_pending(
                     $subvettore_id,
                     $tratta_id_esistente,
@@ -1808,7 +2062,7 @@ foreach ($viaggi_unici as $viaggio) {
                 ' tipo_ct=3 pending=' . ($crea_contratto ? 'si' : 'no')
             );
             }
-        } elseif ($crea_contratto && tratta_ha_tariffa_valida($tratta_id_esistente)) {
+        } elseif ($lega_variazione && tratta_ha_tariffa_valida($tratta_id_esistente)) {
             $stat_run['tratte_invariate']++;
             $contratto_id = contratto_per_assicura($tratta_id_esistente, $tipo_contratto_nuove, $intestatario_contratto, $subvettore_id);
             $version = ($version_esistente === null || $version_esistente === '') ? 1 : (int)$version_esistente;
@@ -1855,7 +2109,7 @@ foreach ($viaggi_unici as $viaggio) {
     // Tipo 2: Nuovo viaggio/tratta.
     $insTratta = "
       INSERT INTO tratte
-        (subvettore_id, merce, caricatore, proprietario_merce, tipo_tariffa_id, tariffa, extra, totale, hash, version)
+        (subvettore_id, merce, caricatore, proprietario_merce, tipo_tariffa_id, tariffa, extra, totale, hash, version, legacy)
       VALUES
         (" . sql_num($subvettore_id) . ",
          " . allegato_testo_sql($merce) . ",
@@ -1866,7 +2120,8 @@ foreach ($viaggi_unici as $viaggio) {
          " . sql_num($extra_totale) . ",
          " . sql_num($totale) . ",
          " . sql_quote($hash) . ",
-         1)
+         1,
+         0)
       ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)
     ";
     sc_exec_sql($insTratta, "pigliacelli");
@@ -1898,7 +2153,7 @@ foreach ($viaggi_unici as $viaggio) {
             ", carico '" . $carico_str .
             "', scarico '" . $scarico_str . "'"
         );
-        if ($crea_contratto && tratta_ha_tariffa_valida($tratta_id)) {
+        if ($lega_variazione && tratta_ha_tariffa_valida($tratta_id)) {
             $contratto_id = contratto_per_assicura($tratta_id, $tipo_contratto_nuove, $intestatario_contratto, $subvettore_id);
             if ($contratto_id !== null) {
                 assicura_contratto_tratta(
@@ -1949,7 +2204,7 @@ foreach ($viaggi_unici as $viaggio) {
         $i++;
     }
 
-    if ($crea_contratto && tratta_ha_tariffa_valida($tratta_id)) {
+    if ($lega_variazione && tratta_ha_tariffa_valida($tratta_id)) {
         aggiungi_tratta_pending_run(
             $subvettore_id,
             $tratta_id,
@@ -1965,7 +2220,7 @@ foreach ($viaggi_unici as $viaggio) {
             ' tipo_ct=' . (int)$tipo_contratto_nuove .
             ' pending=si'
         );
-    } elseif ($crea_contratto) {
+    } elseif ($lega_variazione) {
         log_export_tratte(
             'SKIP_PENDING',
             'tratta=' . (int)$tratta_id .
@@ -1996,15 +2251,178 @@ $stat_tratte_in_contratto_t1 = 0;
 $stat_tratte_in_contratto_t2 = 0;
 $stat_tratte_in_contratto_t3 = 0;
 
-foreach ($pending_tratte_tipo1 as $sub_id => $tratte_map) {
-    $sub_id = (int)$sub_id;
-    if (empty($tratte_map)) {
-        continue;
+sc_lookup(rsBackfillTipo1, "
+    SELECT s.id,
+           TRIM(s.codice_sga),
+           COALESCE(NULLIF(TRIM(s.login_subvettore), ''), CONCAT('SUBVETTORE_', s.id))
+    FROM subvettori s
+    WHERE COALESCE(s.wizard_complete, 0) = 1
+      AND s.codice_sga IS NOT NULL
+      AND TRIM(s.codice_sga) <> ''
+      AND NOT EXISTS (
+            SELECT 1 FROM tratte t WHERE t.subvettore_id = s.id
+      )
+", "pigliacelli");
+
+$subs_tipo1 = array();
+if (!empty({rsBackfillTipo1})) {
+    foreach ({rsBackfillTipo1} as $rowBf) {
+        $subs_tipo1[] = array((int)$rowBf[0], trim((string)$rowBf[1]), trim((string)$rowBf[2]));
     }
-    $intest = isset($intestatari_sub[$sub_id]) ? $intestatari_sub[$sub_id] : ('SUBVETTORE_' . $sub_id);
-    $stat_contratti_tipo1++;
-    $stat_tratte_in_contratto_t1 += count($tratte_map);
-    consolida_contratto_tipo1_run($contratti_batch, $sub_id, $intest, array_keys($tratte_map));
+}
+
+log_export_tratte('BACKFILL', 'candidati=' . count($subs_tipo1));
+
+if (!empty($subs_tipo1)) {
+    foreach ($subs_tipo1 as $pairBf) {
+        $sidBf = (int)$pairBf[0];
+        $codiceBf = $pairBf[1];
+        $intestBf = $pairBf[2] !== '' ? $pairBf[2] : ('SUBVETTORE_' . $sidBf);
+        if ($sidBf <= 0 || $codiceBf === '') {
+            continue;
+        }
+
+        $codiceSql = str_replace("'", "''", $codiceBf);
+        $sql_viaggi_sub = "
+            SELECT
+              v.SOCIETA, v.ANNO, v.NUMERO, v.TARIFFA, v.IMPORTO_UNITARIO, v.PARTENZA_DATA_ORA
+            FROM T2ViaggiVettori v
+            INNER JOIN T2BaseVettori t
+              ON t.CODICE = v.VETTORE
+             AND t.SOCIETA = v.SOCIETA
+             AND t.ATTIVO = 'S'
+            WHERE v.SOCIETA = 1
+              AND RTRIM(v.VETTORE) = '" . $codiceSql . "'
+              AND v.ANNO >= 2024
+        ";
+        $stmt_viaggi_sub = $pdo_sga->query($sql_viaggi_sub);
+        $righeBf = $stmt_viaggi_sub->fetchAll(PDO::FETCH_NUM);
+        $stmt_viaggi_sub->closeCursor();
+        log_export_tratte(
+            'BACKFILL',
+            'sub=' . $sidBf . ' codice=' . $codiceBf . ' viaggi_sga=' . count($righeBf)
+        );
+
+        $idsBf = array();
+        $skipImpBf = 0;
+        $skipLocBf = 0;
+        $inseriteBf = 0;
+        foreach ($righeBf as $rowBf) {
+            $socBf = $rowBf[0];
+            $annoBf = $rowBf[1];
+            $numBf = $rowBf[2];
+            $siglaBf = trim((string)$rowBf[3]);
+            $impBf = importo_unitario_normalizzato($rowBf[4]);
+            $partBf = $rowBf[5];
+            if ($impBf === null) {
+                $skipImpBf++;
+                continue;
+            }
+            list($caricoBf, $scaricoBf) = carica_localita_viaggio($pdo_sga, $socBf, $annoBf, $numBf);
+            if ($caricoBf === '' || $scaricoBf === '') {
+                $skipLocBf++;
+                continue;
+            }
+            list($caricBf, $propBf, $merceBf) = carica_allegato_viaggio($pdo_sga, $socBf, $annoBf, $numBf);
+            $extraBf = carica_extra_viaggio($pdo_sga, $socBf, $annoBf, $numBf);
+            $totBf = (0 + $impBf) + (0 + $extraBf);
+            $hashBf = crea_hash_tratta($caricoBf, $scaricoBf, $codiceBf, $impBf);
+
+            $tipoTarBf = null;
+            if ($siglaBf !== '') {
+                sc_lookup(rsTarBf, "SELECT id FROM tipo_tariffe WHERE UPPER(descrizione) = " . sql_quote(strtoupper($siglaBf)) . " LIMIT 1", "pigliacelli");
+                if (!empty({rsTarBf})) {
+                    $tipoTarBf = {rsTarBf[0][0]};
+                }
+            }
+            $tipoTarSqlBf = $tipoTarBf === null ? "NULL" : sql_num($tipoTarBf);
+
+            sc_lookup(rsHashBf, "
+                SELECT id FROM tratte
+                WHERE hash = " . sql_quote($hashBf) . "
+                  AND subvettore_id = " . sql_num($sidBf) . "
+                LIMIT 1
+            ", "pigliacelli");
+            if (!empty({rsHashBf})) {
+                $tidBf = (int){rsHashBf[0][0]};
+                aggiorna_allegato_tratta($tidBf, $merceBf, $caricBf, $propBf);
+            } else {
+                sc_exec_sql("
+                    INSERT INTO tratte
+                      (subvettore_id, merce, caricatore, proprietario_merce, tipo_tariffa_id, tariffa, extra, totale, hash, version, legacy)
+                    VALUES
+                      (" . sql_num($sidBf) . ",
+                       " . allegato_testo_sql($merceBf) . ",
+                       " . allegato_testo_sql($caricBf) . ",
+                       " . allegato_testo_sql($propBf) . ",
+                       " . $tipoTarSqlBf . ",
+                       " . sql_num($impBf) . ",
+                       " . sql_num($extraBf) . ",
+                       " . sql_num($totBf) . ",
+                       " . sql_quote($hashBf) . ",
+                       1, 0)
+                    ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)
+                ", "pigliacelli");
+                sc_lookup(rsInsBf, "SELECT LAST_INSERT_ID()", "pigliacelli");
+                if (empty({rsInsBf}) || (int){rsInsBf[0][0]} <= 0) {
+                    continue;
+                }
+                $tidBf = (int){rsInsBf[0][0]};
+                $stat_run['tratte_nuove']++;
+                $inseriteBf++;
+                $iBf = 1;
+                foreach (split_localita($caricoBf) as $locBf) {
+                    sc_exec_sql("
+                        INSERT INTO tratte_localita (tratta_id, tipo_tratta, localita, progressivo)
+                        VALUES (" . sql_num($tidBf) . ", 'C', " . sql_quote($locBf) . ", " . sql_num($iBf) . ")
+                    ", "pigliacelli");
+                    $iBf++;
+                }
+                $iBf = 1;
+                foreach (split_localita($scaricoBf) as $locBf) {
+                    sc_exec_sql("
+                        INSERT INTO tratte_localita (tratta_id, tipo_tratta, localita, progressivo)
+                        VALUES (" . sql_num($tidBf) . ", 'S', " . sql_quote($locBf) . ", " . sql_num($iBf) . ")
+                    ", "pigliacelli");
+                    $iBf++;
+                }
+            }
+
+            $motivoBf = '';
+            if (viaggio_ammesso_per_contratto($partBf, $impBf, $motivoBf)) {
+                $idsBf[] = $tidBf;
+            }
+        }
+
+        log_export_tratte(
+            'BACKFILL',
+            'sub=' . $sidBf .
+            ' skip_importo=' . $skipImpBf .
+            ' skip_localita=' . $skipLocBf .
+            ' inserite=' . $inseriteBf .
+            ' in_contratto=' . count($idsBf)
+        );
+
+        $idsBf = filtra_tratte_importo_valido($idsBf);
+        if (empty($idsBf)) {
+            continue;
+        }
+        $cidBf = crea_contratto_subvettore(1, $intestBf, $sidBf);
+        if ($cidBf === null) {
+            continue;
+        }
+        foreach ($idsBf as $tidAlleg) {
+            allega_tratta_a_contratto($cidBf, $tidAlleg);
+        }
+        $stat_contratti_tipo1++;
+        $stat_tratte_in_contratto_t1 += count($idsBf);
+        $cache_ha_tratte[$sidBf] = true;
+        $cache_tipo1[$sidBf] = true;
+        log_export_tratte(
+            'NUOVO_CONTRATTO',
+            'tipo=1 backfill subvettore=' . $sidBf . ' contratto=' . (int)$cidBf . ' tratte=' . count($idsBf)
+        );
+    }
 }
 
 foreach ($pending_tratte_tipo2 as $sub_id => $tratte_map) {
@@ -2048,6 +2466,9 @@ log_export_tratte(
     ' | invariate=' . $stat_run['tratte_invariate'] .
     ' | dup_concorrente=' . $stat_run['tratte_dup_concorrente'] .
     ' | subvettori_creati=' . $stat_run['subvettori_creati'] .
+    ' | skip_sub_assente=' . $stat_run['skip_sub_assente'] .
+    ' | skip_wizard=' . $stat_run['skip_wizard'] .
+    ' | skip_attesa_tipo1=' . $stat_run['skip_attesa_tipo1'] .
     ' | skip_contratto=' . $stat_run['skip_contratto'] .
     ' | errori=' . $stat_run['errori'] .
     ' | contratti_t1=' . $stat_contratti_tipo1 .
@@ -2072,4 +2493,25 @@ sc_exec_sql("
 ", "pigliacelli");
 
 log_export_tratte('SYNC', 'sync_date aggiornato a ' . $nuova_sync_data_ora);
+
+if ($syncManualeRichiesto === 1) {
+    $nVariazioni = (int)$stat_contratti_tipo2 + (int)$stat_contratti_tipo3;
+    $esitoLabel = $ha_novita_import ? 'Import' : 'Nessuna novità';
+    if ($ha_contratti_run) {
+        $esitoLabel .= ' · nuovi contratti: sì';
+    }
+    html_resoconto_sync(
+        'Sincronizzazione tratte',
+        $esitoLabel,
+        array(
+            'Tratte sincronizzate' => (int)$stat_viaggi_sga,
+            'Modificate' => (int)$stat_run['tratte_modificate'],
+            'Nuove' => (int)$stat_run['tratte_nuove'],
+            'Allegati di variazione' => $nVariazioni,
+            'Contratti nuovi' => (int)$stat_contratti_tipo1,
+        )
+    );
+}
+
+rilascia_lock_check_new_trips();
 

@@ -1,0 +1,7 @@
+/**
+ * grid_subvettori → toolbar, pulsante PHP sync_anagrafica_btn
+ *
+ * Non nel menu principale. Lancia upsert_subvectors_basevettori
+ * e mostra il resoconto.
+ */
+sc_redir('upsert_subvectors_basevettori', syncManuale=1);

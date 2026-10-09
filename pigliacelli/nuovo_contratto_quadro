@@ -1,0 +1,122 @@
+/**
+ * Blank nuovo_contratto_quadro → onExecute
+ *
+ * Arriva da control_nuovo_contratto_quadro con [subvettoreId].
+ * Crea un contratto tipo 1 in "Da inviare al subvettore"
+ * e ci collega tutte le tratte gia a DB di quel subvettore.
+ * Non crea utenze e non aggancia gli autisti.
+ * Se un tipo 1 esiste gia, non ne crea un altro.
+ */
+
+$subId = isset([subvettoreId]) ? (int)[subvettoreId] : 0;
+if ($subId <= 0) {
+    sc_error_message('Subvettore non indicato.');
+    return;
+}
+
+sc_lookup(rsNcqSub, "
+    SELECT id, COALESCE(login_subvettore, ''), COALESCE(ragione_sociale, '')
+    FROM subvettori
+    WHERE id = " . $subId . "
+    LIMIT 1
+", 'pigliacelli');
+
+if (empty({rsNcqSub})) {
+    sc_error_message('Subvettore non trovato.');
+    return;
+}
+
+$login = trim((string){rsNcqSub[0][1]});
+$ragione = trim((string){rsNcqSub[0][2]});
+$intestatario = $login !== '' ? $login : ($ragione !== '' ? $ragione : ('SUBVETTORE_' . $subId));
+$intestatarioSql = "'" . str_replace("'", "''", $intestatario) . "'";
+
+sc_lookup(rsNcqAperto, "
+    SELECT c.id
+    FROM contratti c
+    INNER JOIN subvettori_contratti sc ON sc.contratto_id = c.id
+    WHERE sc.subvettore_id = " . $subId . "
+      AND c.tipo_contratto_id = 1
+    ORDER BY c.id DESC
+    LIMIT 1
+", 'pigliacelli');
+
+if (!empty({rsNcqAperto})) {
+    sc_alert('Per questo subvettore esiste gia un contratto quadro. Usare quello in contrattistica.');
+    sc_redir('grid_contratti', '', '_parent');
+    return;
+}
+
+sc_lookup(rsNcqTratte, "
+    SELECT COUNT(*)
+    FROM tratte
+    WHERE subvettore_id = " . $subId . "
+      AND tariffa IS NOT NULL
+      AND tariffa > 0
+", 'pigliacelli');
+
+$nTratte = empty({rsNcqTratte[0][0]}) ? 0 : (int){rsNcqTratte[0][0]};
+if ($nTratte <= 0) {
+    sc_alert('Nessuna tratta con tariffa valida per questo subvettore.');
+    sc_redir('grid_contratti', '', '_parent');
+    return;
+}
+
+sc_exec_sql("
+    INSERT INTO contratti
+      (tipo_contratto_id, intestatario, stato_contratto_id)
+    VALUES
+      (1, " . $intestatarioSql . ",
+       (SELECT id FROM stati_contratti WHERE nome = 'Da inviare al subvettore' LIMIT 1))
+", 'pigliacelli');
+
+sc_lookup(rsNcqCtr, 'SELECT LAST_INSERT_ID()', 'pigliacelli');
+$contrattoId = empty({rsNcqCtr[0][0]}) ? 0 : (int){rsNcqCtr[0][0]};
+if ($contrattoId <= 0) {
+    sc_error_message('Contratto non creato.');
+    return;
+}
+
+sc_exec_sql("
+    INSERT INTO subvettori_contratti
+      (subvettore_id, contratto_id)
+    VALUES
+      (" . $subId . ", " . $contrattoId . ")
+", 'pigliacelli');
+
+sc_exec_sql("
+    INSERT INTO contratti_tratte
+      (tratta_id, contratto_id, version, carico, scarico, merce, caricatore, proprietario_merce,
+       tipo_tariffa_id, tariffa, extra, totale, hash)
+    SELECT
+      t.id,
+      " . $contrattoId . ",
+      COALESCE(t.version, 1),
+      (
+        SELECT GROUP_CONCAT(tl.localita ORDER BY tl.progressivo SEPARATOR ' + ')
+        FROM tratte_localita tl
+        WHERE tl.tratta_id = t.id
+          AND tl.tipo_tratta = 'C'
+      ),
+      (
+        SELECT GROUP_CONCAT(tl.localita ORDER BY tl.progressivo SEPARATOR ' + ')
+        FROM tratte_localita tl
+        WHERE tl.tratta_id = t.id
+          AND tl.tipo_tratta = 'S'
+      ),
+      t.merce,
+      t.caricatore,
+      t.proprietario_merce,
+      t.tipo_tariffa_id,
+      t.tariffa,
+      t.extra,
+      t.totale,
+      t.hash
+    FROM tratte t
+    WHERE t.subvettore_id = " . $subId . "
+      AND t.tariffa IS NOT NULL
+      AND t.tariffa > 0
+", 'pigliacelli');
+
+sc_alert('Contratto quadro creato. Tratte allegate: ' . $nTratte . '.');
+sc_redir('grid_contratti', '', '_parent');

@@ -1,0 +1,7 @@
+/**
+ * grid_contratti → toolbar, pulsante PHP nuovo_contratto_quadro_btn
+ *
+ * Non e un pulsante di riga. In Scriptcase: Action Bar / toolbar, tipo PHP.
+ * Apre la form di scelta del subvettore.
+ */
+sc_redir('control_nuovo_contratto_quadro', '', 'modal', '', '480', '640');

@@ -2,14 +2,16 @@
  * form_subvettori_contratti_for_subvectors_magic_link_review
  * → onLoad
  *
- * Allineato a form_subvettori_contratti_for_subvectors_magic_link:
+ * Su Scriptcase l'app e' form_subvettori_contratti_for_subvectors_magic_link.
+ * Il firmatario vede l'anagrafica in sola lettura, precompilata da subvettori,
+ * e nome, cognome, email, telefono del rappresentante.
+ * Nascita, albo e autisti restano nascosti.
  * 1) Modale errore EasyGN
- * 2) Visibilità blocco autisti per tipoContrattoId (tipo 2/3 nascosto)
- *    num_iscrizione_albo resta sempre visibile; obbligatorio solo tipo 1 in onValidate.
- * 3) Precaricamento anagrafica da subvettori (campi virtuali)
- * 4) Precaricamento dati legale rappresentante da subvettori_contratti
- *    (email/telefono rappresentante: fallback da subvettori.login_subvettore / cellphone se vuoti sul contratto)
- * 5) Campi *_firmatario nascosti (non più usati: firma/mail solo su rappresentante)
+ * 2) Blocco autisti sempre nascosto
+ * 3) Precaricamento anagrafica da subvettori (visibile, sola lettura)
+ * 4) Campi su subvettori_contratti (rappresentante, albo, nascita):
+ *    se vuoti sul contratto, si copiano dalle colonne omonime di subvettori
+ * 5) Campi *_firmatario, albo e nascita nascosti. Anagrafica in sola lettura.
  * 6) Se stato_contratto_id >= 3 (già compilato) → redirect blank_magic_link_review_inviato
  * 7) Popup conferma invio revisione (Scriptcase JavaScript Methods):
  *    a) Programming → JavaScript Methods → mlReviewConfirmInit
@@ -19,23 +21,15 @@
  *    onValidate richiede review_confirm=1 (hidden field impostato dal popup).
  */
 
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    @session_start();
-}
+if (session_status() !== PHP_SESSION_ACTIVE) {@session_start();}
 
 $scIdEarly = 0;
 if (isset({id}) && (int){id} > 0) {
     $scIdEarly = (int){id};
-} elseif (isset([subvettore_contratto_id]) && (int)[subvettore_contratto_id] > 0) {
-    $scIdEarly = (int)[subvettore_contratto_id];
-} elseif (isset($_GET['subvettore_contratto_id']) && (int)$_GET['subvettore_contratto_id'] > 0) {
-    $scIdEarly = (int)$_GET['subvettore_contratto_id'];
-} elseif (isset($_GET['id']) && (int)$_GET['id'] > 0) {
-    $scIdEarly = (int)$_GET['id'];
-}
+} elseif(isset([subvettore_contratto_id]) && (int)[subvettore_contratto_id] > 0) {$scIdEarly = (int)[subvettore_contratto_id];} elseif(isset($_GET['subvettore_contratto_id']) && (int)$_GET['subvettore_contratto_id'] > 0) {$scIdEarly = (int)$_GET['subvettore_contratto_id'];} elseif(isset($_GET['id']) && (int)$_GET['id'] > 0) {$scIdEarly = (int)$_GET['id'];}
 
 $magicLinkReviewContrattoId = 0;
-$statoContrattoIdReview     = 0;
+$statoContrattoIdReview = 0;
 
 if ($scIdEarly > 0) {
     sc_lookup(rsReviewStatoContr, "
@@ -48,22 +42,18 @@ if ($scIdEarly > 0) {
 
     if (!empty({rsReviewStatoContr})) {
         $magicLinkReviewContrattoId = (int){rsReviewStatoContr[0][0]};
-        $statoContrattoIdReview     = (int){rsReviewStatoContr[0][1]};
+        $statoContrattoIdReview = (int){rsReviewStatoContr[0][1]};
     }
 }
 
 if ($statoContrattoIdReview >= 3) {
     $redirReviewDone = '';
-    if ($magicLinkReviewContrattoId > 0) {
-        $redirReviewDone = 'contrattoId=' . (int)$magicLinkReviewContrattoId;
-    }
-    if ($scIdEarly > 0) {
-        $redirReviewDone .= ($redirReviewDone !== '' ? '&' : '') . 'scId=' . (int)$scIdEarly;
-    }
+    if ($magicLinkReviewContrattoId > 0) {$redirReviewDone = 'contrattoId='. (int)$magicLinkReviewContrattoId;}
+    if ($scIdEarly > 0) {$redirReviewDone.= ($redirReviewDone !== '' ? '&' : ''). 'scId='. (int)$scIdEarly;}
     sc_log_add(
         'MAGIC_LINK_REVIEW',
-        'onLoad redirect blank stato_contratto_id=' . (int)$statoContrattoIdReview
-        . ' scId=' . (int)$scIdEarly
+        'onLoad redirect blank stato_contratto_id='. (int)$statoContrattoIdReview
+        . ' scId='. (int)$scIdEarly
     );
     sc_redir('blank_magic_link_review_inviato', $redirReviewDone);
     exit;
@@ -86,52 +76,11 @@ if (!empty($_SESSION['easygn_error_modal'])) {
     );
 }
 
-if (!function_exists('magic_link_review_form_tipo_contratto_id_onload')) {
-    function magic_link_review_form_tipo_contratto_id_onload($scId)
-    {
-        if ((int)$scId > 0) {
-            sc_lookup(rsReviewTipoContrattoForm, "
-                SELECT c.tipo_contratto_id
-                FROM subvettori_contratti sc
-                INNER JOIN contratti c ON c.id = sc.contratto_id
-                WHERE sc.id = " . (int)$scId . "
-                LIMIT 1
-            ", "pigliacelli");
-
-            if (!empty({rsReviewTipoContrattoForm[0][0]})) {
-                return (int){rsReviewTipoContrattoForm[0][0]};
-            }
-        }
-
-        if (isset({contratto_id}) && (int){contratto_id} > 0) {
-            sc_lookup(rsReviewTipoContrattoByContratto, "
-                SELECT tipo_contratto_id
-                FROM contratti
-                WHERE id = " . (int){contratto_id} . "
-                LIMIT 1
-            ", "pigliacelli");
-
-            if (!empty({rsReviewTipoContrattoByContratto[0][0]})) {
-                return (int){rsReviewTipoContrattoByContratto[0][0]};
-            }
-        }
-
-        return 0;
-    }
-}
-
 if (!function_exists('magic_link_review_form_apply_tipo_contratto_visibility')) {
-    function magic_link_review_form_apply_tipo_contratto_visibility($tipoContrattoId)
-    {
-        // num_iscrizione_albo: sempre visibile; obbligatorio solo tipo 1 in onValidate.
-        $displayAutisti = in_array((int)$tipoContrattoId, array(2, 3), true) ? 'off' : 'on';
-        sc_block_display(subvettori_autisti, $displayAutisti);
-    }
+    function magic_link_review_form_apply_tipo_contratto_visibility() {sc_block_display(subvettori_autisti, 'off');}
 }
 
 $subvettoreId = 0;
-$emailRappSub = '';
-$telRappSub   = '';
 if (isset({subvettore_id}) && (int){subvettore_id} > 0) {
     $subvettoreId = (int){subvettore_id};
 }
@@ -139,17 +88,9 @@ if (isset({subvettore_id}) && (int){subvettore_id} > 0) {
 $scId = 0;
 if (isset({id}) && (int){id} > 0) {
     $scId = (int){id};
-} elseif (isset([subvettore_contratto_id]) && (int)[subvettore_contratto_id] > 0) {
-    $scId = (int)[subvettore_contratto_id];
-} elseif (isset($_GET['subvettore_contratto_id']) && (int)$_GET['subvettore_contratto_id'] > 0) {
-    $scId = (int)$_GET['subvettore_contratto_id'];
-} elseif (isset($_GET['id']) && (int)$_GET['id'] > 0) {
-    $scId = (int)$_GET['id'];
-}
+} elseif(isset([subvettore_contratto_id]) && (int)[subvettore_contratto_id] > 0) {$scId = (int)[subvettore_contratto_id];} elseif(isset($_GET['subvettore_contratto_id']) && (int)$_GET['subvettore_contratto_id'] > 0) {$scId = (int)$_GET['subvettore_contratto_id'];} elseif(isset($_GET['id']) && (int)$_GET['id'] > 0) {$scId = (int)$_GET['id'];}
 
-magic_link_review_form_apply_tipo_contratto_visibility(
-    magic_link_review_form_tipo_contratto_id_onload($scId)
-);
+magic_link_review_form_apply_tipo_contratto_visibility();
 
 if ($subvettoreId <= 0 && $scId > 0) {
     sc_lookup(rsReviewSubId, "
@@ -167,17 +108,16 @@ if ($subvettoreId > 0) {
     sc_lookup(rsReviewSub, "
         SELECT
             ragione_sociale,
-            sede_citta,
-            sede_prov,
-            indirizzo,
-            civico,
-            cod_fiscale,
-            piva,
-            num_iscrizione_reg_imprese,
-            locazione_iscrizione_reg_imprese,
+        sede_citta,
+        sede_prov,
+        indirizzo,
+        civico,
+        cod_fiscale,
+        piva,
+        num_iscrizione_reg_imprese,
+        locazione_iscrizione_reg_imprese,
             rea,
-            cellphone,
-            login_subvettore
+        COALESCE(NULLIF(TRIM(phone), ''), NULLIF(TRIM(cellphone), ''))
         FROM subvettori
         WHERE id = " . (int)$subvettoreId . "
         LIMIT 1
@@ -195,28 +135,28 @@ if ($subvettoreId > 0) {
         {locazione_iscrizione_reg_imprese} = (string){rsReviewSub[0][8]};
         {rea}                              = (string){rsReviewSub[0][9]};
         {phone}                            = (string){rsReviewSub[0][10]};
-        $loginSubEmail                     = isset({rsReviewSub[0][11]}) ? trim((string){rsReviewSub[0][11]}) : '';
-        $emailRappSub                      = '';
-        if ($loginSubEmail !== '' && filter_var($loginSubEmail, FILTER_VALIDATE_EMAIL) !== false) {
-            $emailRappSub = $loginSubEmail;
-        }
-        $telRappSub                        = trim((string){rsReviewSub[0][10]});
     }
 }
 
-if ($scId > 0) {
+if ($subvettoreId > 0) {
     sc_lookup(rsReviewScLegal, "
         SELECT
-            num_iscrizione_albo,
-            nome_rappresentante,
-            cognome_rappresentante,
-            email_rappresentante,
-            telefono_rappresentante,
-            luogo_nascita_rappresentante,
-            prov_luogo_nascita_rappresentante,
-            data_nascita_rappresentante
-        FROM subvettori_contratti
-        WHERE id = " . (int)$scId . "
+            COALESCE(NULLIF(TRIM(sc.num_iscrizione_albo), ''), NULLIF(TRIM(s.num_iscrizione_albo), '')),
+            COALESCE(NULLIF(TRIM(sc.nome_rappresentante), ''), NULLIF(TRIM(s.nome_rappresentante), '')),
+            COALESCE(NULLIF(TRIM(sc.cognome_rappresentante), ''), NULLIF(TRIM(s.cognome_rappresentante), '')),
+            COALESCE(NULLIF(TRIM(sc.email_rappresentante), ''), NULLIF(TRIM(s.email_rappresentante), '')),
+            COALESCE(NULLIF(TRIM(sc.telefono_rappresentante), ''), NULLIF(TRIM(s.telefono_rappresentante), '')),
+            COALESCE(NULLIF(TRIM(sc.luogo_nascita_rappresentante), ''), NULLIF(TRIM(s.luogo_nascita_rappresentante), '')),
+            COALESCE(NULLIF(TRIM(sc.prov_luogo_nascita_rappresentante), ''), NULLIF(TRIM(s.prov_luogo_nascita_rappresentante), '')),
+            COALESCE(
+                IF(sc.data_nascita_rappresentante IS NULL OR sc.data_nascita_rappresentante < '1900-01-01', NULL, sc.data_nascita_rappresentante),
+                IF(s.data_nascita_rappresentante IS NULL OR s.data_nascita_rappresentante < '1900-01-01', NULL, s.data_nascita_rappresentante)
+            )
+        FROM subvettori s
+        LEFT JOIN subvettori_contratti sc
+          ON sc.subvettore_id = s.id
+         AND sc.id = " . (int)$scId . "
+        WHERE s.id = " . (int)$subvettoreId . "
         LIMIT 1
     ", "pigliacelli");
 
@@ -232,21 +172,39 @@ if ($scId > 0) {
     }
 }
 
-if ($emailRappSub !== '' && trim((string){email_rappresentante}) === '') {
-    {email_rappresentante} = $emailRappSub;
-}
-if ($telRappSub !== '' && trim((string){telefono_rappresentante}) === '') {
-    {telefono_rappresentante} = $telRappSub;
-}
-
 if (!function_exists('pigliacelli_hide_campi_firmatario_form')) {
-    function pigliacelli_hide_campi_firmatario_form()
-    {
-        foreach (array('nome_firmatario', 'cognome_firmatario', 'email_firmatario', 'telefono_firmatario') as $campo) {
-            sc_field_display($campo, 'off');
-        }
+    function pigliacelli_hide_campi_firmatario_form() {
+        foreach(array('nome_firmatario', 'cognome_firmatario', 'email_firmatario', 'telefono_firmatario') as $campo) {sc_field_display($campo, 'off');}
     }
 }
 pigliacelli_hide_campi_firmatario_form();
+
+if (!function_exists('pigliacelli_anagrafica_review_sola_lettura')) {
+    function pigliacelli_anagrafica_review_sola_lettura() {
+        foreach (array(
+            'ragione_sociale',
+            'sede_citta',
+            'sede_prov',
+            'indirizzo',
+            'civico',
+            'cod_fiscale',
+            'piva',
+            'num_iscrizione_reg_imprese',
+            'locazione_iscrizione_reg_imprese',
+            'rea',
+            'phone',
+        ) as $campo) {
+            sc_field_display($campo, 'on');
+            sc_field_readonly($campo, 'on');
+        }
+        foreach (array(
+            'num_iscrizione_albo',
+            'luogo_nascita_rappresentante',
+            'prov_luogo_nascita_rappresentante',
+            'data_nascita_rappresentante',
+        ) as $campo) {sc_field_display($campo, 'off');}
+    }
+}
+pigliacelli_anagrafica_review_sola_lettura();
 
 

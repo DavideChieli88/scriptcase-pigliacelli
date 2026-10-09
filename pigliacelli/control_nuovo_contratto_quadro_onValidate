@@ -1,0 +1,27 @@
+/**
+ * control_nuovo_contratto_quadro → onValidate
+ *
+ * App Control (nessuna tabella). Un campo:
+ *   subvettore_id  Select
+ *   Lookup: solo chi non ha gia un contratto tipo 1
+ *   SELECT s.id, CONCAT(COALESCE(s.codice_sga, ''), ' - ', s.ragione_sociale)
+ *   FROM subvettori s
+ *   WHERE NOT EXISTS (
+ *       SELECT 1
+ *       FROM subvettori_contratti sc
+ *       INNER JOIN contratti c ON c.id = sc.contratto_id
+ *       WHERE sc.subvettore_id = s.id
+ *         AND c.tipo_contratto_id = 1
+ *   )
+ *   ORDER BY s.ragione_sociale
+ *
+ * Nessuna query qui: la form ha la transazione aperta.
+ * Il blank nuovo_contratto_quadro crea il tipo 1.
+ */
+$subId = isset({subvettore_id}) ? (int){subvettore_id} : 0;
+if ($subId <= 0) {
+    sc_error_message('Selezionare un subvettore.');
+    return;
+}
+
+sc_redir('nuovo_contratto_quadro', subvettoreId=$subId);

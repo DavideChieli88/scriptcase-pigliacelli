@@ -1,0 +1,276 @@
+/**
+ * grid_contratti → Action Bar button (Ajax)
+ * Name SC: resend_committente_sign_link
+ * Label: Reinvia mail firma committente
+ *
+ * Tipo: Action Bar → Ajax (non Link, non PHP toolbar).
+ * Rimanda al committente il link di firma già salvato in contratti.easygn_sign_link.
+ * Non riavvia EasyGN. Visibile solo con stato 5 (In attesa della firma committente).
+ *
+ * Setup SC:
+ *  - Grid → Action Bar → New → Type: Ajax
+ *  - Name: resend_committente_sign_link
+ *  - Incolla questo codice nell'evento del pulsante
+ *  - Show/hide: onRecord (grid_contratti_onRecord)
+ */
+
+if (!function_exists('gcc_sql_quote')) {
+    function gcc_sql_quote($v)
+    {
+        return "'" . str_replace("'", "''", (string)$v) . "'";
+    }
+}
+
+if (!function_exists('gcc_email_valida')) {
+    function gcc_email_valida($email)
+    {
+        $email = trim((string)$email);
+        if ($email === '') {
+            return false;
+        }
+        if (strpos($email, ';') !== false || strpos($email, ',') !== false || strpos($email, ' ') !== false) {
+            return false;
+        }
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+}
+
+if (!function_exists('gcc_is_http_url')) {
+    function gcc_is_http_url($url)
+    {
+        $url = trim((string)$url);
+        if ($url === '') {
+            return false;
+        }
+        return preg_match('#^https?://#i', $url) === 1;
+    }
+}
+
+if (!function_exists('gcc_setting')) {
+    function gcc_setting($name, $default = '')
+    {
+        sc_lookup(rsGccSet, "
+            SELECT set_value
+            FROM sec_settings
+            WHERE set_name = " . gcc_sql_quote(trim((string)$name)) . "
+            LIMIT 1
+        ", 'pigliacelli');
+        if (!empty({rsGccSet[0][0]})) {
+            return trim((string){rsGccSet[0][0]});
+        }
+        return (string)$default;
+    }
+}
+
+if (!function_exists('gcc_smtp_config')) {
+    function gcc_smtp_config()
+    {
+        sc_lookup(rsGccSmtp, 'SELECT set_name, set_value FROM sec_settings', 'pigliacelli');
+        if (!empty({rsGccSmtp})) {
+            foreach ({rsGccSmtp} as $f) {
+                $_SESSION['sett_' . $f[0]] = $f[1];
+            }
+        }
+        $smtpApi = isset($_SESSION['sett_smtp_api']) ? (string)$_SESSION['sett_smtp_api'] : '';
+        if ($smtpApi === 'custom') {
+            return array(
+                'settings' => array(
+                    'gateway'       => 'smtp',
+                    'smtp_server'   => (string)($_SESSION['sett_smtp_server'] ?? ''),
+                    'smtp_protocol' => (string)($_SESSION['sett_smtp_security'] ?? ''),
+                    'smtp_port'     => (string)($_SESSION['sett_smtp_port'] ?? ''),
+                    'smtp_user'     => (string)($_SESSION['sett_smtp_user'] ?? ''),
+                    'smtp_password' => (string)($_SESSION['sett_smtp_pass'] ?? ''),
+                    'from_email'    => (string)($_SESSION['sett_smtp_from_email'] ?? ''),
+                    'from_name'     => (string)($_SESSION['sett_smtp_from_name'] ?? ''),
+                ),
+            );
+        }
+        return array('profile' => $smtpApi);
+    }
+}
+
+if (!function_exists('pigliacelli_mail_logo_read_embed')) {
+    function pigliacelli_mail_logo_read_embed($anchorFile = null)
+    {
+        $rel = '_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png';
+        $dir = realpath(dirname($anchorFile ?: __FILE__));
+        for ($i = 0; $i < 12 && $dir; $i++) {
+            $try = $dir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel);
+            if (is_readable($try)) {
+                $bin = @file_get_contents($try);
+                if ($bin !== false && $bin !== '' && strlen($bin) < 500000) {
+                    return 'data:image/png;base64,' . base64_encode($bin);
+                }
+            }
+            $p = dirname($dir);
+            if ($p === $dir) {
+                break;
+            }
+            $dir = $p;
+        }
+        return '';
+    }
+}
+
+if (!function_exists('pigliacelli_mail_logo_src')) {
+    function pigliacelli_mail_logo_src($getSetting, $anchorFile = null)
+    {
+        $embed = pigliacelli_mail_logo_read_embed($anchorFile);
+        if ($embed !== '') {
+            return $embed;
+        }
+        $base = rtrim(trim((string)$getSetting('mail_base_url', '')), '/');
+        if ($base !== '' && preg_match('#^https?://#i', $base) === 1) {
+            return htmlspecialchars(
+                $base . '/_lib/img/grp__NM__menu_img__NM__logo-pigliacelli-bg.png',
+                ENT_QUOTES,
+                'UTF-8'
+            );
+        }
+        return '';
+    }
+}
+
+if (!function_exists('pigliacelli_mail_layout')) {
+    function pigliacelli_mail_layout($title, $innerHtml, $mailLogoUrl)
+    {
+        $t = htmlspecialchars((string)$title, ENT_QUOTES, 'UTF-8');
+        $logoTd = '';
+        if ((string)$mailLogoUrl !== '') {
+            $logoTd = '<td align="right" valign="middle" style="width:148px;padding-left:16px;">'
+                . '<img src="' . (string)$mailLogoUrl . '" alt="Pigliacelli" width="140" '
+                . 'style="display:block;max-width:140px;width:140px;height:auto;border:0;" />'
+                . '</td>';
+        }
+        return '<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">'
+            . '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            . '<title>' . $t . '</title></head>'
+            . '<body style="margin:0;padding:0;background:#eef1f4;">'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef1f4;">'
+            . '<tr><td align="center" style="padding:32px 16px;">'
+            . '<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" '
+            . 'style="max-width:600px;width:100%;background:#fff;border-radius:12px;border:1px solid #dde1e6;">'
+            . '<tr><td style="padding:22px 28px 18px;border-bottom:1px solid #e8ebef;background:#fafbfc;">'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
+            . '<td valign="middle" style="font-family:Arial,Helvetica,sans-serif;font-size:19px;font-weight:bold;color:#1a3a5c;line-height:1.3;">' . $t . '</td>'
+            . $logoTd . '</tr></table></td></tr>'
+            . '<tr><td style="padding:26px 28px 22px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#2d3748;">'
+            . $innerHtml . '</td></tr>'
+            . '<tr><td style="padding:14px 28px;background:#f4f6f8;border-top:1px solid #e8ebef;'
+            . 'font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#718096;">'
+            . 'Messaggio automatico &mdash; non rispondere.</td></tr>'
+            . '</table></td></tr></table></body></html>';
+    }
+}
+
+if (!function_exists('gcc_mail_html')) {
+    function gcc_mail_html($nome, $contrattoId, $signUrl)
+    {
+        $safeUrl = htmlspecialchars($signUrl, ENT_QUOTES, 'UTF-8');
+        $safeNome = htmlspecialchars($nome, ENT_QUOTES, 'UTF-8');
+        $inner = '<p style="margin:0 0 16px;">' . $safeNome . ',</p>'
+            . '<p style="margin:0 0 24px;">Le rinviamo il link per firmare il contratto <strong>#'
+            . (int)$contrattoId . '</strong>.</p>'
+            . '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;"><tr>'
+            . '<td align="center" bgcolor="#5b2d8e" style="border-radius:8px;background-color:#5b2d8e;">'
+            . '<a href="' . $safeUrl . '" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:bold;'
+            . 'color:#ffffff;text-decoration:none;">Apri il link di firma</a>'
+            . '</td></tr></table>'
+            . '<p style="margin:0 0 8px;font-size:13px;color:#718096;">Oppure copi questo indirizzo nel browser:</p>'
+            . '<p style="margin:0;word-break:break-all;font-size:13px;">'
+            . '<a href="' . $safeUrl . '" style="color:#5b2d8e;">' . $safeUrl . '</a></p>';
+        $titolo = 'Firma contratto — link di firma digitale (committente)';
+        $logo = pigliacelli_mail_logo_src('gcc_setting', __FILE__);
+        return pigliacelli_mail_layout($titolo, $inner, $logo);
+    }
+}
+
+$contrattoId = isset({id}) ? (int){id} : 0;
+if ($contrattoId <= 0) {
+    sc_ajax_message('Contratto non identificato.');
+    return;
+}
+
+sc_lookup(rsGccCtr, "
+    SELECT stato_contratto_id, easygn_sign_link
+    FROM contratti
+    WHERE id = " . (int)$contrattoId . "
+    LIMIT 1
+", 'pigliacelli');
+
+if (empty({rsGccCtr[0][0]})) {
+    sc_ajax_message('Contratto non trovato.');
+    return;
+}
+
+$stato = (int){rsGccCtr[0][0]};
+if ($stato !== 5) {
+    sc_ajax_message('La mail al committente si reinvia solo quando il contratto è in attesa della sua firma.');
+    return;
+}
+
+$raw = trim((string){rsGccCtr[0][1]});
+$meta = json_decode($raw, true);
+if (!is_array($meta)) {
+    $meta = array();
+}
+
+$to = isset($meta['committente_email']) ? trim((string)$meta['committente_email']) : '';
+if (!gcc_email_valida($to)) {
+    $to = gcc_setting('committente_legale_email');
+}
+$nome = isset($meta['committente_nome']) ? trim((string)$meta['committente_nome']) : '';
+if ($nome === '') {
+    $nome = gcc_setting('committente_legale_nome_completo');
+}
+if ($nome === '') {
+    $nome = 'Gentile firmatario';
+}
+$link = isset($meta['link_committente']) ? trim((string)$meta['link_committente']) : '';
+
+if (!gcc_email_valida($to)) {
+    sc_ajax_message('Email del committente mancante o non valida.');
+    return;
+}
+if (!gcc_is_http_url($link)) {
+    sc_ajax_message('Link di firma del committente non ancora disponibile.');
+    return;
+}
+
+$titolo = 'Firma contratto — link di firma digitale (committente)';
+$testo = $nome . ",\n\n"
+    . "Le rinviamo il link per firmare il contratto #" . (int)$contrattoId . ".\n\n"
+    . "Link di firma:\n" . $link . "\n\n"
+    . "Messaggio automatico — non rispondere.";
+
+try {
+    sc_send_mail_api(array_merge(gcc_smtp_config(), array(
+        'message' => array(
+            'html'    => gcc_mail_html($nome, $contrattoId, $link),
+            'text'    => $testo,
+            'to'      => $to,
+            'subject' => $titolo,
+        ),
+    )));
+} catch (Throwable $e) {
+    sc_log_add('MAIL_COMM', 'reinvio FAIL contratto=' . $contrattoId . ' to=' . $to . ' ' . $e->getMessage());
+    sc_ajax_message('Invio mail non riuscito. Riprovare più tardi.');
+    return;
+}
+
+$meta['committente_email'] = $to;
+$meta['committente_nome'] = $nome;
+$meta['mail_committente_inviata'] = 1;
+$meta['mail_committente_ultimo_invio'] = date('Y-m-d H:i:s');
+$json = json_encode($meta, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+if ($json !== false) {
+    sc_exec_sql("
+        UPDATE contratti
+        SET easygn_sign_link = " . gcc_sql_quote($json) . "
+        WHERE id = " . (int)$contrattoId . "
+    ", 'pigliacelli');
+}
+
+sc_log_add('MAIL_COMM', 'reinvio OK contratto=' . $contrattoId . ' to=' . $to);
+sc_ajax_message('Mail di firma reinviata a ' . $to . '.');

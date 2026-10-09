@@ -1,0 +1,6 @@
+/**
+ * Toolbar della form o griglia tratte, pulsante PHP sync_tratte_btn
+ *
+ * Non nel menu principale. Lancia il job tratte e mostra il resoconto.
+ */
+sc_redir('check_new_trips_nuovo_contratto_basevettori_v2', syncManuale=1);
