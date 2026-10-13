@@ -16,6 +16,7 @@ if (isset([subvettoreId]) && (int)[subvettoreId] > 0) {
 }
 if ($subId <= 0) {
     $_SESSION['wizard_flash_msg'] = 'Subvettore non identificato.';
+    sc_exec_sql('COMMIT');
     sc_redir('blank_wizard_landing');
 }
 

@@ -10,7 +10,11 @@
  * - 7.1 = sì → non chiedere il resto della 7 tranne 7.4
  * - 8.1 = sì → non chiedere il resto della 8 tranne 8.4
  * - 10.1 = sì → non chiedere il resto della 10 tranne 10.4
- * Se 5.4 / 7.4 / 8.4 / 10.4 = sì, nome e telefono del responsabile sono obbligatori.
+ * Non obbligatori: fax, numero albo gestori, sede amministrativa, REN,
+ * attività svolta, presenza sul mercato, nomi, telefoni e cellulari
+ * di tutti i responsabili.
+ * Se mercato internazionale = sì, le nazioni sono obbligatorie.
+ * Obbligatori: cliente e prodotto/servizio 1, 2 e 3.
  *
  * IDE: campo stato presente in form e nascosto.
  * Non usare sc_error_exit (modale).
@@ -18,32 +22,9 @@
  *
  * Prossimo (JS) invia dic_go_next=1 insieme al Salva.
  * Se la validazione passa, onAfterUpdate apre i documenti.
- * Dichiarazione firmata: niente update, si passa solo allo step documenti.
+ * Dichiarazione firmata: niente SQL qui. sc_exec_sql prima del salvataggio
+ * lascia la transazione aperta e il BeginTrans del form va in errore.
  */
-
-if (!function_exists('dic_wizard_advance_docs')) {
-    function dic_wizard_advance_docs($subId)
-    {
-        $subId = (int)$subId;
-        if ($subId <= 0) {
-            return;
-        }
-        sc_exec_sql("
-            UPDATE subvettori
-            SET wizard_step = 5
-            WHERE id = $subId
-              AND wizard_complete = 0
-              AND wizard_step < 5
-        ", 'pigliacelli');
-        sc_exec_sql('COMMIT');
-        if (session_status() !== PHP_SESSION_ACTIVE) {
-            @session_start();
-        }
-        $_SESSION['wizard_subvettore_id'] = $subId;
-        unset($_SESSION['dic_wizard_nav']);
-        unset($_SESSION['dic_wizard_go_docs']);
-    }
-}
 
 if (!function_exists('dic_si_no')) {
     function dic_si_no($raw)
@@ -137,11 +118,6 @@ $missing = array();
 dic_need_text('Capitale sociale', {capitale_sociale}, $missing);
 dic_need_sino('Capitale interamente versato', {capitale_iv}, $missing);
 dic_need_text('Anno inizio attività', {anno_inizio_attivita}, $missing);
-dic_need_text('Sede amministrativa', {sede_amministrativa}, $missing);
-dic_need_text('Fax', {fax}, $missing);
-dic_need_text('REN', {ren}, $missing);
-dic_need_text('Albo gestori ambientali', {num_albo_gestori}, $missing);
-dic_need_text('Attività svolta', {attivita_svolta}, $missing);
 
 if (dic_flag({anga_cat1}) === 1) {
     dic_need_text('Data ANGA cat. 1', {anga_cat1_data}, $missing);
@@ -153,22 +129,7 @@ if (dic_flag({anga_cat5}) === 1) {
     dic_need_text('Data ANGA cat. 5', {anga_cat5_data}, $missing);
 }
 
-dic_need_text('Responsabile contabilità', {resp_contabilita}, $missing);
-dic_need_text('Tel. responsabile contabilità', {resp_contabilita_tel}, $missing);
-dic_need_text('Cell. responsabile contabilità', {resp_contabilita_cell}, $missing);
-dic_need_text('Responsabile commerciale', {resp_commerciale}, $missing);
-dic_need_text('Tel. responsabile commerciale', {resp_commerciale_tel}, $missing);
-dic_need_text('Cell. responsabile commerciale', {resp_commerciale_cell}, $missing);
-dic_need_text('Responsabile logistica', {resp_logistica}, $missing);
-dic_need_text('Tel. responsabile logistica', {resp_logistica_tel}, $missing);
-dic_need_text('Cell. responsabile logistica', {resp_logistica_cell}, $missing);
-dic_need_text('Responsabile amministrativo', {resp_amministrativo}, $missing);
-
-$naz = dic_flag({mercato_nazionale});
 $int = dic_flag({mercato_internazionale});
-if ($naz !== 1 && $int !== 1) {
-    $missing[] = 'Presenza sul mercato (nazionale o internazionale)';
-}
 if ($int === 1) {
     dic_need_text('Nazioni', {nazioni}, $missing);
 }
@@ -225,11 +186,6 @@ if ($q51 === 0) {
     dic_need_sino('6.5', {q_6_5_elenco_fornitori}, $missing);
     dic_need_sino('6.6', {q_6_6_certificati_fornitori}, $missing);
 }
-if (dic_si_no({q_5_4_resp_qualita}) === 1) {
-    dic_need_text('Responsabile qualità', {resp_qualita}, $missing);
-    dic_need_text('Tel. responsabile qualità', {resp_qualita_tel}, $missing);
-}
-
 $q71 = dic_si_no({q_7_1_iso14001});
 dic_need_sino('7.1', {q_7_1_iso14001}, $missing);
 dic_need_sino('7.4', {q_7_4_resp_ambientale}, $missing);
@@ -245,11 +201,6 @@ if ($q71 === 0) {
     dic_need_sino('7.11', {q_7_11_quantitativi_anga}, $missing);
     dic_need_sino('7.12', {q_7_12_mud_152}, $missing);
 }
-if (dic_si_no({q_7_4_resp_ambientale}) === 1) {
-    dic_need_text('Responsabile ambientale', {resp_ambientale}, $missing);
-    dic_need_text('Tel. responsabile ambientale', {resp_ambientale_tel}, $missing);
-}
-
 $q81 = dic_si_no({q_8_1_iso45001});
 dic_need_sino('8.1', {q_8_1_iso45001}, $missing);
 dic_need_sino('8.4', {q_8_4_dl_rspp}, $missing);
@@ -265,13 +216,6 @@ if ($q81 === 0) {
     dic_need_sino('8.11', {q_8_11_norme_siti}, $missing);
     dic_need_sino('8.12', {q_8_12_protocollo_sanitario}, $missing);
 }
-if (dic_si_no({q_8_4_dl_rspp}) === 1) {
-    dic_need_text('Datore di lavoro', {dl_nome}, $missing);
-    dic_need_text('Tel. datore di lavoro', {dl_tel}, $missing);
-    dic_need_text('RSPP', {rspp_nome}, $missing);
-    dic_need_text('Tel. RSPP', {rspp_tel}, $missing);
-}
-
 dic_need_sino('9.1', {q_9_1_sqas}, $missing);
 dic_need_sino('9.2', {q_9_2_diagnosi_energetica}, $missing);
 
@@ -289,11 +233,6 @@ if ($q101 === 0) {
     dic_need_sino('10.10', {q_10_10_haccp_autisti}, $missing);
     dic_need_sino('10.11', {q_10_11_mezzi_alimentari}, $missing);
 }
-if (dic_si_no({q_10_4_resp_alimentare}) === 1) {
-    dic_need_text('Responsabile sicurezza alimentare', {resp_haccp}, $missing);
-    dic_need_text('Tel. responsabile sicurezza alimentare', {resp_haccp_tel}, $missing);
-}
-
 if (!empty($missing)) {
     if (isset($_COOKIE['dic_go_next'])) {
         setcookie('dic_go_next', '', time() - 3600, '/');

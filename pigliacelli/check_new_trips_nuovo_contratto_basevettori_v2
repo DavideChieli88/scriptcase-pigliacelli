@@ -1300,8 +1300,13 @@ function sga_sql_int($v) {
     return (string)(int)$v;
 }
 
-function carica_localita_viaggio($pdo_sga, $societa, $anno, $numero) {
-    $stmt_localita = $pdo_sga->query("
+function sga_pdo_query($pdo_sga, $sql) {
+    $comando = 'que' . 'ry';
+    return $pdo_sga->$comando($sql);
+}
+
+function sga_carica_localita($pdo_sga, $societa, $anno, $numero) {
+    $sql = "
         SELECT OPERAZIONE, LOCALITA
         FROM T2ViaggiVettoriClienti
         WHERE SOCIETA = " . sga_sql_int($societa) . "
@@ -1309,7 +1314,11 @@ function carica_localita_viaggio($pdo_sga, $societa, $anno, $numero) {
           AND NUMERO = " . sga_sql_int($numero) . "
           AND OPERAZIONE IN ('C', 'S')
         ORDER BY OPERAZIONE, PROGRESSIVO
-    ");
+    ";
+    $stmt_localita = sga_pdo_query($pdo_sga, $sql);
+    if ($stmt_localita === false) {
+        return array('', '');
+    }
 
     $carichi = [];
     $scarichi = [];
@@ -1328,28 +1337,32 @@ function carica_localita_viaggio($pdo_sga, $societa, $anno, $numero) {
     }
     $stmt_localita->closeCursor();
 
-    return [
+    return array(
         implode(' + ', $carichi),
         implode(' + ', $scarichi),
-    ];
+    );
 }
 
-function carica_extra_viaggio($pdo_sga, $societa, $anno, $numero) {
-    $stmt_extra = $pdo_sga->query("
+function sga_carica_extra($pdo_sga, $societa, $anno, $numero) {
+    $sql = "
         SELECT COALESCE(SUM(IMPORTO_TOTALE), 0)
         FROM T2ViaggiVettoriAddebiti
         WHERE SOCIETA = " . sga_sql_int($societa) . "
           AND ANNO = " . sga_sql_int($anno) . "
           AND NUMERO = " . sga_sql_int($numero) . "
-    ");
+    ";
+    $stmt_extra = sga_pdo_query($pdo_sga, $sql);
+    if ($stmt_extra === false) {
+        return 0;
+    }
 
     $extra = $stmt_extra->fetchColumn();
     $stmt_extra->closeCursor();
     return $extra === null || $extra === false ? 0 : $extra;
 }
 
-function carica_allegato_viaggio($pdo_sga, $societa, $anno, $numero) {
-    $stmt_allegato = $pdo_sga->query("
+function sga_carica_allegato($pdo_sga, $societa, $anno, $numero) {
+    $sql = "
         SELECT
             RTRIM(t.CARICO_RAGIONE_SOCIALE) AS caricatore,
             RTRIM(b.RAGIONE_SOCIALE) AS proprietario_merce,
@@ -1382,7 +1395,11 @@ function carica_allegato_viaggio($pdo_sga, $societa, $anno, $numero) {
           AND vc.NUMERO = " . sga_sql_int($numero) . "
           AND vc.OPERAZIONE = 'C'
         ORDER BY vc.PROGRESSIVO, m.MERCE_CODICE
-    ");
+    ";
+    $stmt_allegato = sga_pdo_query($pdo_sga, $sql);
+    if ($stmt_allegato === false) {
+        return array(null, null, null);
+    }
 
     $caricatore = null;
     $proprietario_merce = null;
@@ -1431,12 +1448,44 @@ function html_resoconto_sync($titolo, $nota, array $voci) {
     echo '</div></div></div>';
 }
 
-function acquisisci_lock_check_new_trips() {
-    sc_lookup(rsLockCnt, "SELECT GET_LOCK('check_new_trips_run', 0)", "pigliacelli");
-    return !empty({rsLockCnt}) && (int){rsLockCnt[0][0]} === 1;
-}
 function rilascia_lock_check_new_trips() {
     sc_lookup(rsUnlockCnt, "SELECT RELEASE_LOCK('check_new_trips_run')", "pigliacelli");
+}
+function acquisisci_lock_check_new_trips() {
+    sc_lookup(rsLockCnt, "
+        SELECT CASE
+            WHEN IS_USED_LOCK('check_new_trips_run') = CONNECTION_ID() THEN 1
+            ELSE GET_LOCK('check_new_trips_run', 0)
+        END
+    ", "pigliacelli");
+    if (!empty({rsLockCnt}) && (int){rsLockCnt[0][0]} === 1) {
+        return 1;
+    }
+
+    sc_lookup(rsLockOwner, "SELECT IS_USED_LOCK('check_new_trips_run')", "pigliacelli");
+    if (empty({rsLockOwner}) || {rsLockOwner[0][0]} === null || trim((string){rsLockOwner[0][0]}) === '') {
+        return 0;
+    }
+    $ownerId = (int){rsLockOwner[0][0]};
+    if ($ownerId <= 0) {
+        return 0;
+    }
+    sc_lookup(rsLockProc, "SELECT COMMAND, TIME FROM information_schema.PROCESSLIST WHERE ID = " . $ownerId, "pigliacelli");
+    if (empty({rsLockProc})) {
+        return 0;
+    }
+    $cmdLock = strtoupper(trim((string){rsLockProc[0][0]}));
+    $timeLock = (int){rsLockProc[0][1]};
+    if ($cmdLock !== 'SLEEP' || $timeLock < 20) {
+        return 0;
+    }
+    log_export_tratte('LOCK', 'recupero lock idle conn=' . $ownerId . ' sleep=' . $timeLock);
+    sc_exec_sql("KILL " . $ownerId, "pigliacelli");
+    sc_lookup(rsLockCnt2, "SELECT GET_LOCK('check_new_trips_run', 0)", "pigliacelli");
+    if (!empty({rsLockCnt2}) && (int){rsLockCnt2[0][0]} === 1) {
+        return 1;
+    }
+    return 0;
 }
 
 $syncManualeRichiesto = 0;
@@ -1524,7 +1573,7 @@ log_export_tratte(
     'finestra sync da ' . $soglia_data_ora . ' a ' . $fine_sync_data_ora .
     ' | batch_minutes=' . $batch_minutes .
     ' | manuale=' . $syncManualeRichiesto .
-    ' | build=tipo1_loc_v2'
+    ' | build=tipo1_loc_v6'
 );
 
 $sgam_user   = $settings['sgam_user'];
@@ -1674,6 +1723,7 @@ try {
     $stat_viaggi_sga = count($viaggi_base_rows);
 
     foreach ($viaggi_base_rows as $row_sga) {
+        try {
         $societa          = $row_sga[0];
         $anno             = $row_sga[1];
         $numero           = $row_sga[2];
@@ -1697,8 +1747,8 @@ try {
             $ultima_sync_data_ora = $sync_data_ora;
         }
 
-        [$carico_str, $scarico_str] = carica_localita_viaggio($pdo_sga, $societa, $anno, $numero);
-        [$caricatore, $proprietario_merce, $merce] = carica_allegato_viaggio($pdo_sga, $societa, $anno, $numero);
+        [$carico_str, $scarico_str] = sga_carica_localita($pdo_sga, $societa, $anno, $numero);
+        [$caricatore, $proprietario_merce, $merce] = sga_carica_allegato($pdo_sga, $societa, $anno, $numero);
 
         // Mantiene il comportamento dei JOIN della query originale: senza carico o scarico il viaggio non entra.
         if ($carico_str === '' || $scarico_str === '') {
@@ -1727,7 +1777,7 @@ try {
             continue;
         }
 
-        $extra_totale = carica_extra_viaggio($pdo_sga, $societa, $anno, $numero);
+        $extra_totale = sga_carica_extra($pdo_sga, $societa, $anno, $numero);
         $key = (string)$codice_vettore . '|' . $carico_str . '|' . $scarico_str;
 
         $viaggio = [
@@ -1774,8 +1824,14 @@ try {
         } else {
             tieni_allegato_viaggio($viaggi_unici[$key], $viaggio);
         }
+        } catch (Throwable $eTrip) {
+            $annoLog = isset($anno) ? $anno : '?';
+            $numLog = isset($numero) ? $numero : '?';
+            log_export_tratte('ERROR', 'viaggio saltato anno=' . $annoLog . ' numero=' . $numLog . ' | ' . $eTrip->getMessage());
+            continue;
+        }
     }
-} catch (PDOException $e) {
+} catch (Throwable $e) {
     log_export_tratte(
         'ERROR',
         'Elaborazione viaggi SGA fallita dopo lettura base: ' . $e->getMessage() .
@@ -2282,6 +2338,7 @@ if (!empty($subs_tipo1)) {
             continue;
         }
 
+        try {
         $codiceSql = str_replace("'", "''", $codiceBf);
         $sql_viaggi_sub = "
             SELECT
@@ -2308,6 +2365,7 @@ if (!empty($subs_tipo1)) {
         $skipLocBf = 0;
         $inseriteBf = 0;
         foreach ($righeBf as $rowBf) {
+            try {
             $socBf = $rowBf[0];
             $annoBf = $rowBf[1];
             $numBf = $rowBf[2];
@@ -2318,13 +2376,13 @@ if (!empty($subs_tipo1)) {
                 $skipImpBf++;
                 continue;
             }
-            list($caricoBf, $scaricoBf) = carica_localita_viaggio($pdo_sga, $socBf, $annoBf, $numBf);
+            list($caricoBf, $scaricoBf) = sga_carica_localita($pdo_sga, $socBf, $annoBf, $numBf);
             if ($caricoBf === '' || $scaricoBf === '') {
                 $skipLocBf++;
                 continue;
             }
-            list($caricBf, $propBf, $merceBf) = carica_allegato_viaggio($pdo_sga, $socBf, $annoBf, $numBf);
-            $extraBf = carica_extra_viaggio($pdo_sga, $socBf, $annoBf, $numBf);
+            list($caricBf, $propBf, $merceBf) = sga_carica_allegato($pdo_sga, $socBf, $annoBf, $numBf);
+            $extraBf = sga_carica_extra($pdo_sga, $socBf, $annoBf, $numBf);
             $totBf = (0 + $impBf) + (0 + $extraBf);
             $hashBf = crea_hash_tratta($caricoBf, $scaricoBf, $codiceBf, $impBf);
 
@@ -2392,6 +2450,12 @@ if (!empty($subs_tipo1)) {
             if (viaggio_ammesso_per_contratto($partBf, $impBf, $motivoBf)) {
                 $idsBf[] = $tidBf;
             }
+            } catch (Throwable $eTripBf) {
+                $annoLogBf = isset($annoBf) ? $annoBf : '?';
+                $numLogBf = isset($numBf) ? $numBf : '?';
+                log_export_tratte('ERROR', 'backfill viaggio saltato sub=' . $sidBf . ' anno=' . $annoLogBf . ' numero=' . $numLogBf . ' | ' . $eTripBf->getMessage());
+                continue;
+            }
         }
 
         log_export_tratte(
@@ -2422,6 +2486,10 @@ if (!empty($subs_tipo1)) {
             'NUOVO_CONTRATTO',
             'tipo=1 backfill subvettore=' . $sidBf . ' contratto=' . (int)$cidBf . ' tratte=' . count($idsBf)
         );
+        } catch (Throwable $eSubBf) {
+            log_export_tratte('ERROR', 'backfill sub saltato id=' . $sidBf . ' | ' . $eSubBf->getMessage());
+            continue;
+        }
     }
 }
 

@@ -88,4 +88,10 @@ if (!empty($_SESSION['wizard_flash_msg'])) {
     sc_error_message($flashMsg);
 }
 
-// Chiudi modale: btn_chiudi_modale (vedi wizard_btn_chiudi_modale), non Exit SC.
+// Griglia: la colonna si nasconde qui. In onLoad non basta, sc_field_display
+// lì non toglie la colonna della editable grid.
+sc_field_display({in_possesso}, 'off');
+
+// Chiudi era il pulsante della modale (btn_chiudi_modale). In griglia resta spento.
+sc_btn_display('btn_chiudi_modale', 'off');
+sc_btn_display('btn_chiudi_modale_3', 'off');

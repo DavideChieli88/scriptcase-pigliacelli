@@ -2,7 +2,7 @@
  * form_documenti_wizard → onLoad
  *
  * Form multirecord: Avanti e Indietro restano visibili anche dopo il salvataggio.
- * btn_chiudi_modale_3 serviva alla modale, per ora spento.
+ * btn_chiudi_modale era il Chiudi della modale. In griglia resta spento.
  *
  * Name pulsanti SC:
  *   - next_step_btn_signs   (Prossimo / Next → step 6)
@@ -16,50 +16,11 @@ sc_btn_display('back_btn_docs', 'on');
 sc_btn_display('exit', 'off');
 sc_btn_display('sair', 'off');
 sc_btn_display('back', 'off');
-// Modale non più usata: Chiudi resta nascosto.
+// Modale non più usata. Il nome in toolbar è btn_chiudi_modale.
+sc_btn_display('btn_chiudi_modale', 'off');
 sc_btn_display('btn_chiudi_modale_3', 'off');
 
-// --- in_possesso / file (modale) ---
-$tipoId = {tipo_documento_id};
-if ($tipoId === '' || $tipoId === null || $tipoId === 'undefined') {
-    $tipoId = 0;
-}
-$tipoId = (int)$tipoId;
-
-$flagPossesso = 0;
-if ($tipoId > 0) {
-    sc_lookup(rsDocFlagPossLoad, "
-        SELECT COALESCE(flag_possesso, 0)
-        FROM tipi_documento
-        WHERE id = $tipoId
-        LIMIT 1
-    ", 'pigliacelli');
-    if (!empty({rsDocFlagPossLoad[0][0]})) {
-        $flagPossesso = (int){rsDocFlagPossLoad[0][0]};
-    }
-}
-
-$inPossesso = {in_possesso};
-if ($inPossesso === '' || $inPossesso === null || $inPossesso === 'undefined' || $inPossesso === 'null') {
-    $inPossesso = 0;
-}
-$inPossesso = ((int)$inPossesso === 1) ? 1 : 0;
-
-sc_log_add('DOC_POSS', 'onLoad tipo=' . $tipoId . ' flag=' . $flagPossesso . ' poss=' . $inPossesso);
-
-if ($flagPossesso !== 1) {
-    sc_field_display({in_possesso}, 'off');
-    sc_field_display({file}, 'on');
-    sc_field_display({data_scadenza}, 'on');
-    return;
-}
-
-sc_field_display({in_possesso}, 'on');
-
-if ($inPossesso !== 1) {
-    sc_field_display({file}, 'off');
-    sc_field_display({data_scadenza}, 'off');
-} else {
-    sc_field_display({file}, 'on');
-    sc_field_display({data_scadenza}, 'on');
-}
+// Editable grid: sc_field_display vale per tutta la colonna.
+// Una riga con flag_possesso=1, dopo il salvataggio, accendeva
+// "In possesso" anche sui documenti che non lo usano.
+sc_field_display({in_possesso}, 'off');

@@ -29,7 +29,7 @@ Vedi anche: [`requisiti_pigliacelli_validazione_2026-07.md`](requisiti_pigliacel
 | 6 | Visura camerale | 6 mesi dall’emissione | 7 gg. prima; giorno scadenza |
 | 7 | Elenco automezzi | Annuale | 7 gg. prima; giorno scadenza |
 | 8 | Polizza vettoriale + quietanza **(facoltativa)** | — | 7 gg. prima; giorno scadenza |
-| 9 | Certificato White list *(se non iscritti: richiesta + ricevuta PEC)* | — | 60 gg.; 45 gg.; 30 gg. prima; giorno scadenza |
+| 9 | Certificato White list oppure istanza di iscrizione con ricevuta PEC | — | 60 gg.; 45 gg.; 30 gg. prima; giorno scadenza |
 | 10 | Dichiarazioni allegate compilate e firmate (qualifica, validità annuale) | Annuale | 7 gg. prima; giorno scadenza |
 | 11 | Autorizzazioni ANGA Cat. 1 / 4 / 5 *(= “Cat. X”; se trasporto rifiuti)* | Per cat. flaggata; scadenza da indicare | 30 gg. prima; giorno scadenza |
 | 12 | Ricevuta pagamento ANGA | **30 aprile**; preferibile slot **per cat.** (pagamento unico o in giorni diversi) | 14 gg. prima; giorno scadenza |
@@ -73,7 +73,7 @@ Vedi anche: [`requisiti_pigliacelli_validazione_2026-07.md`](requisiti_pigliacel
 6. Visura camerale (scadenza 6 mesi dall’emissione): primo alert 7 giorni prima della scadenza; secondo alert giorno della scadenza.
 7. Elenco automezzi (scadenza annuale): primo alert 7 giorni prima della scadenza; secondo alert giorno della scadenza.
 8. Polizza vettoriale in corso di validità + quietanza (facoltativa): primo alert 7 gg. prima; secondo alert giorno della scadenza.
-9. Certificato White list (se non iscritti: caricare richiesta + ricevuta consegna pec): primo alert 60 gg. prima della scadenza; secondo 45 gg. prima della scadenza; terzo alert 30 gg. prima della scadenza; quarto alert giorno della scadenza.
+9. Certificato White list oppure istanza di iscrizione con ricevuta PEC: primo alert 60 gg. prima della scadenza; secondo 45 gg. prima della scadenza; terzo alert 30 gg. prima della scadenza; quarto alert giorno della scadenza.
 10. Dichiarazioni allegate compilate e firmate (dichiarazioni per qualifica con validità annuale): primo alert 7 gg. prima della scadenza; secondo alert giorno della scadenza.
 11. Autorizzazioni ANGA – Cat. 1 + Cat. 4 + Cat. 5 (se effettuano trasporto rifiuti) – scadenza quinquennale dall’emissione: primo alert 30 gg. prima; secondo alert data scadenza.
 12. Ricevuta pagamento annuale ANGA (scadenza annuale 30 aprile): primo alert 14 gg. prima; secondo alert data scadenza.
