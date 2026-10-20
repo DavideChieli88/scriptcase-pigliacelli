@@ -1,0 +1,255 @@
+/**
+ * Scriptcase Report PDF: manuale_vettore
+ *
+ * Manuale del Vettore, Rev. 02 del 01-09-2022 (29 pagine).
+ * Nessun campo da compilare e nessuna firma: il PDF in uscita sono
+ * i byte del file originale, cosi' resta uguale (logo, tabelle, icone).
+ *
+ * SETUP:
+ *  1) App Report PDF con nome manuale_vettore, questo codice in onExecute.
+ *  2) Copiare manuale_vettore.pdf (o il PDF originale) in templates_path
+ *     oppure in contratti_base_dir. In repo e' gia' in docs/ e in radice.
+ *
+ * Parametri: subvector, subvettoreId, documentoId, auto_save_pdf=S, return_to
+ */
+
+$subvector = 0;
+if ((int)[subvector] > 0) {
+    $subvector = (int)[subvector];
+}
+if ($subvector <= 0 && (int)[subvettoreId] > 0) {
+    $subvector = (int)[subvettoreId];
+}
+foreach (array('subvector', 'subvettoreId', 'subvettore_id', 'subId') as $k) {
+    if ($subvector > 0) {
+        break;
+    }
+    if (isset($_GET[$k]) && (int)$_GET[$k] > 0) {
+        $subvector = (int)$_GET[$k];
+    } elseif (isset($_POST[$k]) && (int)$_POST[$k] > 0) {
+        $subvector = (int)$_POST[$k];
+    } elseif (isset($_REQUEST[$k]) && (int)$_REQUEST[$k] > 0) {
+        $subvector = (int)$_REQUEST[$k];
+    }
+}
+
+$documentoId = 0;
+if (isset($_GET['documentoId']) && (int)$_GET['documentoId'] > 0) {
+    $documentoId = (int)$_GET['documentoId'];
+} elseif (isset($_REQUEST['documentoId']) && (int)$_REQUEST['documentoId'] > 0) {
+    $documentoId = (int)$_REQUEST['documentoId'];
+} elseif ((int)[documentoId] > 0) {
+    $documentoId = (int)[documentoId];
+}
+
+$pdfFileName = 'manuale_vettore_rev02.pdf';
+
+$tplNames = array(
+    'manuale_vettore.pdf',
+    'manuale_vettore_rev02.pdf',
+    'Manuale del Vettore_rev 2_1 settembre 2022.pdf',
+    'docs/manuale_vettore.pdf',
+    'docs/Manuale del Vettore_rev 2_1 settembre 2022.pdf',
+);
+$tplRoots = array();
+if (defined('__DIR__')) {
+    $tplRoots[] = __DIR__;
+    $tplRoots[] = dirname(__DIR__);
+}
+$tplRoots[] = dirname(__FILE__);
+$tplRoots[] = dirname(dirname(__FILE__));
+if (!empty($_SERVER['SCRIPT_FILENAME'])) {
+    $tplRoots[] = dirname((string)$_SERVER['SCRIPT_FILENAME']);
+    $tplRoots[] = dirname(dirname((string)$_SERVER['SCRIPT_FILENAME']));
+}
+$tplRoots[] = 'C:/Users/dvdch/Desktop/Projects/scriptcase-pigliacelli/pigliacelli';
+$tplRoots[] = 'C:/Users/dvdch/Desktop/Projects/scriptcase-pigliacelli/pigliacelli/docs';
+
+$rsTpl = $this->Db->Execute("
+    SELECT set_value
+    FROM sec_settings
+    WHERE set_name IN ('templates_path', 'contratti_base_dir', 'documento_verde_template_dir')
+");
+if ($rsTpl !== false) {
+    while (!$rsTpl->EOF) {
+        $p = rtrim(str_replace('\\', '/', trim((string)$rsTpl->fields[0])), '/');
+        if ($p !== '') {
+            $tplRoots[] = $p;
+            $tplRoots[] = dirname($p);
+            $tplRoots[] = $p . '/docs';
+        }
+        $rsTpl->MoveNext();
+    }
+    $rsTpl->Close();
+}
+
+$tplPath = '';
+foreach ($tplRoots as $root) {
+    $root = rtrim(str_replace('\\', '/', (string)$root), '/');
+    if ($root === '') {
+        continue;
+    }
+    foreach ($tplNames as $nm) {
+        $try = $root . '/' . ltrim($nm, '/');
+        if (is_readable($try) && filesize($try) > 1000) {
+            $head = @file_get_contents($try, false, null, 0, 4);
+            if ($head === '%PDF') {
+                $tplPath = $try;
+                break 2;
+            }
+        }
+    }
+}
+if ($tplPath === '') {
+    die('Manuale del Vettore non trovato. Copiare manuale_vettore.pdf in templates_path.');
+}
+
+$pdfBin = @file_get_contents($tplPath);
+if (!is_string($pdfBin) || strncmp($pdfBin, '%PDF', 4) !== 0) {
+    die('File manuale non valido: ' . $tplPath);
+}
+
+$sqlQuote = function ($v) {
+    return "'" . str_replace("'", "''", (string)$v) . "'";
+};
+
+if ($documentoId <= 0 && $subvector > 0) {
+    $rsDoc = $this->Db->Execute("
+        SELECT d.id
+        FROM documenti d
+        INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
+        WHERE d.subvettore_id = " . (int)$subvector . "
+          AND LOWER(td.nome) LIKE '%manuale%'
+          AND LOWER(td.nome) LIKE '%vettore%'
+          AND (d.subvettore_autista_id IS NULL OR d.subvettore_autista_id = 0)
+          AND (d.subvettore_mezzo_id IS NULL OR d.subvettore_mezzo_id = 0)
+        ORDER BY d.id
+        LIMIT 1
+    ");
+    if ($rsDoc !== false && !$rsDoc->EOF) {
+        $documentoId = (int)$rsDoc->fields[0];
+        $rsDoc->Close();
+    }
+}
+
+$autoSavePdf = (
+    (isset($_SESSION['pdf_auto_save']) && strtoupper(trim((string)$_SESSION['pdf_auto_save'])) === 'S')
+    || (isset([auto_save_pdf]) && strtoupper(trim((string)[auto_save_pdf])) === 'S')
+    || (isset($_GET['auto_save_pdf']) && strtoupper(trim((string)$_GET['auto_save_pdf'])) === 'S')
+    || (isset($_REQUEST['auto_save_pdf']) && strtoupper(trim((string)$_REQUEST['auto_save_pdf'])) === 'S')
+);
+
+$fullPath = '';
+if ($documentoId > 0 || $autoSavePdf) {
+    $rsBaseDir = $this->Db->Execute("
+        SELECT set_value FROM sec_settings WHERE set_name = 'contratti_base_dir' LIMIT 1
+    ");
+    $baseDirRaw = '';
+    if ($rsBaseDir !== false && !$rsBaseDir->EOF) {
+        $baseDirRaw = trim((string)$rsBaseDir->fields[0]);
+        $rsBaseDir->Close();
+    }
+    if ($baseDirRaw === '') {
+        $rsBaseDir2 = $this->Db->Execute("
+            SELECT set_value FROM sec_settings WHERE set_name = 'templates_path' LIMIT 1
+        ");
+        if ($rsBaseDir2 !== false && !$rsBaseDir2->EOF) {
+            $baseDirRaw = trim((string)$rsBaseDir2->fields[0]);
+            $rsBaseDir2->Close();
+            if (preg_match('#/templates$#', str_replace('\\', '/', $baseDirRaw))) {
+                $baseDirRaw = preg_replace('#/templates$#', '', str_replace('\\', '/', $baseDirRaw));
+            }
+        }
+    }
+    $baseDir = '';
+    $normalized = str_replace('\\', '/', trim($baseDirRaw));
+    if ($normalized !== '' && ($normalized[0] === '/' || preg_match('#^[A-Za-z]:/#', $normalized))) {
+        if (!is_dir($normalized)) {
+            @mkdir($normalized, 0775, true);
+        }
+        $rp = @realpath($normalized);
+        $baseDir = $rp !== false ? $rp : rtrim($normalized, '/');
+    } elseif ($normalized !== '' && !empty($_SERVER['DOCUMENT_ROOT'])) {
+        $docRoot = @realpath((string)$_SERVER['DOCUMENT_ROOT']);
+        if ($docRoot !== false) {
+            $cand = $docRoot . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, trim($normalized, '/'));
+            if (!is_dir($cand)) {
+                @mkdir($cand, 0775, true);
+            }
+            $rp = @realpath($cand);
+            $baseDir = $rp !== false ? $rp : $cand;
+        }
+    }
+    $baseDir = rtrim(str_replace('\\', '/', (string)$baseDir), '/');
+    if ($baseDir === '' && $autoSavePdf) {
+        die('Impostare sec_settings.contratti_base_dir o templates_path.');
+    }
+    if ($baseDir !== '') {
+        if (!is_dir($baseDir)) {
+            @mkdir($baseDir, 0775, true);
+        }
+        $fullPath = $baseDir . '/' . $pdfFileName;
+        if (@file_put_contents($fullPath, $pdfBin) === false && $autoSavePdf) {
+            die('Impossibile salvare il manuale: ' . $fullPath);
+        }
+        clearstatcache(true, $fullPath);
+        @chmod($fullPath, 0664);
+    }
+}
+
+if ($documentoId > 0 && $fullPath !== '' && is_readable($fullPath)) {
+    $this->Db->Execute("
+        UPDATE documenti
+        SET file = " . $sqlQuote($pdfFileName) . ",
+            stato_documento_id = 2,
+            updated_at = NOW()
+        WHERE id = " . (int)$documentoId . "
+    ");
+    if (!isset($_SESSION['docs_pdf_abs']) || !is_array($_SESSION['docs_pdf_abs'])) {
+        $_SESSION['docs_pdf_abs'] = array();
+    }
+    $_SESSION['docs_pdf_abs'][$documentoId] = $fullPath;
+    if (!isset($_SESSION['docs_pdf_bin']) || !is_array($_SESSION['docs_pdf_bin'])) {
+        $_SESSION['docs_pdf_bin'] = array();
+    }
+    $_SESSION['docs_pdf_bin'][$documentoId] = base64_encode($pdfBin);
+    if (!isset($_SESSION['docs_pdf_generated']) || !is_array($_SESSION['docs_pdf_generated'])) {
+        $_SESSION['docs_pdf_generated'] = array();
+    }
+    $_SESSION['docs_pdf_generated'][$documentoId] = time();
+}
+
+if (function_exists('sc_log_add')) {
+    sc_log_add(
+        'PDF_SAVE',
+        '[documentoId=' . (int)$documentoId . '][subvettoreId=' . (int)$subvector . '] '
+        . 'manuale_vettore tpl=' . $tplPath
+        . ' db_file=' . $pdfFileName
+        . ' path=' . $fullPath
+        . ' bytes=' . (string)strlen($pdfBin)
+    );
+}
+
+unset($_SESSION['pdf_auto_save']);
+unset($_SESSION['pdf_next']);
+
+$returnTo = '';
+if ($autoSavePdf) {
+    if (isset($_GET['return_to']) && trim((string)$_GET['return_to']) !== '') {
+        $returnTo = preg_replace('/[^a-zA-Z0-9_\\-]/', '', (string)$_GET['return_to']);
+    } elseif (!empty($_SESSION['documento_verde_return_to'])) {
+        $returnTo = preg_replace('/[^a-zA-Z0-9_\\-]/', '', (string)$_SESSION['documento_verde_return_to']);
+    }
+}
+if ($returnTo !== '') {
+    unset($_SESSION['documento_verde_return_to']);
+    $_SESSION['wizard_flash_msg'] = 'Manuale del Vettore pronto.';
+    header('Location: ../' . $returnTo . '/?generated=1&documentoId=' . (int)$documentoId . '&subvettoreId=' . (int)$subvector);
+    exit;
+}
+
+header('Content-Type: application/pdf');
+header('Content-Disposition: inline; filename="' . $pdfFileName . '"');
+header('Content-Length: ' . (string)strlen($pdfBin));
+echo $pdfBin;
+exit;

@@ -10,7 +10,8 @@
  * - 7.1 = sì → non chiedere il resto della 7 tranne 7.4
  * - 8.1 = sì → non chiedere il resto della 8 tranne 8.4
  * - 10.1 = sì → non chiedere il resto della 10 tranne 10.4
- * Non obbligatori: fax, numero albo gestori, sede amministrativa, REN,
+ * Non obbligatori: fax, sede amministrativa, REN,
+ * N. Albo Gestori è obbligatorio se almeno una categoria ANGA è Sì.
  * attività svolta, presenza sul mercato, nomi, telefoni e cellulari
  * di tutti i responsabili.
  * Se mercato internazionale = sì, le nazioni sono obbligatorie.
@@ -118,6 +119,10 @@ $missing = array();
 dic_need_text('Capitale sociale', {capitale_sociale}, $missing);
 dic_need_sino('Capitale interamente versato', {capitale_iv}, $missing);
 dic_need_text('Anno inizio attività', {anno_inizio_attivita}, $missing);
+
+if (dic_flag({anga_cat1}) === 1 || dic_flag({anga_cat4}) === 1 || dic_flag({anga_cat5}) === 1) {
+    dic_need_text('N. Albo Gestori', {num_albo_gestori}, $missing);
+}
 
 if (dic_flag({anga_cat1}) === 1) {
     dic_need_text('Data ANGA cat. 1', {anga_cat1_data}, $missing);

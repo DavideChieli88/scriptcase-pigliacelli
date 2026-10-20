@@ -1,0 +1,56 @@
+/**
+ * Blank blank_sign_committente → onExecute
+ *
+ * Aperto da grid_contratti_committente_btn_firma con sc_redir(..., '_blank'),
+ * come generate_doc_to_sign dai pulsanti firma documenti.
+ * Redirect al link_committente, senza mail. Stesso schema di easygn_start_wf.
+ */
+
+$contrattoId = 0;
+if (isset($_GET['contrattoId']) && (int)$_GET['contrattoId'] > 0) {
+    $contrattoId = (int)$_GET['contrattoId'];
+} elseif (isset([contrattoId]) && (int)[contrattoId] > 0) {
+    $contrattoId = (int)[contrattoId];
+}
+
+if ($contrattoId <= 0) {
+    sc_error_message('Contratto non indicato.');
+    return;
+}
+
+sc_lookup(rsBlankFirma, "
+    SELECT stato_contratto_id, easygn_sign_link
+    FROM contratti
+    WHERE id = " . (int)$contrattoId . "
+    LIMIT 1
+", 'pigliacelli');
+
+if (empty({rsBlankFirma[0][0]})) {
+    sc_error_message('Contratto non trovato.');
+    return;
+}
+
+if ((int){rsBlankFirma[0][0]} !== 5) {
+    sc_error_message('La firma del committente è disponibile solo quando il contratto è in attesa della sua firma.');
+    return;
+}
+
+$meta = json_decode(trim((string){rsBlankFirma[0][1]}), true);
+$link = is_array($meta) && isset($meta['link_committente']) ? trim((string)$meta['link_committente']) : '';
+if ($link === '' || preg_match('#^https?://#i', $link) !== 1) {
+    sc_error_message('Link di firma del committente non ancora disponibile.');
+    return;
+}
+
+sc_log_add('FIRMA_COMM', 'redirect EasyGN contratto=' . $contrattoId . ' link_len=' . strlen($link));
+$safeSignUrl = htmlspecialchars($link, ENT_QUOTES, 'UTF-8');
+if (!headers_sent()) {
+    header('Location: ' . $link);
+    exit;
+}
+echo "<!doctype html><html lang='it'><head><meta charset='utf-8'>"
+    . "<meta http-equiv='refresh' content='0;url=" . $safeSignUrl . "'>"
+    . "<title>Reindirizzamento firma</title></head><body>"
+    . "<script>window.location.replace(" . json_encode($link) . ");</script>"
+    . "</body></html>";
+exit;

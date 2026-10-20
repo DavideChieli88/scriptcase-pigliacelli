@@ -84,6 +84,9 @@ if (isset($_GET['next']) && strtolower(trim((string)$_GET['next'])) === 'sign') 
     $nextSign = true;
 }
 
+$tipoKey = strtolower($tipoNome);
+$isManualeVettore = (strpos($tipoKey, 'manuale') !== false && strpos($tipoKey, 'vettore') !== false);
+
 $log = function ($msg) use ($documentoId, $subId) {
     sc_log_add('GEN_DOC', "[documentoId=$documentoId][subvettoreId=$subId] GEN_DOC_v3 " . (string)$msg);
 };
@@ -158,7 +161,7 @@ $log(
 );
 
 // Unico caso di skip Report: PDF pronto (disco o sessione) e non force
-if ($nextSign && $documentoId > 0 && !$forceRegen && ($fileOnDisk || $sessionBinOk)) {
+if ($nextSign && !$isManualeVettore && $documentoId > 0 && !$forceRegen && ($fileOnDisk || $sessionBinOk)) {
     $eg = '../easygn_start_wf_docs/'
         . '?documentoId=' . (int)$documentoId
         . '&subvettoreId=' . (int)$subId
@@ -181,6 +184,7 @@ if ($documentoId > 0 && !$fileOnDisk && !$sessionBinOk
     && stripos($fileVal, 'placeholder') === false
     && stripos($tipoNome, 'dichiaraz') === false
     && stripos($fileVal, 'dichiarazioni_') === false
+    && !$isManualeVettore
 ) {
     sc_exec_sql("
         UPDATE documenti
@@ -198,10 +202,11 @@ if ($nextSign) {
     $_SESSION['pdf_next'] = 'sign';
 }
 
-$tipoKey = strtolower($tipoNome);
 $reportApp = '';
 if (strpos($tipoKey, 'dichiaraz') !== false) {
     $reportApp = 'dichiarazioni_pdf';
+} elseif ($isManualeVettore) {
+    $reportApp = 'manuale_vettore';
 } else {
     // Altri verdi: PDF placeholder generato (firma via EasyGN)
     $reportApp = 'placeholder_docs_firma';

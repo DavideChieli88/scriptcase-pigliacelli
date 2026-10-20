@@ -107,3 +107,47 @@ sc_label(q_10_8_pcc_poa) = '10.8 - Sono valutati tutti i PCC e/o i POA';
 sc_label(q_10_9_manuale_autocontrollo) = '10.9 - Esistono il Manuale dell\'autocontrollo alimentare';
 sc_label(q_10_10_haccp_autisti) = '10.10 - Gli autisti ha conseguito l\'attestato HACCP per la mansione svolta';
 sc_label(q_10_11_mezzi_alimentari) = '10.11 - I veicoli utilizzati per il trasporto alimentare, sono sempre autorizzati per lo svolgimento del servizio';
+
+/**
+ * Precarica anga_cat1 / anga_cat4 / anga_cat5 dai mezzi.
+ * Mezzi: has_cat_trasp_rifiuti_1 / _4 / _5 (1 = Sì).
+ * Lookup radio numerico: assegnare 1, non la stringa '1'.
+ * Solo in apertura, e solo finché lo stato è bozza.
+ * Compilata o firmata resta com'è stata salvata.
+ */
+$dicPost = ($dicOp === 'alterar' || $dicOp === 'update' || $dicOp === 'recarga' || $dicOp === 'reload');
+if (!$dicPost && ($statoForm === '' || $statoForm === 'bozza')) {
+    $dicSubId = 0;
+    if (isset({subvettore_id}) && (int){subvettore_id} > 0) {
+        $dicSubId = (int){subvettore_id};
+    } elseif (isset([subvettoreId]) && (int)[subvettoreId] > 0) {
+        $dicSubId = (int)[subvettoreId];
+    } elseif (!empty($_SESSION['wizard_subvettore_id'])) {
+        $dicSubId = (int)$_SESSION['wizard_subvettore_id'];
+    }
+
+    if ($dicSubId > 0) {
+        sc_lookup(rsDicCatMezzi, "
+            SELECT
+                MAX(CASE WHEN COALESCE(has_cat_trasp_rifiuti_1, 0) = 1 THEN 1 ELSE 0 END),
+                MAX(CASE WHEN COALESCE(has_cat_trasp_rifiuti_4, 0) = 1 THEN 1 ELSE 0 END),
+                MAX(CASE WHEN COALESCE(has_cat_trasp_rifiuti_5, 0) = 1 THEN 1 ELSE 0 END)
+            FROM subvettori_mezzi
+            WHERE subvettore_id = $dicSubId
+        ", 'pigliacelli');
+
+        $cat1 = !empty({rsDicCatMezzi[0][0]}) ? (int){rsDicCatMezzi[0][0]} : 0;
+        $cat4 = !empty({rsDicCatMezzi[0][1]}) ? (int){rsDicCatMezzi[0][1]} : 0;
+        $cat5 = !empty({rsDicCatMezzi[0][2]}) ? (int){rsDicCatMezzi[0][2]} : 0;
+
+        if ($cat1 === 1) {
+            {anga_cat1} = 1;
+        }
+        if ($cat4 === 1) {
+            {anga_cat4} = 1;
+        }
+        if ($cat5 === 1) {
+            {anga_cat5} = 1;
+        }
+    }
+}

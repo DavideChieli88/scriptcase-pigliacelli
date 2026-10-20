@@ -165,13 +165,17 @@ if (!function_exists('pigliacelli_mail_layout')) {
 }
 
 if (!function_exists('gcc_mail_html')) {
-    function gcc_mail_html($nome, $contrattoId, $signUrl)
+    function gcc_mail_html($nome, $contrattoId, $signUrl, $ragioneSociale)
     {
         $safeUrl = htmlspecialchars($signUrl, ENT_QUOTES, 'UTF-8');
         $safeNome = htmlspecialchars($nome, ENT_QUOTES, 'UTF-8');
+        $safeRagione = htmlspecialchars($ragioneSociale, ENT_QUOTES, 'UTF-8');
+        $chi = $safeRagione !== '' ? ($safeRagione . ' del subvettore') : 'il subvettore';
         $inner = '<p style="margin:0 0 16px;">' . $safeNome . ',</p>'
-            . '<p style="margin:0 0 24px;">Le rinviamo il link per firmare il contratto <strong>#'
+            . '<p style="margin:0 0 16px;">Le rinviamo il link per firmare il contratto <strong>#'
             . (int)$contrattoId . '</strong>.</p>'
+            . '<p style="margin:0 0 24px;">Di seguito il link per controfirmare il contratto <strong># '
+            . (int)$contrattoId . '</strong> già firmato da ' . $chi . '.</p>'
             . '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;"><tr>'
             . '<td align="center" bgcolor="#5b2d8e" style="border-radius:8px;background-color:#5b2d8e;">'
             . '<a href="' . $safeUrl . '" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:bold;'
@@ -193,9 +197,12 @@ if ($contrattoId <= 0) {
 }
 
 sc_lookup(rsGccCtr, "
-    SELECT stato_contratto_id, easygn_sign_link
-    FROM contratti
-    WHERE id = " . (int)$contrattoId . "
+    SELECT c.stato_contratto_id, c.easygn_sign_link, s.ragione_sociale
+    FROM contratti c
+    LEFT JOIN subvettori_contratti sc ON sc.contratto_id = c.id
+    LEFT JOIN subvettori s ON s.id = sc.subvettore_id
+    WHERE c.id = " . (int)$contrattoId . "
+    ORDER BY sc.id ASC
     LIMIT 1
 ", 'pigliacelli');
 
@@ -228,6 +235,7 @@ if ($nome === '') {
     $nome = 'Gentile firmatario';
 }
 $link = isset($meta['link_committente']) ? trim((string)$meta['link_committente']) : '';
+$ragioneSociale = trim((string){rsGccCtr[0][2]});
 
 if (!gcc_email_valida($to)) {
     sc_ajax_message('Email del committente mancante o non valida.');
@@ -240,14 +248,16 @@ if (!gcc_is_http_url($link)) {
 
 $titolo = 'Firma contratto — link di firma digitale (committente)';
 $testo = $nome . ",\n\n"
-    . "Le rinviamo il link per firmare il contratto #" . (int)$contrattoId . ".\n\n"
+    . "Le rinviamo il link per firmare il contratto #" . (int)$contrattoId . ".\n"
+    . "Di seguito il link per controfirmare il contratto # " . (int)$contrattoId
+    . " già firmato da " . ($ragioneSociale !== '' ? $ragioneSociale . ' del subvettore' : 'il subvettore') . "\n\n"
     . "Link di firma:\n" . $link . "\n\n"
     . "Messaggio automatico — non rispondere.";
 
 try {
     sc_send_mail_api(array_merge(gcc_smtp_config(), array(
         'message' => array(
-            'html'    => gcc_mail_html($nome, $contrattoId, $link),
+            'html'    => gcc_mail_html($nome, $contrattoId, $link, $ragioneSociale),
             'text'    => $testo,
             'to'      => $to,
             'subject' => $titolo,

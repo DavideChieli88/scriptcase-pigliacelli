@@ -1,7 +1,7 @@
 /**
  * form_subvettori_mezzi → onValidate
  *
- * Obblighi base: targa, carta + scadenza.
+ * Obblighi base: targa, carta + scadenza, scadenza assicurazioni.
  * Radio has_cat_trasp_rifiuti_X (1=Si, 0=No), mail 17/09:
  *   has_cat_X=1 → Autorizzazione ANGA Cat.X (file+scadenza) + Ricevuta ANGA Cat.X (file+scadenza 30/04)
  *   almeno una cat → Iscrizione RENTRI (solo file) + Ricevuta RENTRI (file+scadenza 30/04), unici
@@ -15,6 +15,7 @@ $mezzoId = isset({id}) ? (int){id} : 0;
 
 $vTarga = isset({targa}) ? trim((string){targa}) : '';
 $vScadCarta = isset({scadenza_carta_circolazione}) ? trim((string){scadenza_carta_circolazione}) : '';
+$vScadAssicurazioni = isset({scadenza_assicurazioni}) ? trim((string){scadenza_assicurazioni}) : '';
 
 $autistaId = 0;
 $rawAut = isset({autista_id}) ? {autista_id} : '';
@@ -58,6 +59,9 @@ if ($vTarga === '') {
 }
 if ($vScadCarta === '' || $vScadCarta === 'null') {
     $errors[] = 'Scadenza carta di circolazione';
+}
+if ($vScadAssicurazioni === '' || $vScadAssicurazioni === 'null' || strpos($vScadAssicurazioni, '0000-00-00') === 0) {
+    $errors[] = 'Scadenza assicurazioni';
 }
 
 $hasCartaCircolazione = ($vCarta !== '' || $hasUpload);

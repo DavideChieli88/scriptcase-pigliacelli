@@ -3,16 +3,18 @@
  * → onLoad
  *
  * Su Scriptcase l'app e' form_subvettori_contratti_for_subvectors_magic_link.
- * Il firmatario vede l'anagrafica in sola lettura, precompilata da subvettori,
- * e nome, cognome, email, telefono del rappresentante.
- * Nascita, albo e autisti restano nascosti.
+ * Review Erik 13/10: niente anagrafica e niente tratte.
+ * Testo, pulsanti Accetta e invia per la firma / Rifiuta, anteprima PDF gia aperta.
+ * Accetta apre la modale dei 4 dati del rappresentante (anagrafica) e poi salva.
+ * Rifiuta chiede una nota e blocca il contratto (blank_magic_link_review_rifiuta).
  * 1) Modale errore EasyGN
  * 2) Blocco autisti sempre nascosto
  * 3) Precaricamento anagrafica da subvettori (visibile, sola lettura)
  * 4) Campi su subvettori_contratti (rappresentante, albo, nascita):
  *    se vuoti sul contratto, si copiano dalle colonne omonime di subvettori
  * 5) Campi *_firmatario, albo e nascita nascosti. Anagrafica in sola lettura.
- * 6) Se stato_contratto_id >= 3 (già compilato) → redirect blank_magic_link_review_inviato
+ * 6) Stato 7 (rifiutato) → blank_magic_link_review_rifiuta.
+ *    Stato >= 3 (già accettato) → blank_magic_link_review_inviato.
  * 7) Popup conferma invio revisione (Scriptcase JavaScript Methods):
  *    a) Programming → JavaScript Methods → mlReviewConfirmInit
  *       incollare form_subvettori_contratti_magic_link_review_confirm.js
@@ -23,10 +25,48 @@
 
 if (session_status() !== PHP_SESSION_ACTIVE) {@session_start();}
 
-$scIdEarly = 0;
-if (isset({id}) && (int){id} > 0) {
-    $scIdEarly = (int){id};
-} elseif(isset([subvettore_contratto_id]) && (int)[subvettore_contratto_id] > 0) {$scIdEarly = (int)[subvettore_contratto_id];} elseif(isset($_GET['subvettore_contratto_id']) && (int)$_GET['subvettore_contratto_id'] > 0) {$scIdEarly = (int)$_GET['subvettore_contratto_id'];} elseif(isset($_GET['id']) && (int)$_GET['id'] > 0) {$scIdEarly = (int)$_GET['id'];}
+if (!empty($_SESSION['ml_review_appinit_log'])) {
+    sc_log_add('MAGIC_LINK_REVIEW', (string)$_SESSION['ml_review_appinit_log']);
+    unset($_SESSION['ml_review_appinit_log']);
+}
+
+$getSc = isset($_GET['subvettore_contratto_id']) ? (int)$_GET['subvettore_contratto_id'] : 0;
+$getId = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+$gloSc = (isset([subvettore_contratto_id]) && (int)[subvettore_contratto_id] > 0) ? (int)[subvettore_contratto_id] : 0;
+$sessSc = isset($_SESSION['ml_review_open_sc']) ? (int)$_SESSION['ml_review_open_sc'] : 0;
+
+$linkScId = 0;
+if ($getSc > 0) {
+    $linkScId = $getSc;
+} elseif ($gloSc > 0) {
+    $linkScId = $gloSc;
+}
+
+$formScId = (isset({id}) && (int){id} > 0) ? (int){id} : 0;
+
+sc_log_add(
+    'MAGIC_LINK_REVIEW',
+    'onLoad GET sc=' . $getSc . ' id=' . $getId
+    . ' gloSc=' . $gloSc . ' formId=' . $formScId
+    . ' link=' . $linkScId . ' sess=' . $sessSc
+);
+
+if ($linkScId > 0 && $formScId !== $linkScId) {
+    [subvettore_contratto_id] = $linkScId;
+    [id] = $linkScId;
+    $alreadyForced = isset($_SESSION['ml_review_open_sc']) ? (int)$_SESSION['ml_review_open_sc'] : 0;
+    if ($alreadyForced !== $linkScId) {
+        $_SESSION['ml_review_open_sc'] = $linkScId;
+        sc_log_add(
+            'MAGIC_LINK_REVIEW',
+            'onLoad riapre riga link scId=' . $linkScId . ' formScId=' . $formScId
+        );
+        sc_redir('form_subvettori_contratti_for_subvectors_magic_link', subvettore_contratto_id=[subvettore_contratto_id]);
+        exit;
+    }
+}
+
+$scIdEarly = $linkScId > 0 ? $linkScId : $formScId;
 
 $magicLinkReviewContrattoId = 0;
 $statoContrattoIdReview = 0;
@@ -46,14 +86,28 @@ if ($scIdEarly > 0) {
     }
 }
 
+if ((int)$statoContrattoIdReview === 7) {
+    [contrattoId] = $magicLinkReviewContrattoId;
+    [id] = $scIdEarly;
+    sc_log_add(
+        'MAGIC_LINK_REVIEW',
+        'onLoad redirect rifiuto stato=7'
+        . ' scId=' . (int)$scIdEarly
+        . ' contratto=' . (int)$magicLinkReviewContrattoId
+    );
+    sc_redir('blank_magic_link_review_rifiuta', contrattoId=[contrattoId];scId=[id]);
+    exit;
+}
+
 if ($statoContrattoIdReview >= 3) {
     $redirReviewDone = '';
     if ($magicLinkReviewContrattoId > 0) {$redirReviewDone = 'contrattoId='. (int)$magicLinkReviewContrattoId;}
     if ($scIdEarly > 0) {$redirReviewDone.= ($redirReviewDone !== '' ? '&' : ''). 'scId='. (int)$scIdEarly;}
     sc_log_add(
         'MAGIC_LINK_REVIEW',
-        'onLoad redirect blank stato_contratto_id='. (int)$statoContrattoIdReview
+        'onLoad redirect blank stato='. (int)$statoContrattoIdReview
         . ' scId='. (int)$scIdEarly
+        . ' contratto='. (int)$magicLinkReviewContrattoId
     );
     sc_redir('blank_magic_link_review_inviato', $redirReviewDone);
     exit;
@@ -85,10 +139,7 @@ if (isset({subvettore_id}) && (int){subvettore_id} > 0) {
     $subvettoreId = (int){subvettore_id};
 }
 
-$scId = 0;
-if (isset({id}) && (int){id} > 0) {
-    $scId = (int){id};
-} elseif(isset([subvettore_contratto_id]) && (int)[subvettore_contratto_id] > 0) {$scId = (int)[subvettore_contratto_id];} elseif(isset($_GET['subvettore_contratto_id']) && (int)$_GET['subvettore_contratto_id'] > 0) {$scId = (int)$_GET['subvettore_contratto_id'];} elseif(isset($_GET['id']) && (int)$_GET['id'] > 0) {$scId = (int)$_GET['id'];}
+$scId = $scIdEarly;
 
 magic_link_review_form_apply_tipo_contratto_visibility();
 
@@ -142,10 +193,10 @@ if ($subvettoreId > 0) {
     sc_lookup(rsReviewScLegal, "
         SELECT
             COALESCE(NULLIF(TRIM(sc.num_iscrizione_albo), ''), NULLIF(TRIM(s.num_iscrizione_albo), '')),
-            COALESCE(NULLIF(TRIM(sc.nome_rappresentante), ''), NULLIF(TRIM(s.nome_rappresentante), '')),
-            COALESCE(NULLIF(TRIM(sc.cognome_rappresentante), ''), NULLIF(TRIM(s.cognome_rappresentante), '')),
-            COALESCE(NULLIF(TRIM(sc.email_rappresentante), ''), NULLIF(TRIM(s.email_rappresentante), '')),
-            COALESCE(NULLIF(TRIM(sc.telefono_rappresentante), ''), NULLIF(TRIM(s.telefono_rappresentante), '')),
+            NULLIF(TRIM(s.nome_rappresentante), ''),
+            NULLIF(TRIM(s.cognome_rappresentante), ''),
+            NULLIF(TRIM(s.email_rappresentante), ''),
+            NULLIF(TRIM(s.telefono_rappresentante), ''),
             COALESCE(NULLIF(TRIM(sc.luogo_nascita_rappresentante), ''), NULLIF(TRIM(s.luogo_nascita_rappresentante), '')),
             COALESCE(NULLIF(TRIM(sc.prov_luogo_nascita_rappresentante), ''), NULLIF(TRIM(s.prov_luogo_nascita_rappresentante), '')),
             COALESCE(
@@ -194,8 +245,7 @@ if (!function_exists('pigliacelli_anagrafica_review_sola_lettura')) {
             'rea',
             'phone',
         ) as $campo) {
-            sc_field_display($campo, 'on');
-            sc_field_readonly($campo, 'on');
+            sc_field_display($campo, 'off');
         }
         foreach (array(
             'num_iscrizione_albo',
@@ -206,5 +256,55 @@ if (!function_exists('pigliacelli_anagrafica_review_sola_lettura')) {
     }
 }
 pigliacelli_anagrafica_review_sola_lettura();
+
+$tipoReview = 1;
+if ($magicLinkReviewContrattoId > 0) {
+    sc_lookup(rsReviewTipoPdf, "
+        SELECT COALESCE(tipo_contratto_id, 1)
+        FROM contratti
+        WHERE id = " . (int)$magicLinkReviewContrattoId . "
+        LIMIT 1
+    ", "pigliacelli");
+    if (!empty({rsReviewTipoPdf[0][0]})) {
+        $tipoReview = (int){rsReviewTipoPdf[0][0]};
+    }
+}
+$pdfApp = ($tipoReview === 2 || $tipoReview === 3) ? 'variazione_contratto' : 'nuovo_contratto_vettore';
+$parms = 'subvector*sc*' . (int)$subvettoreId . '*sc*contratto*sc*' . (int)$magicLinkReviewContrattoId;
+$pdfUrl = '../' . $pdfApp . '/index.php?nmgp_parms=' . rawurlencode($parms)
+    . '&subvector=' . (int)$subvettoreId
+    . '&contratto=' . (int)$magicLinkReviewContrattoId;
+$reviewPayload = json_encode(array(
+    'pdf' => $pdfUrl,
+    'nome' => isset({nome_rappresentante}) ? (string){nome_rappresentante} : '',
+    'cognome' => isset({cognome_rappresentante}) ? (string){cognome_rappresentante} : '',
+    'email' => isset({email_rappresentante}) ? (string){email_rappresentante} : '',
+    'telefono' => isset({telefono_rappresentante}) ? (string){telefono_rappresentante} : '',
+    'scId' => (int)$scId,
+    'contrattoId' => (int)$magicLinkReviewContrattoId,
+    'rifiutaUrl' => '../blank_magic_link_review_rifiuta/',
+), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
+$pdfHref = htmlspecialchars($pdfUrl, ENT_QUOTES, 'UTF-8');
+echo '<div id="ml-review-cfg" style="display:none">'
+    . htmlspecialchars($reviewPayload, ENT_QUOTES, 'UTF-8')
+    . '</div>';
+echo '<div id="ml-review-shell" style="position:fixed;inset:0;z-index:99990;overflow:auto;background:#eef1f4;'
+    . 'font-family:Arial,Helvetica,sans-serif;color:#2d3748;">'
+    . '<div style="max-width:980px;margin:16px auto;padding:0 16px 32px;">'
+    . '<p style="margin:0 0 16px;font-size:15px;line-height:1.5;">Questo è il contratto da firmare. '
+    . 'Di seguito trovi l\'anteprima. Se è corretto, accetta e invia per la firma. '
+    . 'Se non lo accetti, rifiuta e indica il motivo.</p>'
+    . '<div class="ml-review-bar" style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin:0 0 16px;">'
+    . '<button type="button" class="ml-review-accetta" style="padding:12px 18px;border:0;border-radius:8px;background:#5b2d8e;color:#fff;font-weight:bold;cursor:pointer;"><i class="fas fa-check" style="margin-right:8px;" aria-hidden="true"></i>Accetta e invia per la firma</button>'
+    . '<button type="button" class="ml-review-rifiuta" onclick="if (typeof mlReviewRefuseInit===\'function\') mlReviewRefuseInit(); return false;" style="padding:12px 18px;border:0;border-radius:8px;background:#c62828;color:#fff;font-weight:bold;cursor:pointer;"><i class="fas fa-times" style="margin-right:8px;" aria-hidden="true"></i>Rifiuta</button>'
+    . '</div>'
+    . '<iframe class="ml-review-pdf" title="Anteprima contratto" src="' . $pdfHref . '" '
+    . 'style="width:100%;height:78vh;border:1px solid #dde1e6;border-radius:8px;background:#fff;"></iframe>'
+    . '<p style="margin:8px 0 0;font-size:13px;"><a href="' . $pdfHref . '" target="_blank" rel="noopener" style="color:#5b2d8e;">Apri l\'anteprima in un\'altra scheda</a></p>'
+    . '<div class="ml-review-bar" style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin:16px 0 0;">'
+    . '<button type="button" class="ml-review-accetta" style="padding:12px 18px;border:0;border-radius:8px;background:#5b2d8e;color:#fff;font-weight:bold;cursor:pointer;"><i class="fas fa-check" style="margin-right:8px;" aria-hidden="true"></i>Accetta e invia per la firma</button>'
+    . '<button type="button" class="ml-review-rifiuta" onclick="if (typeof mlReviewRefuseInit===\'function\') mlReviewRefuseInit(); return false;" style="padding:12px 18px;border:0;border-radius:8px;background:#c62828;color:#fff;font-weight:bold;cursor:pointer;"><i class="fas fa-times" style="margin-right:8px;" aria-hidden="true"></i>Rifiuta</button>'
+    . '</div></div></div>';
+sc_ajax_javascript('mlReviewConfirmInit');
 
 

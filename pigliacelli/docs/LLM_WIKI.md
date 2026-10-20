@@ -3,14 +3,15 @@
 Wiki operativa per agenti/LLM. Aggiornare quando cambiano requisiti o naming.
 
 **Gerarchia requisiti (prevale dall’alto):**
-1. `pigliacelli_briefing_sal_2026-10-13.md` — vista contratto, review solo tratte, modale rappresentante, griglia documenti, blocco wizard
-2. `pigliacelli_briefing_sal_2026-09-30.md` — test wizard, sync SGA spezzata, firma contratti solo tratte
-3. `pigliacelli_briefing_sal_2026-09-28.md` — fix wizard; ANGA/RENTRI: flag sul mezzo, file nello step documenti
-4. `chiarimento_anga_rentri_2026-09-17.md` — nomi, cardinalità, scadenze (dove i file si caricano prevale il 28/09)
-5. `pigliacelli_briefing_sal_2026-09-16.md`
-6. `pigliacelli_briefing_sal_2026-07-21.md`
-7. `requisiti_pigliacelli_validazione_2026-07.md`
-8. `docs_elenco_documenti_subvettori.md` · `modello_flag_documenti.md`
+1. `mail_flavia_prova_2026-10-19.md` — PEC, scadenza assicurazione, Albo Gestori se rifiuti, niente date passate, ANGA 30 aprile, scadenze obbligatorie, documenti autista in DOCUMENTAZIONE, tendine PGL
+2. `pigliacelli_briefing_sal_2026-10-13.md` — vista contratto, review solo tratte, modale rappresentante, griglia documenti, blocco wizard
+3. `pigliacelli_briefing_sal_2026-09-30.md` — test wizard, sync SGA spezzata, firma contratti solo tratte
+4. `pigliacelli_briefing_sal_2026-09-28.md` — fix wizard; ANGA/RENTRI: flag sul mezzo, file nello step documenti
+5. `chiarimento_anga_rentri_2026-09-17.md` — nomi, cardinalità, scadenze (dove i file si caricano prevale il 28/09)
+6. `pigliacelli_briefing_sal_2026-09-16.md`
+7. `pigliacelli_briefing_sal_2026-07-21.md`
+8. `requisiti_pigliacelli_validazione_2026-07.md`
+9. `docs_elenco_documenti_subvettori.md` · `modello_flag_documenti.md`
 
 ---
 

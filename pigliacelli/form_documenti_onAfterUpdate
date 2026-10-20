@@ -377,7 +377,7 @@ if ($isUploadSubvettore) {
           AND TRIM(su.login) <> ''
           AND su.email IS NOT NULL
           AND TRIM(su.email) <> ''
-          AND sug.group_id IN (1, 3)
+          AND sug.group_id IN (1, 3, 5)
     ");
 
     $emailPlaceholder = array('admin@admin.com', 'admin@localhost', 'admin@example.com');

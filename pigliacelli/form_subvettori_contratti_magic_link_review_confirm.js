@@ -1,19 +1,12 @@
 /**
- * Scriptcase — Programming → JavaScript Methods → mlReviewConfirmInit
+ * Programming → JavaScript Methods → mlReviewConfirmInit
  *
- * La tua versione SC NON ha "Form → onSubmit": usa JavaScript Methods.
+ * Incolla TUTTO questo file nel corpo del metodo.
+ * onLoad chiama mlReviewConfirmInit con il JSON dell'anteprima.
  *
- * DEPLOY:
- * 1) Programming → JavaScript Methods → mlReviewConfirmInit
- *    Incolla TUTTO questo file nel corpo del metodo (senza aggiungere "function mlReviewConfirmInit").
- *    Scriptcase crea già il wrapper function mlReviewConfirmInit() { ... }.
- *
- * 2) Evento PHP onScriptInit: incolla form_subvettori_contratti_magic_link_review_onScriptInit
- *    (avvia il metodo al caricamento pagina).
- *
- * 3) Rigenera la form.
- *
- * NON incollare qui l'auto-init in fondo: parte da onScriptInit.
+ * Schermata: istruzioni, Accetta e invia per la firma / Rifiuta, PDF aperto.
+ * Accetta: modale nome, cognome, email, telefono (anagrafica), poi salva il form.
+ * Rifiuta: chiama il metodo Programming mlReviewRefuseInit.
  */
 
 function mlReviewFindForm() {
@@ -30,6 +23,19 @@ function mlReviewFindForm() {
     return forms.length ? forms[0] : null;
 }
 
+function mlReviewSetField(form, name, value) {
+    if (!form) {
+        return;
+    }
+    var el = form.querySelector('[name="' + name + '"]');
+    if (!el) {
+        el = document.querySelector('[name="' + name + '"]');
+    }
+    if (el) {
+        el.value = value;
+    }
+}
+
 function mlReviewEnsureHiddenConfirm(form) {
     if (!form) {
         return;
@@ -39,284 +45,176 @@ function mlReviewEnsureHiddenConfirm(form) {
         el = document.createElement('input');
         el.type = 'hidden';
         el.name = 'review_confirm';
-        el.value = '1';
         form.appendChild(el);
-    } else {
-        el.value = '1';
     }
+    el.value = '1';
 }
 
-function mlReviewIsSaveControl(el) {
-    if (!el) {
-        return false;
-    }
-    if (el.id) {
-        var id = String(el.id).toLowerCase();
-        if (id.indexOf('sc_b_del') === 0 || id.indexOf('sc_b_new') === 0 || id.indexOf('sc_b_novo') === 0) {
-            return false;
-        }
-        if (id.indexOf('sc_b_upd') === 0 || id.indexOf('sc_b_ins') === 0 || id.indexOf('sc_b_alt') === 0) {
-            return true;
+function mlReviewTriggerSave() {
+    window.__mlReviewSaveConfirmed = true;
+    var form = mlReviewFindForm();
+    mlReviewEnsureHiddenConfirm(form);
+    if (form && form.closewin) {
+        try {
+            form.closewin.value = 'Y';
+        } catch (e) {
         }
     }
-    var oc = el.getAttribute ? el.getAttribute('onclick') : '';
-    if (oc && (oc.indexOf('alterar') >= 0 || oc.indexOf('incluir') >= 0 || oc.indexOf('update') >= 0 || oc.indexOf('insert') >= 0)) {
-        return true;
-    }
-    return false;
+    mlReviewSetField(form, 'closewin', 'Y');
+    setTimeout(function () {
+        if (typeof scBtnFn_sys_format_alt === 'function') {
+            scBtnFn_sys_format_alt();
+            return;
+        }
+        if (typeof window.nm_atualiza === 'function') {
+            window.nm_atualiza('alterar');
+            return;
+        }
+        var btn = document.getElementById('sc_b_upd_t') || document.getElementById('sc_b_upd_b');
+        if (btn) {
+            btn.click();
+        }
+    }, 200);
 }
 
-function mlReviewConfirmDialogHtml() {
+function mlReviewButtonsHtml() {
     return ''
-        + '<div style="padding:20px 24px 12px;border-bottom:1px solid #e8ebef;background:#fafbfc;">'
-        + '<h2 style="margin:0;font-size:18px;line-height:1.35;color:#1a3a5c;">Conferma invio per revisione</h2>'
-        + '</div>'
-        + '<div style="padding:20px 24px;font-size:15px;line-height:1.55;">'
-        + '<p style="margin:0 0 12px;"><strong>Sei sicuro di voler inviare il form per la revisione?</strong></p>'
-        + '<p style="margin:0;color:#b45309;">Dopo l\'invio non si potranno più modificare i dati irreversibilmente.</p>'
-        + '</div>'
-        + '<div style="padding:16px 24px 20px;display:flex;gap:12px;justify-content:flex-end;background:#f8fafc;">'
-        + '<button type="button" id="ml-review-btn-back" style="padding:10px 18px;border:1px solid #cbd5e0;'
-        + 'background:#fff;border-radius:8px;font-size:14px;cursor:pointer;">Indietro</button>'
-        + '<button type="button" id="ml-review-btn-go" style="padding:10px 18px;border:0;background:#1a3a5c;'
-        + 'color:#fff;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;">Continua</button>'
-        + '</div>';
+        + '<button type="button" class="ml-review-accetta" style="padding:12px 18px;border:0;border-radius:8px;background:#5b2d8e;color:#fff;font-weight:bold;cursor:pointer;"><i class="fas fa-check" style="margin-right:8px;" aria-hidden="true"></i>Accetta e invia per la firma</button>'
+        + '<button type="button" class="ml-review-rifiuta" style="padding:12px 18px;border:0;border-radius:8px;background:#c62828;color:#fff;font-weight:bold;cursor:pointer;"><i class="fas fa-times" style="margin-right:8px;" aria-hidden="true"></i>Rifiuta</button>';
 }
 
-function mlReviewShowConfirmOverlay() {
-    var overlay = document.getElementById('ml-review-confirm-overlay');
+function mlReviewBindButtons(root, cfg) {
+    var accetta = root.querySelectorAll('.ml-review-accetta');
+    var rifiuta = root.querySelectorAll('.ml-review-rifiuta');
+    var i;
+    for (i = 0; i < accetta.length; i++) {
+        accetta[i].onclick = function () {
+            mlReviewOpenAccetta(cfg);
+        };
+    }
+    for (i = 0; i < rifiuta.length; i++) {
+        rifiuta[i].onclick = function () {
+            if (typeof mlReviewRefuseInit === 'function') {
+                mlReviewRefuseInit();
+            }
+        };
+    }
+}
+
+function mlReviewOpenAccetta(cfg) {
+    var overlay = document.getElementById('ml-review-accetta-overlay');
     if (overlay) {
         overlay.style.display = 'flex';
         return;
     }
-
     overlay = document.createElement('div');
-    overlay.id = 'ml-review-confirm-overlay';
-    overlay.setAttribute('role', 'dialog');
-    overlay.setAttribute('aria-modal', 'true');
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:99999;'
+    overlay.id = 'ml-review-accetta-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:100000;'
         + 'display:flex;align-items:center;justify-content:center;padding:16px;';
-
-    var box = document.createElement('div');
-    box.style.cssText = 'max-width:480px;width:100%;background:#fff;border-radius:12px;'
-        + 'border:1px solid #dde1e6;box-shadow:0 12px 32px rgba(0,0,0,.18);'
-        + 'font-family:Arial,Helvetica,sans-serif;color:#2d3748;overflow:hidden;';
-    box.innerHTML = mlReviewConfirmDialogHtml();
-
-    overlay.appendChild(box);
+    overlay.innerHTML = ''
+        + '<div style="max-width:480px;width:100%;background:#fff;border-radius:12px;padding:22px 24px;'
+        + 'font-family:Arial,Helvetica,sans-serif;color:#2d3748;">'
+        + '<h2 style="margin:0 0 8px;font-size:18px;color:#1a3a5c;">Conferma il rappresentante legale</h2>'
+        + '<p style="margin:0 0 16px;font-size:14px;">Controlla i dati prima di inviare il contratto alla firma.</p>'
+        + '<label style="display:block;font-size:13px;margin:0 0 10px;">Nome<br>'
+        + '<input id="ml-rev-nome" style="width:100%;padding:8px;margin-top:4px;box-sizing:border-box;"></label>'
+        + '<label style="display:block;font-size:13px;margin:0 0 10px;">Cognome<br>'
+        + '<input id="ml-rev-cognome" style="width:100%;padding:8px;margin-top:4px;box-sizing:border-box;"></label>'
+        + '<label style="display:block;font-size:13px;margin:0 0 10px;">Email<br>'
+        + '<input id="ml-rev-email" type="email" style="width:100%;padding:8px;margin-top:4px;box-sizing:border-box;"></label>'
+        + '<label style="display:block;font-size:13px;margin:0 0 16px;">Telefono<br>'
+        + '<input id="ml-rev-tel" style="width:100%;padding:8px;margin-top:4px;box-sizing:border-box;"></label>'
+        + '<p id="ml-rev-err" style="display:none;color:#9b2c2c;font-size:13px;margin:0 0 12px;"></p>'
+        + '<div style="display:flex;gap:12px;justify-content:flex-end;">'
+        + '<button type="button" id="ml-rev-back" style="padding:10px 16px;border:1px solid #cbd5e0;background:#fff;border-radius:8px;">Indietro</button>'
+        + '<button type="button" id="ml-rev-go" style="padding:10px 16px;border:0;background:#5b2d8e;color:#fff;border-radius:8px;font-weight:bold;">Conferma e invia</button>'
+        + '</div></div>';
     document.body.appendChild(overlay);
-
-    document.getElementById('ml-review-btn-back').onclick = function () {
+    document.getElementById('ml-rev-nome').value = cfg.nome || '';
+    document.getElementById('ml-rev-cognome').value = cfg.cognome || '';
+    document.getElementById('ml-rev-email').value = cfg.email || '';
+    document.getElementById('ml-rev-tel').value = cfg.telefono || '';
+    document.getElementById('ml-rev-back').onclick = function () {
         overlay.style.display = 'none';
-        window.__mlReviewPendingSave = false;
     };
-    document.getElementById('ml-review-btn-go').onclick = function () {
+    document.getElementById('ml-rev-go').onclick = function () {
+        var nome = document.getElementById('ml-rev-nome').value.replace(/^\s+|\s+$/g, '');
+        var cognome = document.getElementById('ml-rev-cognome').value.replace(/^\s+|\s+$/g, '');
+        var email = document.getElementById('ml-rev-email').value.replace(/^\s+|\s+$/g, '');
+        var tel = document.getElementById('ml-rev-tel').value.replace(/^\s+|\s+$/g, '');
+        var err = document.getElementById('ml-rev-err');
+        if (nome === '' || cognome === '' || email === '' || tel === '' || email.indexOf('@') < 0) {
+            err.style.display = 'block';
+            err.textContent = 'Servono nome, cognome, email e telefono del rappresentante.';
+            return;
+        }
+        var form = mlReviewFindForm();
+        mlReviewSetField(form, 'nome_rappresentante', nome);
+        mlReviewSetField(form, 'cognome_rappresentante', cognome);
+        mlReviewSetField(form, 'email_rappresentante', email);
+        mlReviewSetField(form, 'telefono_rappresentante', tel);
         overlay.style.display = 'none';
         mlReviewTriggerSave();
     };
 }
 
-function mlReviewShowConfirm() {
-    if (typeof Swal !== 'undefined' && typeof Swal.fire === 'function') {
-        Swal.fire({
-            title: 'Conferma invio per revisione',
-            html: '<p><strong>Sei sicuro di voler inviare il form per la revisione?</strong></p>'
-                + '<p style="margin-top:10px;color:#b45309;">Dopo l\'invio la firma del contratto '
-                + 'è un passaggio irreversibile.</p>',
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonText: 'Continua',
-            cancelButtonText: 'Indietro',
-            reverseButtons: true,
-            focusCancel: true
-        }).then(function (result) {
-            if (result && (result.isConfirmed === true || result.value === true)) {
-                mlReviewTriggerSave();
-            } else {
-                window.__mlReviewPendingSave = false;
-            }
-        });
-        return;
+function mlReviewReadCfg() {
+    var raw = arguments.length ? arguments[0] : null;
+    if (raw && typeof raw === 'object' && raw.pdf) {
+        return raw;
     }
-    mlReviewShowConfirmOverlay();
+    if (typeof raw === 'string' && raw.charAt(0) === '{') {
+        try {
+            return JSON.parse(raw);
+        } catch (e1) {
+            raw = null;
+        }
+    }
+    var el = document.getElementById('ml-review-cfg');
+    if (!el) {
+        return null;
+    }
+    try {
+        return JSON.parse(el.textContent || el.innerText || '');
+    } catch (e2) {
+        return null;
+    }
 }
 
-function mlReviewTriggerSave() {
-    window.__mlReviewSaveConfirmed = true;
-    window.__mlReviewPendingSave = false;
-    mlReviewEnsureHiddenConfirm(mlReviewFindForm());
-
-    if (typeof window.nm_atualiza === 'function') {
-        window.nm_atualiza('alterar');
+function mlReviewBuild(cfg) {
+    if (window.__mlReviewPreviewInstalled || !cfg) {
         return;
     }
-    if (typeof window.nm_gp_submit === 'function') {
-        window.nm_gp_submit('update');
-        return;
-    }
-
-    var btn = document.getElementById('sc_b_upd_t')
-        || document.getElementById('sc_b_upd_b')
-        || document.getElementById('sc_b_ins_t')
-        || document.getElementById('sc_b_ins_b');
-    if (btn) {
-        btn.click();
-        return;
-    }
+    window.__mlReviewPreviewInstalled = true;
 
     var form = mlReviewFindForm();
     if (form) {
-        if (typeof form.requestSubmit === 'function') {
-            form.requestSubmit();
-        } else {
-            form.submit();
-        }
+        form.style.display = 'none';
     }
+
+    var shell = document.getElementById('ml-review-shell');
+    if (!shell) {
+        shell = document.createElement('div');
+        shell.id = 'ml-review-shell';
+        shell.style.cssText = 'position:fixed;inset:0;z-index:99990;overflow:auto;background:#eef1f4;';
+        shell.innerHTML = ''
+            + '<div style="max-width:980px;margin:16px auto;padding:0 16px 32px;font-family:Arial,Helvetica,sans-serif;">'
+            + '<div class="ml-review-bar" style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;">' + mlReviewButtonsHtml() + '</div>'
+            + '<iframe class="ml-review-pdf" title="Anteprima contratto" src="' + (cfg.pdf || '') + '" '
+            + 'style="width:100%;height:78vh;border:1px solid #dde1e6;background:#fff;"></iframe>'
+            + '<div class="ml-review-bar" style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:16px;">' + mlReviewButtonsHtml() + '</div>'
+            + '</div>';
+        document.body.appendChild(shell);
+    }
+    mlReviewBindButtons(shell, cfg);
 }
 
-function mlReviewShouldIntercept(op) {
-    if (window.__mlReviewSaveConfirmed) {
-        return false;
-    }
-    if (op && op !== 'alterar' && op !== 'incluir' && op !== 'update' && op !== 'insert') {
-        return false;
-    }
-    return true;
+function mlReviewStart() {
+    mlReviewBuild(mlReviewReadCfg());
 }
 
-function mlReviewInterceptClick(ev) {
-    if (window.__mlReviewSaveConfirmed) {
-        return;
-    }
-
-    var el = ev.target;
-    if (el && el.closest) {
-        el = el.closest('[id^="sc_b_"], a, button, input[type="button"], input[type="submit"]') || el;
-    }
-
-    if (!mlReviewIsSaveControl(el)) {
-        var node = el;
-        while (node && node !== document && node.getAttribute) {
-            var onclick = node.getAttribute('onclick') || '';
-            if (onclick.indexOf('nm_atualiza') >= 0 || onclick.indexOf('nm_gp_submit') >= 0) {
-                if (onclick.indexOf('alterar') >= 0 || onclick.indexOf('incluir') >= 0
-                    || onclick.indexOf('update') >= 0 || onclick.indexOf('insert') >= 0) {
-                    el = node;
-                    break;
-                }
-            }
-            node = node.parentNode;
-        }
-        if (!mlReviewIsSaveControl(el)) {
-            return;
-        }
-    }
-
-    window.__mlReviewPendingSave = true;
-    ev.preventDefault();
-    ev.stopPropagation();
-    if (typeof ev.stopImmediatePropagation === 'function') {
-        ev.stopImmediatePropagation();
-    }
-    mlReviewShowConfirm();
-    return false;
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', mlReviewStart);
+} else {
+    mlReviewStart();
 }
-
-function mlReviewWrapFn(name, ops) {
-    if (typeof window[name] !== 'function' || window['__mlReviewWrapped_' + name]) {
-        return;
-    }
-    window['__mlReviewWrapped_' + name] = true;
-    var orig = window[name];
-    window[name] = function (op) {
-        var opNorm = op;
-        if (mlReviewShouldIntercept(opNorm)) {
-            window.__mlReviewPendingSave = true;
-            mlReviewShowConfirm();
-            return false;
-        }
-        window.__mlReviewSaveConfirmed = false;
-        return orig.apply(this, arguments);
-    };
-}
-
-function mlReviewBindSaveButtons() {
-    var selectors = '[id^="sc_b_upd"], [id^="sc_b_ins"], [id^="sc_b_alt"], [onclick*="nm_atualiza"], [onclick*="nm_gp_submit"]';
-    var nodes = document.querySelectorAll(selectors);
-    var i;
-    for (i = 0; i < nodes.length; i++) {
-        if (nodes[i].__mlReviewBound) {
-            continue;
-        }
-        if (!mlReviewIsSaveControl(nodes[i])) {
-            continue;
-        }
-        nodes[i].__mlReviewBound = true;
-        nodes[i].addEventListener('click', mlReviewInterceptClick, true);
-    }
-}
-
-function mlReviewBindDocumentClicks() {
-    if (window.__mlReviewDocClickBound) {
-        return;
-    }
-    window.__mlReviewDocClickBound = true;
-    document.addEventListener('click', mlReviewInterceptClick, true);
-}
-
-function mlReviewBindFormSubmit() {
-    var form = mlReviewFindForm();
-    if (!form || form.__mlReviewSubmitBound) {
-        return;
-    }
-    form.__mlReviewSubmitBound = true;
-    form.addEventListener('submit', function (ev) {
-        if (window.__mlReviewSaveConfirmed) {
-            return;
-        }
-        ev.preventDefault();
-        ev.stopPropagation();
-        window.__mlReviewPendingSave = true;
-        mlReviewShowConfirm();
-        return false;
-    }, true);
-}
-
-function mlReviewPollHooks() {
-    var attempts = 0;
-    var timer = setInterval(function () {
-        mlReviewWrapFn('nm_atualiza');
-        mlReviewWrapFn('nm_gp_submit');
-        mlReviewBindSaveButtons();
-        attempts += 1;
-        if (attempts >= 50) {
-            clearInterval(timer);
-        }
-    }, 200);
-}
-
-function mlReviewRunInit() {
-    if (window.__mlReviewConfirmInstalled) {
-        mlReviewBindSaveButtons();
-        mlReviewBindFormSubmit();
-        return;
-    }
-    window.__mlReviewConfirmInstalled = true;
-    window.__mlReviewSaveConfirmed = false;
-    window.__mlReviewPendingSave = null;
-
-    mlReviewBindDocumentClicks();
-    mlReviewWrapFn('nm_atualiza');
-    mlReviewWrapFn('nm_gp_submit');
-    mlReviewPollHooks();
-
-    mlReviewBindSaveButtons();
-    mlReviewBindFormSubmit();
-
-    setTimeout(mlReviewBindSaveButtons, 300);
-    setTimeout(mlReviewBindSaveButtons, 1000);
-    setTimeout(mlReviewBindSaveButtons, 2500);
-}
-
-// Corpo eseguito quando Scriptcase chiama il metodo mlReviewConfirmInit()
-mlReviewRunInit();

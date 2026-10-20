@@ -880,6 +880,17 @@ if ($signLink === '') {
     $log('create response (no sign link): ' . substr((string)$resp, 0, 2000));
 }
 
+// EasyGN manda "procedure activated" durante start. Se l'id non è già
+// committato, il webhook risponde "documento non trovato" e la done successiva
+// non può scrivere firmato_il.
+$wfSqlEarly = str_replace("'", "''", $wfId);
+sc_exec_sql("
+    UPDATE documenti
+    SET easygn_workflow_id = '$wfSqlEarly'
+    WHERE id = $documentoId
+", 'pigliacelli');
+sc_exec_sql('COMMIT');
+
 list($ok2, $err2, $http2, $resp2) = $easygn_request(
     'PUT',
     $easygnBaseUrl . '/workflows/start/' . rawurlencode($wfId),
@@ -936,6 +947,7 @@ sc_exec_sql("
         easygn_signer_ids = $signerSql
     WHERE id = $documentoId
 ", 'pigliacelli');
+sc_exec_sql('COMMIT');
 
 sc_lookup(rsEgDocWfChk, "
     SELECT COALESCE(easygn_workflow_id, '')

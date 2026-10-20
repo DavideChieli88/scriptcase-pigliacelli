@@ -15,7 +15,7 @@ if ($subId <= 0) {
 }
 
 sc_lookup(rsNcqSub, "
-    SELECT id, COALESCE(login_subvettore, ''), COALESCE(ragione_sociale, '')
+    SELECT id, COALESCE(login_subvettore, ''), COALESCE(ragione_sociale, ''), COALESCE(wizard_complete, 0)
     FROM subvettori
     WHERE id = " . $subId . "
     LIMIT 1
@@ -23,6 +23,11 @@ sc_lookup(rsNcqSub, "
 
 if (empty({rsNcqSub})) {
     sc_error_message('Subvettore non trovato.');
+    return;
+}
+
+if ((int){rsNcqSub[0][3]} !== 1) {
+    sc_error_message('Questo subvettore non ha completato il wizard. Il contratto quadro non e\' stato creato.');
     return;
 }
 

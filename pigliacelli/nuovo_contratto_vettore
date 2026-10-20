@@ -949,33 +949,118 @@ $easygnSignPush('vettore', $sigPageA, $marginL_A + $halfW, $sigY_A + 14, $halfW 
 $pdf->AddPage('L', 'A4');
 $applyDefaultPageSetup();
 
-// Righe Allegato B dinamiche (da DB)
-$driversData = $this->getAutisti($subvector);
-$allegatoBRows = array();
-
-if (is_array($driversData) && isset($driversData[0]) && is_array($driversData[0])) {
-    foreach ($driversData as $idx => $d) {
-        $has1 = isset($d[11]) ? (string)$d[11] : '';
-        $has4 = isset($d[12]) ? (string)$d[12] : '';
-        $has5 = isset($d[13]) ? (string)$d[13] : '';
-
-        $allegatoBRows[] = array(
-            'n' => (string)($idx + 1),
-            'autista' => isset($d[1]) ? (string)$d[1] : '',
-            'scad_patente' => $formatDbDate(isset($d[2]) ? (string)$d[2] : ''),
-            'scad_cqc' => $formatDbDate(isset($d[3]) ? (string)$d[3] : ''),
-            'targhe_mezzi' => isset($d[4]) ? (string)$d[4] : '',
-            'anno_immatricolazione' => $formatDbDate(isset($d[5]) ? (string)$d[5] : ''),
-            'telaio' => isset($d[6]) ? (string)$d[6] : '',
-            'marca_veicolo' => isset($d[7]) ? (string)$d[7] : '',
-            'tipo_veicolo' => isset($d[8]) ? (string)$d[8] : '',
-            'scad_carte_circolazione' => $formatDbDate(isset($d[9]) ? (string)$d[9] : ''),
-            'scad_ass' => $formatDbDate(isset($d[10]) ? (string)$d[10] : ''),
-            'cat_1' => ($has1 !== '' && $has1 !== '0') ? 'x' : '',
-            'cat_4' => ($has4 !== '' && $has4 !== '0') ? 'x' : '',
-            'cat_5' => ($has5 !== '' && $has5 !== '0') ? 'x' : '',
-        );
+// Righe Allegato B: autisti + mezzi (subvettori_mezzi, collegamento facoltativo).
+$allegatoBCat = function ($value) {
+    $value = trim((string)$value);
+    return ($value !== '' && $value !== '0') ? 'x' : '';
+};
+$allegatoBAnno = function ($value) use ($formatDbDate) {
+    $value = trim((string)$value);
+    if ($value === '' || $value === '0000-00-00') {
+        return '';
     }
+    if (strpos($value, '-') !== false) {
+        return $formatDbDate($value);
+    }
+    return $value;
+};
+
+$allegatoBMezzi = array();
+$autistiConMezzo = array();
+$rsMezziB = $this->Db->Execute("
+    SELECT
+        COALESCE(sm.targa, ''),
+        COALESCE(sm.anno_immatricolazione, ''),
+        COALESCE(sm.telaio, ''),
+        COALESCE(sm.marca_veicolo, ''),
+        COALESCE(sm.tipo_veicolo, ''),
+        COALESCE(sm.scadenza_carta_circolazione, ''),
+        COALESCE(sm.scadenza_assicurazioni, ''),
+        COALESCE(sm.has_cat_trasp_rifiuti_1, 0),
+        COALESCE(sm.has_cat_trasp_rifiuti_4, 0),
+        COALESCE(sm.has_cat_trasp_rifiuti_5, 0),
+        COALESCE(sa.id, 0),
+        COALESCE(sa.nominativo, ''),
+        COALESCE(sa.scadenza_patente, ''),
+        COALESCE(sa.scadenza_cqc, '')
+    FROM subvettori_mezzi sm
+    LEFT JOIN subvettori_autisti_mezzi sam
+        ON sam.mezzo_id = sm.id
+       AND sam.subvettore_id = sm.subvettore_id
+    LEFT JOIN subvettori_autisti sa ON sa.id = sam.autista_id
+    WHERE sm.subvettore_id = " . (int)$subvector . "
+    ORDER BY sa.nominativo, sm.targa, sm.id
+");
+if ($rsMezziB !== false && !$rsMezziB->EOF) {
+    while (!$rsMezziB->EOF) {
+        $autistaIdMezzo = (int)$rsMezziB->fields[10];
+        if ($autistaIdMezzo > 0) {
+            $autistiConMezzo[$autistaIdMezzo] = true;
+        }
+        $allegatoBMezzi[] = array(
+            'autista' => (string)$rsMezziB->fields[11],
+            'scad_patente' => $formatDbDate((string)$rsMezziB->fields[12]),
+            'scad_cqc' => $formatDbDate((string)$rsMezziB->fields[13]),
+            'targhe_mezzi' => (string)$rsMezziB->fields[0],
+            'anno_immatricolazione' => $allegatoBAnno((string)$rsMezziB->fields[1]),
+            'telaio' => (string)$rsMezziB->fields[2],
+            'marca_veicolo' => (string)$rsMezziB->fields[3],
+            'tipo_veicolo' => (string)$rsMezziB->fields[4],
+            'scad_carte_circolazione' => $formatDbDate((string)$rsMezziB->fields[5]),
+            'scad_ass' => $formatDbDate((string)$rsMezziB->fields[6]),
+            'cat_1' => $allegatoBCat($rsMezziB->fields[7]),
+            'cat_4' => $allegatoBCat($rsMezziB->fields[8]),
+            'cat_5' => $allegatoBCat($rsMezziB->fields[9]),
+        );
+        $rsMezziB->MoveNext();
+    }
+    $rsMezziB->Close();
+}
+
+$allegatoBAutistiSoli = array();
+$rsAutistiB = $this->Db->Execute("
+    SELECT
+        sa.id,
+        COALESCE(sa.nominativo, ''),
+        COALESCE(sa.scadenza_patente, ''),
+        COALESCE(sa.scadenza_cqc, '')
+    FROM subvettori_autisti sa
+    WHERE sa.subvettore_id = " . (int)$subvector . "
+    ORDER BY sa.nominativo, sa.id
+");
+if ($rsAutistiB !== false && !$rsAutistiB->EOF) {
+    while (!$rsAutistiB->EOF) {
+        $autistaIdSolo = (int)$rsAutistiB->fields[0];
+        if ($autistaIdSolo <= 0 || isset($autistiConMezzo[$autistaIdSolo])) {
+            $rsAutistiB->MoveNext();
+            continue;
+        }
+        $allegatoBAutistiSoli[] = array(
+            'autista' => (string)$rsAutistiB->fields[1],
+            'scad_patente' => $formatDbDate((string)$rsAutistiB->fields[2]),
+            'scad_cqc' => $formatDbDate((string)$rsAutistiB->fields[3]),
+            'targhe_mezzi' => '',
+            'anno_immatricolazione' => '',
+            'telaio' => '',
+            'marca_veicolo' => '',
+            'tipo_veicolo' => '',
+            'scad_carte_circolazione' => '',
+            'scad_ass' => '',
+            'cat_1' => '',
+            'cat_4' => '',
+            'cat_5' => '',
+        );
+        $rsAutistiB->MoveNext();
+    }
+    $rsAutistiB->Close();
+}
+
+$allegatoBRows = array();
+$allegatoBSeq = 0;
+foreach (array_merge($allegatoBMezzi, $allegatoBAutistiSoli) as $allegatoBRow) {
+    $allegatoBSeq++;
+    $allegatoBRow['n'] = (string)$allegatoBSeq;
+    $allegatoBRows[] = $allegatoBRow;
 }
 
 // Header tabella Allegato B (14 colonne)

@@ -133,14 +133,30 @@ $isDichiarazioni = (
     strpos($tipoKey, 'dichiaraz') !== false
     || strpos($fileKey, 'dichiarazioni_') !== false
 );
+$isManualeVettore = (
+    strpos($tipoKey, 'manuale') !== false
+    && strpos($tipoKey, 'vettore') !== false
+);
 
 // Un solo sc_redir: senza else ScriptCase esegue anche il secondo → apre sempre placeholder
 $qs = 'documentoId=' . (int)$documentoId
     . '&subvettoreId=' . (int)$subId
     . '&subvector=' . (int)$subId;
 
+if ($isManualeVettore) {
+    sc_exec_sql("
+        UPDATE documenti
+        SET presa_visione_at = NOW(),
+            updated_at = NOW()
+        WHERE id = " . (int)$documentoId . "
+          AND (presa_visione_at IS NULL OR presa_visione_at = '0000-00-00 00:00:00')
+    ", 'pigliacelli');
+}
+
 if ($isDichiarazioni) {
     $openUrl = '../dichiarazioni_pdf/?' . $qs;
+} elseif ($isManualeVettore) {
+    $openUrl = '../manuale_vettore/?' . $qs;
 } else {
     $openUrl = '../placeholder_docs_firma/?' . $qs;
 }
@@ -149,6 +165,8 @@ if (function_exists('sc_ajax_javascript')) {
     sc_ajax_javascript('window.open(' . json_encode($openUrl) . ', "_blank");');
 } elseif ($isDichiarazioni) {
     sc_redir('dichiarazioni_pdf', subvector=[subvector];subvettoreId=[subvettoreId];documentoId=[documentoId], "_blank");
+} elseif ($isManualeVettore) {
+    sc_redir('manuale_vettore', subvector=[subvector];subvettoreId=[subvettoreId];documentoId=[documentoId], "_blank");
 } else {
     sc_redir('placeholder_docs_firma', subvector=[subvector];subvettoreId=[subvettoreId];documentoId=[documentoId], "_blank");
 }

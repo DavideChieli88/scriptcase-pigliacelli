@@ -1,12 +1,28 @@
+if (session_status() !== PHP_SESSION_ACTIVE) {@session_start();}
+
+$getSc = isset($_GET['subvettore_contratto_id']) ? (int)$_GET['subvettore_contratto_id'] : 0;
+$getId = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+$gloSc = (isset([subvettore_contratto_id]) && (int)[subvettore_contratto_id] > 0) ? (int)[subvettore_contratto_id] : 0;
+$gloId = (isset([id]) && (int)[id] > 0) ? (int)[id] : 0;
+$getKeys = '';
+if (!empty($_GET) && is_array($_GET)) {
+    $getKeys = implode(',', array_keys($_GET));
+}
+$nmgp = isset($_GET['nmgp_parms']) ? substr((string)$_GET['nmgp_parms'], 0, 80) : '';
+$_SESSION['ml_review_appinit_log'] = 'appInit GET sc=' . $getSc . ' id=' . $getId
+    . ' gloSc=' . $gloSc . ' gloId=' . $gloId
+    . ' keys=' . $getKeys . ' nmgp=' . $nmgp;
+
 $pk = 0;
-if (isset($_GET['subvettore_contratto_id'])) {
-    $pk = (int)$_GET['subvettore_contratto_id'];
-} elseif (isset($_GET['id'])) {
-    $pk = (int)$_GET['id'];
+if ($getSc > 0) {
+    $pk = $getSc;
 }
 
 if ($pk > 0) {
     [subvettore_contratto_id] = $pk;
     [id] = $pk;
+    $_SESSION['ml_review_appinit_log'] .= ' | imposta glo da GET sc=' . $pk;
+} else {
+    $_SESSION['ml_review_appinit_log'] .= ' | non tocca glo resta sc=' . $gloSc . ' id=' . $gloId;
 }
 

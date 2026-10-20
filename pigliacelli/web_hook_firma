@@ -2,7 +2,7 @@
  * Webhook EasyGN / Yousign (callback POST).
  *
  * Flusso atteso (tipo 1, firma ordinata) — 3 chiamate HTTP:
- *   1) type=member, status=done  → vettore firmato → firmato_il, email committente, In attesa firma committente
+ *   1) type=member, status=done  → vettore firmato → firmato_il, In attesa firma committente (mail committente manuale da grid)
  *   2) type=member, status=done  → committente firmato → nessuna email (in attesa chiusura procedura)
  *   3) type=procedure, status=done → Completato, data_inizio_contratto, attiva utente
  *      + mail completamento al subvettore (credenziali se active=N, link area riservata se active=Y)
@@ -35,8 +35,8 @@ if (!$isValid) {
         $json = json_encode($callback, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 }
-$status = $isValid && isset($callback['status']) ? (string)$callback['status'] : '';
-$tipo = $isValid && isset($callback['type']) ? (string)$callback['type'] : '';
+$status = $isValid && isset($callback['status']) ? strtolower(trim((string)$callback['status'])) : '';
+$tipo = $isValid && isset($callback['type']) ? strtolower(trim((string)$callback['type'])) : '';
 $idEsterno = '';
 if ($isValid) {
     $idEsterno = webhook_extract_workflow_id($callback);
@@ -59,6 +59,11 @@ if (!$isValid) {
     ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
+# EasyGN ritenta dopo ~2-3 min se il 200 non arriva in tempo: rispondere prima di DB e mail
+webhook_send_early_ack();
+# Connessioni persistenti possono arrivare con autocommit=0 lasciato da altre app: UPDATE persi al termine
+webhook_db_force_autocommit();
+
 $workflowId = webhook_extract_workflow_id($callback);
 if ($workflowId === '' && $idEsterno !== '') {
     $workflowId = $idEsterno;
@@ -102,21 +107,71 @@ if ($documentoId > 0) {
         webhook_sc_log('procedure handler EXCEPTION: ' . $e->getMessage());
     }
 }
+webhook_db_commit();
+if ($contrattoId > 0) {
+    webhook_verifica_contratto_db($contrattoId, 'dopo COMMIT');
+}
 while (ob_get_level() > 0) {
     ob_end_clean();
 }
-header('Content-Type: application/json; charset=utf-8');
-http_response_code(200);
-echo json_encode(array(
-    'ok' => true,
-    'contratto_id' => (int)$contrattoId,
-    'documento_id' => (int)$documentoId,
-    'workflow_id' => (string)$workflowId,
-    'id_esterno' => (string)$idEsterno,
-    'stato' => $statoNome,
-    'log_file' => (string)$GLOBALS['webhook_last_log_file'],
-), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+webhook_sc_log(
+    'fine elaborazione contratto_id=' . (int)$contrattoId
+    . ' documento_id=' . (int)$documentoId
+    . ' workflow_id=' . (string)$workflowId
+    . ' stato=' . ($statoNome !== null ? $statoNome : '-')
+);
 exit;
+
+function webhook_db_force_autocommit()
+{
+    try {
+        sc_lookup(rsWhAc, "SELECT @@autocommit, CONNECTION_ID()");
+        $prima = isset({rsWhAc[0][0]}) ? (string){rsWhAc[0][0]} : '?';
+        $connId = isset({rsWhAc[0][1]}) ? (string){rsWhAc[0][1]} : '?';
+        # SET autocommit=1 conferma anche un'eventuale transazione rimasta aperta sulla connessione
+        sc_exec_sql("SET autocommit = 1");
+        webhook_sc_log('db autocommit_prima=' . $prima . ' conn_id=' . $connId . ' → autocommit=1');
+    } catch (Throwable $e) {
+        webhook_sc_log('db force autocommit EXCEPTION: ' . $e->getMessage());
+    }
+}
+
+function webhook_db_commit()
+{
+    try {
+        sc_exec_sql("COMMIT");
+    } catch (Throwable $e) {
+        webhook_sc_log('db COMMIT EXCEPTION: ' . $e->getMessage());
+    }
+}
+
+/** Risponde 200 a EasyGN e chiude la connessione; lo script prosegue in background. */
+function webhook_send_early_ack()
+{
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    ignore_user_abort(true);
+    @set_time_limit(120);
+    $body = json_encode(array(
+        'ok' => true,
+        'logged' => true,
+        'log_file' => (string)$GLOBALS['webhook_last_log_file'],
+    ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if (!headers_sent()) {
+        header('Content-Type: application/json; charset=utf-8');
+        header('Content-Length: ' . strlen($body));
+        header('Connection: close');
+        http_response_code(200);
+    }
+    echo $body;
+    if (function_exists('fastcgi_finish_request')) {
+        fastcgi_finish_request();
+    } else {
+        @flush();
+    }
+    ob_start();
+}
 
 /** Body POST reale EasyGN (php input) + fallback per test ScriptCase / Postman */
 function webhook_read_raw_body()
@@ -165,9 +220,13 @@ function webhook_resolve_log_dir()
         $candidates[] = __DIR__ . DIRECTORY_SEPARATOR . 'api_logs';
     }
     $candidates[] = 'api_logs';
-    sc_lookup(rsLogDir, "SELECT set_value FROM sec_settings WHERE set_name = 'webhook_log_dir' LIMIT 1");
-    if (!empty({rsLogDir[0][0]})) {
-        array_unshift($candidates, rtrim((string){rsLogDir[0][0]}, "/\\"));
+    # Il log HIT deve uscire anche se il DB non risponde
+    try {
+        sc_lookup(rsLogDir, "SELECT set_value FROM sec_settings WHERE set_name = 'webhook_log_dir' LIMIT 1");
+        if (!empty({rsLogDir[0][0]})) {
+            array_unshift($candidates, rtrim((string){rsLogDir[0][0]}, "/\\"));
+        }
+    } catch (Throwable $e) {
     }
     foreach ($candidates as $dir) {
         $dir = trim((string)$dir);
@@ -523,6 +582,33 @@ function webhook_contratto_gia_completato($contrattoId)
     }
     sc_lookup(rsSt, "SELECT stato_contratto_id FROM contratti WHERE id = " . (int)$contrattoId . " LIMIT 1");
     return !empty({rsSt[0][0]}) && (int){rsSt[0][0]} === $idCompletato;
+}
+
+function webhook_contratto_stato_id($contrattoId)
+{
+    sc_lookup(rsWhStCur, "SELECT stato_contratto_id FROM contratti WHERE id = " . (int)$contrattoId . " LIMIT 1");
+    return !empty({rsWhStCur[0][0]}) ? (int){rsWhStCur[0][0]} : 0;
+}
+
+/** Stati successivi alla firma del vettore: un member done del vettore non deve più modificarli. */
+function webhook_stato_oltre_firma_vettore($statoId)
+{
+    $statoId = (int)$statoId;
+    if ($statoId <= 0) {
+        return false;
+    }
+    $nomi = [
+        'In attesa della firma committente',
+        'Completato',
+        'Rifiutato dal subvettore',
+        'Rifiutato dal committente',
+    ];
+    foreach ($nomi as $nome) {
+        if (webhook_stato_id_by_nome($nome) === $statoId) {
+            return true;
+        }
+    }
+    return false;
 }
 
 function webhook_generate_temp_password()
@@ -1089,6 +1175,9 @@ function webhook_rifiuto_stato_nome($contrattoId, $memberId = '')
 {
     if ($memberId !== '') {
         $role = webhook_signer_role($contrattoId, $memberId);
+        if ($role === 'committente' && !webhook_stato_oltre_firma_vettore(webhook_contratto_stato_id($contrattoId))) {
+            $role = 'firmatario';
+        }
         if ($role === 'committente') {
             return 'Rifiutato dal committente';
         }
@@ -1187,6 +1276,10 @@ function webhook_handle_rifiuto_contratto($contrattoId, $memberId, $tipo, $statu
     if ($contrattoId <= 0) {
         return;
     }
+    if (webhook_contratto_gia_completato($contrattoId)) {
+        webhook_sc_log('rifiuto ignorato: contratto_id=' . $contrattoId . ' già Completato type=' . $tipo . ' status=' . $status);
+        return;
+    }
     $memberId = trim((string)$memberId);
     if ($memberId === '') {
         $memberId = webhook_extract_member_id_from_callback($callback);
@@ -1220,18 +1313,31 @@ function webhook_handle_member_callback($contrattoId, $memberId, $status, $stato
         return;
     }
     $role = webhook_signer_role($contrattoId, $memberId);
+    $statoAttuale = webhook_contratto_stato_id($contrattoId);
+    $oltreFirmaVettore = webhook_stato_oltre_firma_vettore($statoAttuale);
+    # Firma ordinata: il committente non può firmare prima del vettore → mappa signer invertita
+    if ($role === 'committente' && !$oltreFirmaVettore) {
+        webhook_sc_log(
+            'member committente ma contratto_id=' . $contrattoId . ' in stato_contratto_id=' . $statoAttuale
+            . ': easygn_signer_ids probabilmente invertiti, tratto come firma vettore'
+        );
+        $role = 'firmatario';
+    }
     if ($role === 'committente') {
         webhook_sc_log('evento 2/3: committente firmato contratto_id=' . $contrattoId . ' (in attesa chiusura procedura)');
+        return;
+    }
+    if ($oltreFirmaVettore) {
+        webhook_sc_log(
+            'evento 1/3 ignorato: contratto_id=' . $contrattoId . ' già in stato_contratto_id=' . $statoAttuale
+            . ' (retry EasyGN o firma committente con mappa invertita) role=' . $role
+        );
         return;
     }
     webhook_sc_log('evento 1/3: vettore firmato contratto_id=' . $contrattoId . ' role=' . $role);
     webhook_update_contratto_firmato_il($contrattoId);
     webhook_set_stato_contratto($contrattoId, 'In attesa della firma committente', 'member', $status);
-    try {
-        webhook_maybe_send_committente_mail($contrattoId, $memberId);
-    } catch (Throwable $e) {
-        webhook_sc_log('maybe_send_committente EXCEPTION: ' . $e->getMessage());
-    }
+    webhook_sc_log('mail committente non inviata: invio manuale da grid_contratti contratto_id=' . $contrattoId);
 }
 
 /** Chiamata 3: procedure done / finished */
@@ -1423,7 +1529,10 @@ function webhook_verdi_tutti_firmati($subvettore_id)
     sc_lookup(rsWhVerdiCnt, "
         SELECT
             COUNT(*) AS tot,
-            SUM(CASE WHEN d.firmato_il IS NOT NULL AND d.firmato_il <> '0000-00-00 00:00:00' THEN 1 ELSE 0 END) AS firmati
+            SUM(CASE WHEN
+                (d.firmato_il IS NOT NULL AND d.firmato_il <> '0000-00-00 00:00:00')
+                OR (d.presa_visione_at IS NOT NULL AND d.presa_visione_at <> '0000-00-00 00:00:00')
+            THEN 1 ELSE 0 END) AS firmati
         FROM documenti d
         INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
         WHERE d.subvettore_id = $subvettore_id
@@ -1468,7 +1577,7 @@ function webhook_notify_ops_wizard_complete($subId, $ragioneSociale, $loginSub)
         WHERE su.active = 'Y'
           AND su.login IS NOT NULL AND TRIM(su.login) <> ''
           AND su.email IS NOT NULL AND TRIM(su.email) <> ''
-          AND sug.group_id IN (1, 3)
+          AND sug.group_id IN (1, 3, 5)
     ");
 
     $emailPlaceholder = array('admin@admin.com', 'admin@localhost', 'admin@example.com');

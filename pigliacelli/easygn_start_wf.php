@@ -554,14 +554,15 @@ $signerSurname = '';
 
 sc_lookup(rsSubvContr, "
     SELECT
-        id,
-        email_rappresentante,
-        telefono_rappresentante,
-        nome_rappresentante,
-        cognome_rappresentante
-    FROM subvettori_contratti
-    WHERE contratto_id = $contrattoId
-      AND subvettore_id = $subvettoreId
+        sc.id,
+        COALESCE(NULLIF(TRIM(s.email_rappresentante), ''), NULLIF(TRIM(sc.email_rappresentante), '')),
+        sc.telefono_rappresentante,
+        sc.nome_rappresentante,
+        sc.cognome_rappresentante
+    FROM subvettori_contratti sc
+    INNER JOIN subvettori s ON s.id = sc.subvettore_id
+    WHERE sc.contratto_id = $contrattoId
+      AND sc.subvettore_id = $subvettoreId
     LIMIT 1
 ");
 if (!isset({rsSubvContr[0][0]}) || (int){rsSubvContr[0][0]} <= 0) {
@@ -574,7 +575,7 @@ $signerName    = isset({rsSubvContr[0][3]}) ? trim((string){rsSubvContr[0][3]}) 
 $signerSurname = isset({rsSubvContr[0][4]}) ? trim((string){rsSubvContr[0][4]}) : '';
 
 if ($signerEmail === '') {
-    $fail('Email rappresentante mancante in subvettori_contratti (email_rappresentante).');
+    $fail('Email rappresentante mancante (subvettori.email_rappresentante, poi subvettori_contratti).');
 }
 if ($signerPhone === '') {
     $fail('Telefono rappresentante mancante in subvettori_contratti (telefono_rappresentante).');

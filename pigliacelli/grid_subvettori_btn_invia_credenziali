@@ -352,6 +352,9 @@ if ($userLogin === '') {
     }
 }
 
+$plain = gsc_generate_temp_password();
+$hash  = md5($plain);
+
 if ($userLogin === '') {
     sc_log_add('GRID_CRED', 'utenza assente: creo ora sub=' . $subId . ' login=' . $login);
     sc_lookup(rsGscPhone, "
@@ -368,14 +371,13 @@ if ($userLogin === '') {
         $phone = trim((string){rsGscPhone[0][1]});
     }
 
-    $plainBootstrap = gsc_generate_temp_password();
     try {
         sc_exec_sql("
             INSERT INTO sec_users (
                 login, pswd, name, email, phone, active, subvettore_id
             ) VALUES (
                 " . gsc_sql_quote($login) . ",
-                " . gsc_sql_quote(md5($plainBootstrap)) . ",
+                " . gsc_sql_quote($hash) . ",
                 " . gsc_sql_quote($nome) . ",
                 " . gsc_sql_quote($login) . ",
                 " . gsc_sql_quote($phone) . ",
@@ -448,9 +450,6 @@ if ($userActive !== 'Y') {
     ", 'pigliacelli');
 }
 
-$plain = gsc_generate_temp_password();
-$hash  = md5($plain);
-
 try {
     sc_exec_sql("
         UPDATE sec_users
@@ -460,6 +459,7 @@ try {
         WHERE login = " . gsc_sql_quote($login) . "
         LIMIT 1
     ", 'pigliacelli');
+    sc_exec_sql('COMMIT');
 } catch (Throwable $e) {
     sc_log_add('GRID_CRED', 'ERRORE update pswd sub=' . $subId . ' — ' . $e->getMessage());
     sc_ajax_message('Errore aggiornamento password.');
@@ -479,6 +479,7 @@ try {
         SET mail_credenziali_inviata_at = NOW()
         WHERE id = $subId
     ", 'pigliacelli');
+    sc_exec_sql('COMMIT');
 } catch (Throwable $e) {
     sc_log_add('GRID_CRED', 'WARN mail OK ma flag non aggiornato sub=' . $subId . ' — ' . $e->getMessage());
     sc_ajax_message('Mail inviata, ma flag non aggiornato. Controllare i log.');

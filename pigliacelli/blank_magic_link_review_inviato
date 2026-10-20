@@ -23,12 +23,23 @@ if (isset($_GET['scId']) && (int)$_GET['scId'] > 0) {
 
 $safeContratto = $contrattoId > 0 ? (int)$contrattoId : 0;
 
+$blankGetC = isset($_GET['contrattoId']) ? (int)$_GET['contrattoId'] : 0;
+$blankGetSc = isset($_GET['scId']) ? (int)$_GET['scId'] : 0;
+$blankGloC = (isset([contrattoId]) && (int)[contrattoId] > 0) ? (int)[contrattoId] : 0;
+$blankGloSc = (isset([scId]) && (int)[scId] > 0) ? (int)[scId] : 0;
+sc_log_add(
+    'MAGIC_LINK_REVIEW',
+    'blank GET contratto=' . $blankGetC . ' sc=' . $blankGetSc
+    . ' gloC=' . $blankGloC . ' gloSc=' . $blankGloSc
+    . ' usato contratto=' . (int)$contrattoId . ' sc=' . (int)$scId
+);
+
 header('Content-Type: text/html; charset=UTF-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 
 echo '<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">'
     . '<meta name="viewport" content="width=device-width,initial-scale=1">'
-    . '<title>Dati contratto inviati</title>'
+    . '<title>Contratto accettato</title>'
     . '<style>'
     . 'body{margin:0;padding:0;background:#eef1f4;font-family:Arial,Helvetica,sans-serif;color:#2d3748;}'
     . '.wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;}'
@@ -42,17 +53,17 @@ echo '<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">'
     . '.note{margin-top:20px;padding:14px 16px;background:#f7f9fb;border:1px solid #e2e8f0;border-radius:8px;'
     . 'font-size:14px;color:#4a5568;}'
     . '</style></head><body><div class="wrap"><div class="card">'
-    . '<div class="head"><h1>Dati registrati correttamente</h1></div>'
+    . '<div class="head"><h1>Contratto accettato</h1></div>'
     . '<div class="body">'
-    . '<span class="badge">In attesa di verifica</span>'
-    . '<p>I dati del contratto sono stati salvati e saranno verificati dal nostro team.</p>'
-    . '<p>Procederemo con l\'invio della firma digitale del contratto dopo la revisione.</p>';
+    . '<span class="badge">In attesa di firma</span>'
+    . '<p>Il contratto è stato accettato.</p>'
+    . '<p>Il nostro team avvierà la firma digitale.</p>';
 
 if ($safeContratto > 0) {
     echo '<p class="note"><strong>Contratto:</strong> #' . $safeContratto . '</p>';
 }
 
-echo '<p class="note">Può chiudere questa pagina. Non è necessario inviare nuovamente il modulo.</p>'
+echo '<p class="note">Può chiudere questa pagina.</p>'
     . '</div></div></div></body></html>';
 
 exit;

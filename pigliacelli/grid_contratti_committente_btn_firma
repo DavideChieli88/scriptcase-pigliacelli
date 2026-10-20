@@ -1,0 +1,39 @@
+/**
+ * grid_contratti_committente → Action Bar (PHP, non Ajax)
+ * Name SC: sign_contract_committente
+ *
+ * Stesso schema di grid_dichiarazioni_subvettore_btn_firma:
+ * sc_redir verso un blank, target _blank. Il blank apre EasyGN.
+ * Qui sc_ajax_javascript non esiste (fatal error se chiamato).
+ *
+ * Setup SC:
+ *  - Action Bar → PHP
+ *  - Creare anche il blank blank_sign_committente (onExecute)
+ */
+
+$contrattoId = isset({id}) ? (int){id} : 0;
+if ($contrattoId <= 0) {
+    sc_error_message('Contratto non identificato.');
+    return;
+}
+
+sc_lookup(rsGccfCtr, "
+    SELECT c.stato_contratto_id
+    FROM contratti c
+    WHERE c.id = " . (int)$contrattoId . "
+    LIMIT 1
+", 'pigliacelli');
+
+if (empty({rsGccfCtr[0][0]})) {
+    sc_error_message('Contratto non trovato.');
+    return;
+}
+
+if ((int){rsGccfCtr[0][0]} !== 5) {
+    sc_error_message('La firma del committente è disponibile solo quando il contratto è in attesa della sua firma.');
+    return;
+}
+
+sc_log_add('FIRMA_COMM', 'redir blank firma contratto=' . $contrattoId);
+[contrattoId] = $contrattoId;
+sc_redir('blank_sign_committente', contrattoId=[contrattoId], '_blank');

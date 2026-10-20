@@ -2,6 +2,7 @@
  * grid_documenti_to_sign_wizard → onRecord
  *
  * sign_doc_btn: nascosto se firmato_il e' valorizzato.
+ * Manuale del vettore: solo Apri (presa_visione_at), niente firma.
  * Sulla riga dichiarazioni e' nascosto anche finche' la form annuale
  * non e' salvata (stato compilata/firmata, flag in onScriptInit).
  *
@@ -11,7 +12,7 @@
  * Action Bar Ajax: sign_doc_btn, compila_dichiarazione_btn, open_pdf_btn, show_signed_doc_btn.
  */
 
-$firmatoIl = trim((string){d.firmato_il});
+$firmatoIl = trim((string){ d.firmato_il });
 
 $firmato = (
     $firmatoIl !== ''
@@ -20,26 +21,32 @@ $firmato = (
 );
 
 $tipoNome = '';
-if (isset({td_nome})) {
-    $tipoNome = trim((string){td_nome});
+if (isset({ td_nome })) {
+    $tipoNome = trim((string){ td_nome });
 }
-if ($tipoNome === '' && isset({d.tipo_documento_id}) && (int){d.tipo_documento_id} > 0) {
-    $tipoId = (int){d.tipo_documento_id};
+if ($tipoNome === '' && isset({ d.tipo_documento_id }) && (int){ d.tipo_documento_id } > 0) {
+    $tipoId = (int){ d.tipo_documento_id };
     sc_lookup(rsRecTipoNome, "
         SELECT COALESCE(nome, '')
         FROM tipi_documento
         WHERE id = $tipoId
         LIMIT 1
     ", 'pigliacelli');
-    if (!empty({rsRecTipoNome[0][0]})) {
-        $tipoNome = trim((string){rsRecTipoNome[0][0]});
+    if (!empty({ rsRecTipoNome[0][0] })) {
+        $tipoNome = trim((string){ rsRecTipoNome[0][0] });
     }
 }
 
 $isDichiarazioni = (stripos($tipoNome, 'dichiaraz') !== false);
+$isManualeVettore = (stripos($tipoNome, 'manuale') !== false && stripos($tipoNome, 'vettore') !== false);
 $pronta = !empty($_SESSION['wizard_dichiarazione_pronta']);
 
-if ($firmato) {
+if ($isManualeVettore) {
+    sc_actionbar_show('open_pdf_btn');
+    sc_actionbar_hide('show_signed_doc_btn');
+    sc_actionbar_hide('compila_dichiarazione_btn');
+    sc_actionbar_hide('sign_doc_btn');
+} elseif($firmato) {
     sc_actionbar_hide('open_pdf_btn');
     sc_actionbar_show('show_signed_doc_btn');
 } else {
@@ -47,7 +54,10 @@ if ($firmato) {
     sc_actionbar_hide('show_signed_doc_btn');
 }
 
-if ($isDichiarazioni) {
+if ($isManualeVettore) {
+    sc_actionbar_hide('compila_dichiarazione_btn');
+    sc_actionbar_hide('sign_doc_btn');
+} elseif($isDichiarazioni) {
     if ($firmato) {
         sc_actionbar_hide('compila_dichiarazione_btn');
         sc_actionbar_hide('sign_doc_btn');

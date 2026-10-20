@@ -134,7 +134,7 @@ if (!function_exists('dea_load_operatori')) {
             INNER JOIN sec_users_groups sug ON sug.login = su.login
             WHERE su.active = 'Y'
               AND su.login IS NOT NULL AND TRIM(su.login) <> ''
-              AND sug.group_id IN (1, 3)
+              AND sug.group_id IN (1, 3, 5)
         ", 'pigliacelli');
 
         if (!empty({rsDeaOps})) {

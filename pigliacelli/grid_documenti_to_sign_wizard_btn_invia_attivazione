@@ -6,8 +6,8 @@
  * Errori: testo in $_SESSION + sc_redir sulla stessa grid (niente globali SC).
  * onScriptInit se la sessione ha il testo → sc_alert, poi unset.
  *
- * Requisiti: tutti i documenti verdi firmati (firmato_il).
- * Effetto: wizard_complete=1 + mail/notifica operatori gruppi 1 e 3.
+ * Requisiti: documenti verdi firmati (firmato_il) oppure visionati (presa_visione_at).
+ * Effetto: wizard_complete=1 + mail/notifica gruppi 1, 3 e 5.
  *
  * Globale SC: [subvettoreId]
  */
@@ -62,7 +62,10 @@ if ($subId <= 0) {
         sc_lookup(rsAttCnt, "
             SELECT
                 COUNT(*) AS tot,
-                SUM(CASE WHEN d.firmato_il IS NOT NULL AND d.firmato_il <> '0000-00-00 00:00:00' THEN 1 ELSE 0 END) AS firmati
+                SUM(CASE WHEN
+                    (d.firmato_il IS NOT NULL AND d.firmato_il <> '0000-00-00 00:00:00')
+                    OR (d.presa_visione_at IS NOT NULL AND d.presa_visione_at <> '0000-00-00 00:00:00')
+                THEN 1 ELSE 0 END) AS firmati
             FROM documenti d
             INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
             WHERE d.subvettore_id = $subId
@@ -74,10 +77,10 @@ if ($subId <= 0) {
         $firmati = !empty({rsAttCnt[0][1]}) ? (int){rsAttCnt[0][1]} : 0;
 
         if ($tot <= 0) {
-            $blockMsg = 'Nessun documento da firmare configurato.';
+            $blockMsg = 'Nessun documento da firmare o da visionare.';
         } elseif ($firmati < $tot) {
-            $blockMsg = 'Firmare tutti i documenti prima di inviare per attivazione. '
-                . 'Firmati: ' . $firmati . ' / ' . $tot . '.';
+            $blockMsg = 'Prima di inviare per attivazione firma i documenti oppure prendi visione del manuale. '
+                . 'Completati: ' . $firmati . ' / ' . $tot . '.';
         }
     }
 }
@@ -102,7 +105,7 @@ if ($blockMsg !== '') {
           AND TRIM(su.login) <> ''
           AND su.email IS NOT NULL
           AND TRIM(su.email) <> ''
-          AND sug.group_id IN (1, 3)
+          AND sug.group_id IN (1, 3, 5)
     ", 'pigliacelli');
 
     $emailPlaceholder = array('admin@admin.com', 'admin@localhost', 'admin@example.com');

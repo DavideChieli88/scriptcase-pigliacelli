@@ -48,6 +48,9 @@ if ($checkEmpty(isset({rea}) ? {rea} : '')) {
 if ($checkEmpty(isset({phone}) ? {phone} : '')) {
     $errors[] = 'Telefono / cellulare';
 }
+if ($checkEmpty(isset({pec}) ? {pec} : '')) {
+    $errors[] = 'PEC';
+}
 
 // --- Albo conto terzi + pagamenti (SAL 16/09 P1) ---
 if ($checkEmpty(isset({num_iscrizione_albo}) ? {num_iscrizione_albo} : '')) {
@@ -107,6 +110,10 @@ if ($checkEmpty(isset({residenza_civico_rappresentante}) ? {residenza_civico_rap
 $emailLr = isset({email_rappresentante}) ? trim((string){email_rappresentante}) : '';
 if ($emailLr !== '' && filter_var($emailLr, FILTER_VALIDATE_EMAIL) === false) {
     $errors[] = 'Email legale rappresentante non valida';
+}
+$pec = isset({pec}) ? trim((string){pec}) : '';
+if ($pec !== '' && filter_var($pec, FILTER_VALIDATE_EMAIL) === false) {
+    $errors[] = 'PEC non valida';
 }
 
 if (!empty($errors)) {

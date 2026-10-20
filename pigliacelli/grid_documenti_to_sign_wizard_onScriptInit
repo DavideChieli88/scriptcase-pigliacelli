@@ -7,12 +7,13 @@
  * SETUP GRID (ScriptCase IDE):
  * - SQL esempio:
  *     SELECT d.id, d.subvettore_id, d.tipo_documento_id, d.file, d.firmato_il,
- *            td.nome AS td_nome
+ *            d.presa_visione_at, td.nome AS td_nome
  *     FROM documenti d
  *     INNER JOIN tipi_documento td ON td.id = d.tipo_documento_id
  *     WHERE td.is_readonly = 1 AND d.subvettore_id = [subvettoreId]
  * - Campi SC: {d.id}, {d.tipo_documento_id}, {d.file}, {d.firmato_il},
- *   {d.subvettore_id}, {td_nome}  (punto sull'alias; td_nome perché ha AS)
+ *   {d.presa_visione_at}, {d.subvettore_id}, {td_nome}
+ *   (punto sull'alias; td_nome perché ha AS). Label colonna: Presa visione.
  * - Action Bar Ajax: open_pdf_btn, sign_doc_btn, compila_dichiarazione_btn, show_signed_doc_btn
  * - Toolbar: send_for_activation
  * - Security: group 2
@@ -430,6 +431,8 @@ if (!function_exists('wiz_verdi_sync_firmato_easygn')) {
         return $updated;
     }
 }
+
+sc_label(d.presa_visione_at) = 'Presa visione';
 
 $synced = wiz_verdi_sync_firmato_easygn($subId);
 if ($synced > 0 && function_exists('sc_ajax_message')) {

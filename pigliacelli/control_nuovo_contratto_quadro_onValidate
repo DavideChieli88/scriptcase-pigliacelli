@@ -15,12 +15,29 @@
  *   )
  *   ORDER BY s.ragione_sociale
  *
- * Nessuna query qui: la form ha la transazione aperta.
- * Il blank nuovo_contratto_quadro crea il tipo 1.
+ * Prima del save: wizard_complete deve essere 1, altrimenti non si crea il tipo 1.
+ * Il blank nuovo_contratto_quadro crea il tipo 1 e ci mette tutte le tratte a tariffa valida.
  */
 $subId = isset({subvettore_id}) ? (int){subvettore_id} : 0;
 if ($subId <= 0) {
     sc_error_message('Selezionare un subvettore.');
+    return;
+}
+
+sc_lookup(rsNcqWiz, "
+    SELECT COALESCE(wizard_complete, 0)
+    FROM subvettori
+    WHERE id = " . (int)$subId . "
+    LIMIT 1
+", 'pigliacelli');
+
+if (empty({rsNcqWiz})) {
+    sc_error_message('Subvettore non trovato.');
+    return;
+}
+
+if ((int){rsNcqWiz[0][0]} !== 1) {
+    sc_error_message('Questo subvettore non ha completato il wizard. Completare l\'onboarding prima di creare il contratto quadro.');
     return;
 }
 

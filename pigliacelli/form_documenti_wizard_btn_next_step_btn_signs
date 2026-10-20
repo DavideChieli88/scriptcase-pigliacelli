@@ -161,6 +161,7 @@ sc_exec_sql("
             AND (d.subvettore_mezzo_id IS NULL OR d.subvettore_mezzo_id = 0)
       )
 ", 'pigliacelli');
+sc_exec_sql('COMMIT');
 
 [documentoId] = 0;
 if (isset($_SESSION['documentoId'])) {

@@ -3,6 +3,7 @@
  *
  * sc_changed non è disponibile in onAfterUpdate: salviamo il flag per gli eventi After.
  * Se la mail cambia, salviamo il valore precedente (da DB) per disabilitare la vecchia utenza in After.
+ *
  */
 
 [glo_sub_login_subvettore_changed] = sc_changed({login_subvettore}) ? '1' : '0';
@@ -22,3 +23,5 @@ if ([glo_sub_login_subvettore_changed] === '1') {
         }
     }
 }
+
+sc_exec_sql('COMMIT');
