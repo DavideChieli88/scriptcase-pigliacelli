@@ -26,3 +26,24 @@ if ($tipoId > 0) {
         {required} = 'Si';
     }
 }
+
+$scadRaw = isset({data_scadenza}) ? trim((string){data_scadenza}) : '';
+$scadVuota = (
+    $scadRaw === ''
+    || strcasecmp($scadRaw, 'null') === 0
+    || strpos($scadRaw, '0000-00-00') === 0
+);
+if ($tipoId > 0 && $scadVuota) {
+    sc_lookup(rsDocAngaNome, "
+        SELECT nome FROM tipi_documento WHERE id = $tipoId LIMIT 1
+    ", 'pigliacelli');
+    $nomeTipo = !empty({rsDocAngaNome[0][0]}) ? trim((string){rsDocAngaNome[0][0]}) : '';
+    if (stripos($nomeTipo, 'Ricevuta pagamento ANGA') === 0) {
+        $yRicAnga = (int)date('Y');
+        $scadRicAnga = sprintf('%04d-04-30', $yRicAnga);
+        if (date('Y-m-d') >= $scadRicAnga) {
+            $scadRicAnga = sprintf('%04d-04-30', $yRicAnga + 1);
+        }
+        {data_scadenza} = $scadRicAnga;
+    }
+}

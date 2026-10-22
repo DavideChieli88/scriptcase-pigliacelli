@@ -9,6 +9,8 @@
 // Non passare syncManuale nell'URL del menu: app_menu si ricarica in continuazione.
 // Lock check_new_trips: un secondo click o uno schedule sovrapposto esce subito.
 // Prima di eseguire: migration_tratte_legacy.sql (colonna tratte.legacy).
+// tariffa_cliente: migration_tratte_tariffa_cliente.sql. Nolo cliente, non entra nell'hash
+// e non apre una variazione di contratto.
 function sql_quote($v) {
     if ($v === null) return "NULL";
     return "'" . str_replace("'", "''", (string)$v) . "'";
@@ -1361,6 +1363,47 @@ function sga_carica_extra($pdo_sga, $societa, $anno, $numero) {
     return $extra === null || $extra === false ? 0 : $extra;
 }
 
+function sga_carica_tariffa_cliente($pdo_sga, $societa, $anno, $numero) {
+    $sql = "
+        SELECT SUM(vcl.IMPORTO_TOTALE)
+        FROM (
+            SELECT DISTINCT CLIENTE_ANNO, CLIENTE_FILIALE, CLIENTE_NUMERO
+            FROM T2ViaggiVettoriClienti
+            WHERE SOCIETA = " . sga_sql_int($societa) . "
+              AND ANNO = " . sga_sql_int($anno) . "
+              AND NUMERO = " . sga_sql_int($numero) . "
+              AND CLIENTE_NUMERO IS NOT NULL
+              AND CLIENTE_NUMERO <> 0
+        ) vc
+        INNER JOIN T2ViaggiClienti vcl
+            ON vcl.SOCIETA = " . sga_sql_int($societa) . "
+           AND vcl.ANNO = vc.CLIENTE_ANNO
+           AND vcl.FILIALE = vc.CLIENTE_FILIALE
+           AND vcl.NUMERO = vc.CLIENTE_NUMERO
+    ";
+    $stmt_cli = sga_pdo_query($pdo_sga, $sql);
+    if ($stmt_cli === false) {
+        return null;
+    }
+    $val = $stmt_cli->fetchColumn();
+    $stmt_cli->closeCursor();
+    if ($val === null || $val === false) {
+        return null;
+    }
+    return round((float)$val, 2);
+}
+
+function salva_tariffa_cliente($tratta_id, $tariffa_cliente) {
+    if ($tariffa_cliente === null || (int)$tratta_id <= 0) {
+        return;
+    }
+    sc_exec_sql("
+        UPDATE tratte
+        SET tariffa_cliente = " . sql_num($tariffa_cliente) . "
+        WHERE id = " . sql_num($tratta_id) . "
+    ", "pigliacelli");
+}
+
 function sga_carica_allegato($pdo_sga, $societa, $anno, $numero) {
     $sql = "
         SELECT
@@ -1749,6 +1792,7 @@ try {
 
         [$carico_str, $scarico_str] = sga_carica_localita($pdo_sga, $societa, $anno, $numero);
         [$caricatore, $proprietario_merce, $merce] = sga_carica_allegato($pdo_sga, $societa, $anno, $numero);
+        $tariffa_cliente = sga_carica_tariffa_cliente($pdo_sga, $societa, $anno, $numero);
 
         // Mantiene il comportamento dei JOIN della query originale: senza carico o scarico il viaggio non entra.
         if ($carico_str === '' || $scarico_str === '') {
@@ -1803,6 +1847,7 @@ try {
             'tariffa_sigla' => $tariffa_sigla,
             'importo_unitario' => $importo_unitario,
             'extra_totale' => $extra_totale,
+            'tariffa_cliente' => $tariffa_cliente,
             'partenza_data_ora' => $partenza_data_ora,
             'sync_data_ora' => $sync_data_ora,
         ];
@@ -1903,6 +1948,7 @@ foreach ($viaggi_unici as $viaggio) {
     $tariffa_sigla    = $viaggio['tariffa_sigla'];
     $importo_unitario = $viaggio['importo_unitario'];
     $extra_totale     = $viaggio['extra_totale'];
+    $tariffa_cliente  = array_key_exists('tariffa_cliente', $viaggio) ? $viaggio['tariffa_cliente'] : null;
     $partenza_data_ora = $viaggio['partenza_data_ora'];
 
     $importo_unitario = importo_unitario_normalizzato($importo_unitario);
@@ -2010,6 +2056,7 @@ foreach ($viaggi_unici as $viaggio) {
         $stat_run['tratte_hash_esistente']++;
         $tratta_id_esistente = {hashRow[0][0]};
         aggiorna_allegato_tratta($tratta_id_esistente, $merce, $caricatore, $proprietario_merce);
+        salva_tariffa_cliente($tratta_id_esistente, $tariffa_cliente);
         if ($lega_variazione) {
             $contratto_id = contratto_per_assicura($tratta_id_esistente, $tipo_contratto_nuove, $intestatario_contratto, $subvettore_id);
             if ($contratto_id !== null) {
@@ -2061,6 +2108,7 @@ foreach ($viaggi_unici as $viaggio) {
     if (!empty({existRow})) {
         $tratta_id_esistente = {existRow[0][0]};
         aggiorna_allegato_tratta($tratta_id_esistente, $merce, $caricatore, $proprietario_merce);
+        salva_tariffa_cliente($tratta_id_esistente, $tariffa_cliente);
         $importo_esistente   = {existRow[0][1]};
         $extra_esistente     = {existRow[0][2]};
         $totale_esistente    = {existRow[0][3]};
@@ -2165,7 +2213,7 @@ foreach ($viaggi_unici as $viaggio) {
     // Tipo 2: Nuovo viaggio/tratta.
     $insTratta = "
       INSERT INTO tratte
-        (subvettore_id, merce, caricatore, proprietario_merce, tipo_tariffa_id, tariffa, extra, totale, hash, version, legacy)
+        (subvettore_id, merce, caricatore, proprietario_merce, tipo_tariffa_id, tariffa, extra, totale, tariffa_cliente, hash, version, legacy)
       VALUES
         (" . sql_num($subvettore_id) . ",
          " . allegato_testo_sql($merce) . ",
@@ -2175,6 +2223,7 @@ foreach ($viaggi_unici as $viaggio) {
          " . sql_num($importo_unitario) . ",
          " . sql_num($extra_totale) . ",
          " . sql_num($totale) . ",
+         " . sql_num($tariffa_cliente) . ",
          " . sql_quote($hash) . ",
          1,
          0)
@@ -2209,6 +2258,7 @@ foreach ($viaggi_unici as $viaggio) {
             ", carico '" . $carico_str .
             "', scarico '" . $scarico_str . "'"
         );
+        salva_tariffa_cliente($tratta_id, $tariffa_cliente);
         if ($lega_variazione && tratta_ha_tariffa_valida($tratta_id)) {
             $contratto_id = contratto_per_assicura($tratta_id, $tipo_contratto_nuove, $intestatario_contratto, $subvettore_id);
             if ($contratto_id !== null) {
@@ -2383,6 +2433,7 @@ if (!empty($subs_tipo1)) {
             }
             list($caricBf, $propBf, $merceBf) = sga_carica_allegato($pdo_sga, $socBf, $annoBf, $numBf);
             $extraBf = sga_carica_extra($pdo_sga, $socBf, $annoBf, $numBf);
+            $tarCliBf = sga_carica_tariffa_cliente($pdo_sga, $socBf, $annoBf, $numBf);
             $totBf = (0 + $impBf) + (0 + $extraBf);
             $hashBf = crea_hash_tratta($caricoBf, $scaricoBf, $codiceBf, $impBf);
 
@@ -2404,10 +2455,11 @@ if (!empty($subs_tipo1)) {
             if (!empty({rsHashBf})) {
                 $tidBf = (int){rsHashBf[0][0]};
                 aggiorna_allegato_tratta($tidBf, $merceBf, $caricBf, $propBf);
+                salva_tariffa_cliente($tidBf, $tarCliBf);
             } else {
                 sc_exec_sql("
                     INSERT INTO tratte
-                      (subvettore_id, merce, caricatore, proprietario_merce, tipo_tariffa_id, tariffa, extra, totale, hash, version, legacy)
+                      (subvettore_id, merce, caricatore, proprietario_merce, tipo_tariffa_id, tariffa, extra, totale, tariffa_cliente, hash, version, legacy)
                     VALUES
                       (" . sql_num($sidBf) . ",
                        " . allegato_testo_sql($merceBf) . ",
@@ -2417,6 +2469,7 @@ if (!empty($subs_tipo1)) {
                        " . sql_num($impBf) . ",
                        " . sql_num($extraBf) . ",
                        " . sql_num($totBf) . ",
+                       " . sql_num($tarCliBf) . ",
                        " . sql_quote($hashBf) . ",
                        1, 0)
                     ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)

@@ -543,14 +543,20 @@ if ($isUploadSubvettore) {
     }
 }
 
-// Operatore/admin segna da correggere: notifica + mail al subvettore
-// (statoDoc !== 3 evita ripetere se già "da revisionare"; non usare [is_not_ok] = globale SC)
-if ((int){is_not_ok} === 1 && (int)$group_id !== 2 && (int)$statoDoc !== 3) {
+// Operatore/admin segna da correggere: notifica + mail al subvettore.
+// Il pulsante Invia per correzione lascia il cookie e salva: stesso ramo della vecchia spunta.
+// statoDoc !== 3 evita di ripetere se è già "da revisionare".
+$forzaCorrezione = (!empty($_COOKIE['doc_invia_correzione']) && (string)$_COOKIE['doc_invia_correzione'] === '1');
+if ($forzaCorrezione) {
+    setcookie('doc_invia_correzione', '', time() - 3600, '/');
+    unset($_COOKIE['doc_invia_correzione']);
+}
+if (((int){is_not_ok} === 1 || $forzaCorrezione) && (int)$group_id !== 2 && (int)$statoDoc !== 3) {
 
     sc_log_add('MAIL_DOCS', "onAfterUpdate doc=$docId — revisione attiva intestatario=$intestatario staff=$usrLogin");
 
     try {
-        sc_exec_sql("UPDATE documenti SET stato_documento_id = 3, updated_at = NOW() WHERE id = {id}");
+        sc_exec_sql("UPDATE documenti SET stato_documento_id = 3, is_not_ok = 1, updated_at = NOW() WHERE id = {id}");
     } catch (Exception $e) {
         sc_log_add('MAIL_DOCS', "ERRORE onAfterUpdate doc=$docId — aggiornamento stato da revisionare: " . $e->getMessage());
     } catch (Throwable $e) {

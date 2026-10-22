@@ -888,3 +888,69 @@ DELETE FROM subvettori;
 SET FOREIGN_KEY_CHECKS = 1;
 
 DROP TEMPORARY TABLE IF EXISTS tmp_logins_g2;
+
+
+
+//tratte legacy
+ALTER TABLE tratte
+  ADD COLUMN legacy TINYINT NOT NULL DEFAULT 0;
+
+
+-- White list (tipi_documento id 9): documento obbligatorio.
+-- Si carica il certificato, oppure l'istanza di iscrizione con la ricevuta PEC.
+-- Via la dicitura "se iscritto" / "se non iscritti". Niente flag "in possesso".
+
+UPDATE tipi_documento
+SET
+    nome = 'Certificato White list oppure istanza di iscrizione con ricevuta PEC',
+    mandatory = 1,
+    flag_possesso = 0,
+    is_readonly = 0
+WHERE id = 9;
+
+SELECT id, nome, mandatory, flag_possesso, is_readonly
+FROM tipi_documento
+WHERE id = 9;
+
+
+
+//query per testare pulire tratte contratti di un sub specifico
+START TRANSACTION;
+
+CREATE TEMPORARY TABLE tmp_ctr_336 AS
+SELECT contratto_id
+FROM subvettori_contratti
+WHERE subvettore_id = 336;
+
+UPDATE subvettori_autisti sa
+INNER JOIN subvettori_contratti sc ON sc.id = sa.subvettore_contratto_id
+SET sa.subvettore_contratto_id = NULL
+WHERE sc.subvettore_id = 336;
+
+DELETE ct
+FROM contratti_tratte ct
+INNER JOIN tmp_ctr_336 x ON x.contratto_id = ct.contratto_id;
+
+DELETE FROM subvettori_contratti WHERE subvettore_id = 336;
+
+DELETE c
+FROM contratti c
+INNER JOIN tmp_ctr_336 x ON x.contratto_id = c.id;
+
+DELETE tl
+FROM tratte_localita tl
+INNER JOIN tratte t ON t.id = tl.tratta_id
+WHERE t.subvettore_id = 336;
+
+DELETE FROM tratte WHERE subvettore_id = 336;
+
+DROP TEMPORARY TABLE tmp_ctr_336;
+
+COMMIT;
+
+
+
+
+
+ALTER TABLE tratte
+  ADD COLUMN tariffa_cliente DECIMAL(10,2) NULL DEFAULT NULL;

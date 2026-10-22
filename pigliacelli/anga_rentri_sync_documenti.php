@@ -42,6 +42,12 @@ if (!function_exists('anga_rentri_sync_slots')) {
         $need5 = (isset({rsAngaSyncFlags[0][2]}) && (int){rsAngaSyncFlags[0][2]} === 1) ? 1 : 0;
         $needR = ($need1 === 1 || $need4 === 1 || $need5 === 1) ? 1 : 0;
 
+        $yRicAnga = (int)date('Y');
+        $scadRicAnga = sprintf('%04d-04-30', $yRicAnga);
+        if (date('Y-m-d') >= $scadRicAnga) {
+            $scadRicAnga = sprintf('%04d-04-30', $yRicAnga + 1);
+        }
+
         $slots = array(
             array('Autorizzazione ANGA Cat.1', '', $need1),
             array('Ricevuta pagamento ANGA Cat.1', '', $need1),
@@ -93,6 +99,7 @@ if (!function_exists('anga_rentri_sync_slots')) {
             $tipoId = ($canonId > 0) ? $canonId : $fallId;
             $idList = implode(',', $ids);
             $need = (int)$slot[2];
+            $isRicAnga = (stripos($slot[0], 'Ricevuta pagamento ANGA') === 0);
 
             if ($need === 1) {
                 sc_exec_sql("
@@ -112,14 +119,14 @@ if (!function_exists('anga_rentri_sync_slots')) {
                     LIMIT 1
                 ", 'pigliacelli');
                 if (!(isset({rsAngaSyncSlot[0][0]}) && (int){rsAngaSyncSlot[0][0]} > 0)) {
-                    sc_exec_sql("
-                        INSERT INTO documenti (
-                            tipo_documento_id, subvettore_id, login, stato_documento_id
-                        ) VALUES (
-                            $tipoId, $subId, '$loginSql', 1
-                        )
-                    ", 'pigliacelli');
                     $changed++;
+                }
+            } else {
+                sc_lookup(rsAngaSyncEmpty, "
+                    SELECT COUNT(*)
+                    FROM documenti
+                    WHERE subvettore_id = $subId
+                      AND tipo_documento_id IN ($idList)
                 }
             } else {
                 sc_lookup(rsAngaSyncEmpty, "

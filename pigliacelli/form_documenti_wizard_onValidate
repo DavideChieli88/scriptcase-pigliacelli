@@ -95,7 +95,29 @@ if (!$hasFile && isset({id}) && (int){id} > 0) {
 if (!$hasFile) {
     $err[] = 'file';
 }
-if (empty({data_scadenza}) || {data_scadenza} == 'null') {
+
+$scadRaw = isset({data_scadenza}) ? trim((string){data_scadenza}) : '';
+$scadVuota = (
+    $scadRaw === ''
+    || strcasecmp($scadRaw, 'null') === 0
+    || strpos($scadRaw, '0000-00-00') === 0
+);
+if ($scadVuota && $tipoId > 0) {
+    sc_lookup(rsWizDocAngaNome, "
+        SELECT nome FROM tipi_documento WHERE id = $tipoId LIMIT 1
+    ", 'pigliacelli');
+    $nomeAnga = !empty({rsWizDocAngaNome[0][0]}) ? trim((string){rsWizDocAngaNome[0][0]}) : '';
+    if (stripos($nomeAnga, 'Ricevuta pagamento ANGA') === 0) {
+        $yRicAnga = (int)date('Y');
+        $scadRicAnga = sprintf('%04d-04-30', $yRicAnga);
+        if (date('Y-m-d') >= $scadRicAnga) {
+            $scadRicAnga = sprintf('%04d-04-30', $yRicAnga + 1);
+        }
+        {data_scadenza} = $scadRicAnga;
+        $scadVuota = false;
+    }
+}
+if ($scadVuota) {
     $err[] = 'data di scadenza';
 }
 

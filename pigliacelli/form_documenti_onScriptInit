@@ -2,20 +2,17 @@ sc_select(rs, "SELECT group_id FROM sec_users_groups sug INNER JOIN sec_users su
   WHERE su.login = '[usr_login]'
 ");
 
-// Controllo che la query sia andata a buon fine
+$group_id = 0;
 if ({rs} !== false) {
-    // Ciclo sui risultati
     while (!$rs->EOF) {
         $group_id = $rs->fields[0];
 
-        // Se il gruppo è subvettore → nascondi il campo e imposta il valore
         if ($group_id == 2) {
-			sc_btn_display('new', 'off');
+            sc_btn_display('new', 'off');
+            sc_btn_display('send_multiple_docs', 'off');
             sc_field_display({login}, 'off');
-			sc_field_display({is_not_ok}, 'off');
-			sc_field_display({subvettore_id}, 'off');
-            {login} = [usr_login];   
-			
+            sc_field_display({subvettore_id}, 'off');
+            {login} = [usr_login];
         }
 
         $rs->MoveNext();
@@ -23,4 +20,85 @@ if ({rs} !== false) {
     $rs->Close();
 } else {
     echo "Errore nella query ";
+}
+
+// La spunta is_not_ok non si usa più: il pulsante Invia per correzione
+// fa lo stesso salvataggio (stato da revisionare + avviso).
+sc_field_display({is_not_ok}, 'off');
+
+$op = '';
+if (isset($this->nmgp_opcao)) {
+    $op = strtolower(trim((string)$this->nmgp_opcao));
+} elseif (isset($_POST['nmgp_opcao'])) {
+    $op = strtolower(trim((string)$_POST['nmgp_opcao']));
+} elseif (isset($_GET['nmgp_opcao'])) {
+    $op = strtolower(trim((string)$_GET['nmgp_opcao']));
+}
+
+$idDoc = isset({id}) ? (int){id} : 0;
+$isInsert = in_array($op, array('novo', 'incluir', 'new', 'insert'), true) || $idDoc <= 0;
+
+$docFile = '';
+$docSubId = isset({subvettore_id}) ? (int){subvettore_id} : 0;
+$docLogin = isset({login}) ? trim((string){login}) : '';
+if ($idDoc > 0) {
+    sc_lookup(rsDocOwner, "
+        SELECT COALESCE(file, ''), COALESCE(subvettore_id, 0), COALESCE(login, '')
+        FROM documenti
+        WHERE id = $idDoc
+        LIMIT 1
+    ", 'pigliacelli');
+    if (isset({rsDocOwner[0][0]})) {
+        $docFile = trim((string){rsDocOwner[0][0]});
+        $docSubId = (int){rsDocOwner[0][1]};
+        $docLogin = trim((string){rsDocOwner[0][2]});
+    }
+}
+
+$mySubId = 0;
+$usrLogin = trim((string)[usr_login]);
+if ((int)$group_id === 2 && $usrLogin !== '') {
+    $usrSql = str_replace("'", "''", $usrLogin);
+    sc_lookup(rsDocMySub, "
+        SELECT COALESCE(subvettore_id, 0)
+        FROM sec_users
+        WHERE login = '$usrSql'
+        LIMIT 1
+    ", 'pigliacelli');
+    if (!empty({rsDocMySub[0][0]})) {
+        $mySubId = (int){rsDocMySub[0][0]};
+    }
+}
+$isUploader = (
+    (int)$group_id === 2
+    && (
+        ($docLogin !== '' && strcasecmp($usrLogin, $docLogin) === 0)
+        || ($mySubId > 0 && $docSubId > 0 && $mySubId === $docSubId)
+    )
+);
+// File già caricato: lo modifica solo il subvettore di quel documento.
+$soloLettura = (!$isInsert && $docFile !== '' && !$isUploader);
+
+if ($isInsert) {
+    sc_field_readonly({tipo_documento_id}, 'off');
+    sc_field_readonly({subvettore_id}, 'off');
+    sc_btn_display('btn_invia_correzione', 'off');
+} else {
+    sc_field_readonly({tipo_documento_id}, 'on');
+    sc_field_readonly({subvettore_id}, 'on');
+    if ((int)$group_id === 2) {
+        sc_btn_display('btn_invia_correzione', 'off');
+    } else {
+        sc_btn_display('btn_invia_correzione', 'on');
+    }
+}
+
+if ($soloLettura) {
+    sc_field_readonly({file}, 'on');
+    sc_field_readonly({data_scadenza}, 'on');
+    sc_field_readonly({stato_documento_id}, 'on');
+    sc_btn_display('update', 'off');
+    sc_btn_display('save', 'off');
+    sc_btn_display('ok', 'off');
+    sc_btn_display('delete', 'off');
 }

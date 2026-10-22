@@ -3,15 +3,16 @@
 Wiki operativa per agenti/LLM. Aggiornare quando cambiano requisiti o naming.
 
 **Gerarchia requisiti (prevale dall’alto):**
-1. `mail_flavia_prova_2026-10-19.md` — PEC, scadenza assicurazione, Albo Gestori se rifiuti, niente date passate, ANGA 30 aprile, scadenze obbligatorie, documenti autista in DOCUMENTAZIONE, tendine PGL
-2. `pigliacelli_briefing_sal_2026-10-13.md` — vista contratto, review solo tratte, modale rappresentante, griglia documenti, blocco wizard
-3. `pigliacelli_briefing_sal_2026-09-30.md` — test wizard, sync SGA spezzata, firma contratti solo tratte
-4. `pigliacelli_briefing_sal_2026-09-28.md` — fix wizard; ANGA/RENTRI: flag sul mezzo, file nello step documenti
-5. `chiarimento_anga_rentri_2026-09-17.md` — nomi, cardinalità, scadenze (dove i file si caricano prevale il 28/09)
-6. `pigliacelli_briefing_sal_2026-09-16.md`
-7. `pigliacelli_briefing_sal_2026-07-21.md`
-8. `requisiti_pigliacelli_validazione_2026-07.md`
-9. `docs_elenco_documenti_subvettori.md` · `modello_flag_documenti.md`
+1. `mail_flavia_prova_2026-10-19.md` — PEC, assicurazione mezzo, Albo Gestori e ricevuta ANGA al 30 aprile sono nel codice; restano date passate, scadenze obbligatorie, documenti autista in DOCUMENTAZIONE, tendine PGL
+2. `pigliacelli_briefing_sal_2026-10-21.md` — tariffa cliente da `T2ViaggiClienti.IMPORTO_TOTALE`, prova Sgam 99001, prezzo unitario vs totale viaggio; sola lettura documenti, invio per correzione, niente modifica dopo la firma
+3. `pigliacelli_briefing_sal_2026-10-13.md` — vista contratto, review solo tratte, modale rappresentante, griglia documenti, blocco wizard
+4. `pigliacelli_briefing_sal_2026-09-30.md` — test wizard, sync SGA spezzata, firma contratti solo tratte
+5. `pigliacelli_briefing_sal_2026-09-28.md` — fix wizard; ANGA/RENTRI: flag sul mezzo, file nello step documenti
+6. `chiarimento_anga_rentri_2026-09-17.md` — nomi, cardinalità, scadenze (dove i file si caricano prevale il 28/09)
+7. `pigliacelli_briefing_sal_2026-09-16.md`
+8. `pigliacelli_briefing_sal_2026-07-21.md`
+9. `requisiti_pigliacelli_validazione_2026-07.md`
+10. `docs_elenco_documenti_subvettori.md` · `modello_flag_documenti.md`
 
 ---
 
@@ -144,4 +145,4 @@ Rif. ufficiali: [Events](https://www.scriptcase.net/docs/en_us/v9/manual/06-appl
 
 Quando chiudi un task rilevante: aggiorna la sezione interessata + data in coda. Non duplicare interi briefing: linka il file fonte.
 
-*Ultimo aggiornamento: 2026-09-21*
+*Ultimo aggiornamento: 2026-10-22. Tariffa cliente verificata su Sgam e in griglia (viaggio test 2026/SE/990001). Il job salva `IMPORTO_UNITARIO` come tariffa vettore; il nolo cliente va confrontato con `IMPORTO_TOTALE` del viaggio.*

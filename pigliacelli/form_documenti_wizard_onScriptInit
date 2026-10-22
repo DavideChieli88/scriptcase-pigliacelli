@@ -51,7 +51,30 @@ if ((int)[subvettoreId] <= 0) {
 }
 
 // Gli slot ANGA/RENTRI li creano onAfterInsert / onAfterUpdate del mezzo.
-// La SELECT di questa form gira prima di onScriptInit: non sincronizzare qui.
+// La SELECT di questa form gira prima di onScriptInit: qui si scrive il
+// 30 aprile sulle ricevute ANGA ancora senza scadenza, onLoadRecord lo mostra.
+if ((int)[subvettoreId] > 0) {
+    $yRicAnga = (int)date('Y');
+    $scadRicAnga = sprintf('%04d-04-30', $yRicAnga);
+    if (date('Y-m-d') >= $scadRicAnga) {
+        $scadRicAnga = sprintf('%04d-04-30', $yRicAnga + 1);
+    }
+    $subRicAnga = (int)[subvettoreId];
+    sc_exec_sql("
+        UPDATE documenti d
+        INNER JOIN tipi_documento t ON t.id = d.tipo_documento_id
+        SET d.data_scadenza = '$scadRicAnga'
+        WHERE d.subvettore_id = $subRicAnga
+          AND (d.subvettore_autista_id IS NULL OR d.subvettore_autista_id = 0)
+          AND (d.subvettore_mezzo_id IS NULL OR d.subvettore_mezzo_id = 0)
+          AND LOWER(TRIM(t.nome)) LIKE 'ricevuta pagamento anga%'
+          AND (
+              d.data_scadenza IS NULL
+              OR d.data_scadenza = '0000-00-00'
+              OR d.data_scadenza = '0000-00-00 00:00:00'
+          )
+    ", 'pigliacelli');
+}
 
 // Filtro elenco: NON usare sc_where() (non esiste / non espande → Fatal error).
 // In ScriptCase → SQL → Where della form mettere ESATTAMENTE:

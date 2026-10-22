@@ -7,7 +7,8 @@
 // merce, caricatore e proprietario_merce si scrivono anche su una tratta già presente,
 // quando il viaggio li ha. Un viaggio con il campo vuoto non cancella il valore salvato.
 // Non crea contratti. A fine corsa sync_date diventa l ora di fine import.
-// Prima di eseguire: migration_tratte_legacy.sql.
+// Prima di eseguire: migration_tratte_legacy.sql e migration_tratte_tariffa_cliente.sql.
+// tariffa_cliente e' il nolo cliente. Non cambia hash e non conta come tariffa modificata.
 
 @set_time_limit(0);
 @ini_set('memory_limit', '1024M');
@@ -307,6 +308,46 @@ function t0_extra_bulk($pdo, $societa, $anno) {
     $stmt->closeCursor();
     return $map;
 }
+function t0_tariffa_cliente_bulk($pdo, $societa, $anno) {
+    $stmt = $pdo->prepare("
+        SELECT vc.ANNO, vc.NUMERO, SUM(vcl.IMPORTO_TOTALE)
+        FROM (
+            SELECT ANNO, NUMERO, CLIENTE_ANNO, CLIENTE_FILIALE, CLIENTE_NUMERO
+            FROM T2ViaggiVettoriClienti
+            WHERE SOCIETA = :societa
+              AND ANNO = :anno
+              AND CLIENTE_NUMERO IS NOT NULL
+              AND CLIENTE_NUMERO <> 0
+            GROUP BY ANNO, NUMERO, CLIENTE_ANNO, CLIENTE_FILIALE, CLIENTE_NUMERO
+        ) vc
+        INNER JOIN T2ViaggiClienti vcl
+            ON vcl.SOCIETA = :societa_cli
+           AND vcl.ANNO = vc.CLIENTE_ANNO
+           AND vcl.FILIALE = vc.CLIENTE_FILIALE
+           AND vcl.NUMERO = vc.CLIENTE_NUMERO
+        GROUP BY vc.ANNO, vc.NUMERO
+    ");
+    $stmt->execute(array('societa' => $societa, 'anno' => $anno, 'societa_cli' => $societa));
+    $map = array();
+    while (($row = $stmt->fetch(PDO::FETCH_NUM)) !== false) {
+        if ($row[2] === null) {
+            continue;
+        }
+        $map[(int)$row[0] . '|' . (int)$row[1]] = round((float)$row[2], 2);
+    }
+    $stmt->closeCursor();
+    return $map;
+}
+function t0_salva_tariffa_cliente($tratta_id, $tariffa_cliente) {
+    if ($tariffa_cliente === null || (int)$tratta_id <= 0) {
+        return;
+    }
+    sc_exec_sql("
+        UPDATE tratte
+        SET tariffa_cliente = " . t0_sql_num($tariffa_cliente) . "
+        WHERE id = " . t0_sql_num($tratta_id) . "
+    ", "pigliacelli");
+}
 function t0_accumula_allegato(&$map, $row) {
     $key = (int)$row[0] . '|' . (int)$row[1];
     if (!isset($map[$key])) {
@@ -549,6 +590,8 @@ for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
     $scarichi_map = $loc_bulk[1];
     t0_log('ANNO', $anno . ' bulk extra');
     $extra_map = t0_extra_bulk($pdo, $societa, $anno);
+    t0_log('ANNO', $anno . ' bulk tariffa cliente');
+    $tariffa_cliente_map = t0_tariffa_cliente_bulk($pdo, $societa, $anno);
     t0_log('ANNO', $anno . ' bulk allegato');
     $allegato_map = t0_allegato_bulk($pdo, $societa, $anno);
 
@@ -583,6 +626,7 @@ for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
             'sigla' => trim((string)$row[3]),
             'importo' => $importo,
             'extra' => isset($extra_map[$key_viaggio]) ? $extra_map[$key_viaggio] : 0,
+            'tariffa_cliente' => isset($tariffa_cliente_map[$key_viaggio]) ? $tariffa_cliente_map[$key_viaggio] : null,
             'carico' => $carico,
             'scarico' => $scarico,
             'caricatore' => $caricatore,
@@ -608,7 +652,7 @@ for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
             t0_tieni_allegato($unici[$route_dedup], $viaggio);
         }
     }
-    unset($righe, $loc_bulk, $carichi_map, $scarichi_map, $extra_map, $allegato_map);
+    unset($righe, $loc_bulk, $carichi_map, $scarichi_map, $extra_map, $tariffa_cliente_map, $allegato_map);
 
     $nCandidati = count($unici);
     t0_log('ANNO', $anno . ' candidati=' . $nCandidati);
@@ -626,6 +670,7 @@ for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
         $subId = (int)$sub_map[$codice];
         $importo = $viaggio['importo'];
         $extra = $viaggio['extra'];
+        $tariffa_cliente = array_key_exists('tariffa_cliente', $viaggio) ? $viaggio['tariffa_cliente'] : null;
         if ($extra === null || $extra === false) $extra = 0;
         $totale = (0 + $importo) + (0 + $extra);
         $hash = t0_hash($viaggio['carico'], $viaggio['scarico'], $codice, $importo);
@@ -633,6 +678,7 @@ for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
         if (isset($hash_map[$hash_key])) {
             $nGiaPresenti++;
             if (t0_aggiorna_allegato((int)$hash_map[$hash_key], $viaggio)) $nAllegato++;
+            t0_salva_tariffa_cliente((int)$hash_map[$hash_key], $tariffa_cliente);
             continue;
         }
 
@@ -654,6 +700,7 @@ for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
                 $nInvariate++;
                 if ($exist['hash'] !== '') $hash_map[$subId . '|' . $exist['hash']] = (int)$exist['id'];
                 if (t0_aggiorna_allegato((int)$exist['id'], $viaggio)) $nAllegato++;
+                t0_salva_tariffa_cliente((int)$exist['id'], $tariffa_cliente);
                 continue;
             }
             $set_allegato = '';
@@ -661,13 +708,17 @@ for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
             if (!t0_campo_vuoto($viaggio['caricatore'])) $set_allegato .= ", caricatore = " . t0_testo_sql($viaggio['caricatore']);
             if (!t0_campo_vuoto($viaggio['proprietario'])) $set_allegato .= ", proprietario_merce = " . t0_testo_sql($viaggio['proprietario']);
             if ($set_allegato !== '') $nAllegato++;
+            $set_tariffa_cliente = '';
+            if ($tariffa_cliente !== null) {
+                $set_tariffa_cliente = ", tariffa_cliente = " . t0_sql_num($tariffa_cliente);
+            }
             sc_exec_sql("
                 UPDATE tratte
                 SET tipo_tariffa_id = " . $tipoTarSql . ",
                     tariffa = " . t0_sql_num($importo) . ",
                     extra = " . t0_sql_num($extra) . ",
                     totale = " . t0_sql_num($totale) . ",
-                    hash = " . t0_sql_quote($hash) . $set_allegato . "
+                    hash = " . t0_sql_quote($hash) . $set_tariffa_cliente . $set_allegato . "
                 WHERE id = " . t0_sql_num($exist['id']) . "
             ", "pigliacelli");
             if ($exist['hash'] !== '' && $exist['hash'] !== $hash) {
@@ -688,7 +739,7 @@ for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
 
         sc_exec_sql("
             INSERT INTO tratte
-              (subvettore_id, merce, caricatore, proprietario_merce, tipo_tariffa_id, tariffa, extra, totale, hash, version, legacy)
+              (subvettore_id, merce, caricatore, proprietario_merce, tipo_tariffa_id, tariffa, extra, totale, tariffa_cliente, hash, version, legacy)
             VALUES
               (" . t0_sql_num($subId) . ",
                " . t0_testo_sql($viaggio['merce']) . ",
@@ -698,6 +749,7 @@ for ($anno = $anno_da; $anno <= $anno_a; $anno++) {
                " . t0_sql_num($importo) . ",
                " . t0_sql_num($extra) . ",
                " . t0_sql_num($totale) . ",
+               " . t0_sql_num($tariffa_cliente) . ",
                " . t0_sql_quote($hash) . ",
                1, 1)
         ", "pigliacelli");

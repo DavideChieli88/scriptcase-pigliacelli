@@ -7,6 +7,46 @@
 sc_lookup(rsGrp, "SELECT group_id FROM sec_users_groups WHERE login = '[usr_login]' LIMIT 1");
 $groupId = !empty({rsGrp[0][0]}) ? (int){rsGrp[0][0]} : 0;
 
+$docIdLock = isset({id}) ? (int){id} : 0;
+$fileLock = '';
+if ($docIdLock > 0) {
+    sc_lookup(rsDocLock, "
+        SELECT COALESCE(file, ''), COALESCE(subvettore_id, 0), COALESCE(login, '')
+        FROM documenti
+        WHERE id = $docIdLock
+        LIMIT 1
+    ", 'pigliacelli');
+    $fileLock = isset({rsDocLock[0][0]}) ? trim((string){rsDocLock[0][0]}) : '';
+    $subLock = isset({rsDocLock[0][1]}) ? (int){rsDocLock[0][1]} : 0;
+    $loginLock = isset({rsDocLock[0][2]}) ? trim((string){rsDocLock[0][2]}) : '';
+    $usrLock = trim((string)[usr_login]);
+    $mySubLock = 0;
+    if ($groupId === 2 && $usrLock !== '') {
+        $usrLockSql = str_replace("'", "''", $usrLock);
+        sc_lookup(rsDocLockSub, "
+            SELECT COALESCE(subvettore_id, 0)
+            FROM sec_users
+            WHERE login = '$usrLockSql'
+            LIMIT 1
+        ", 'pigliacelli');
+        if (!empty({rsDocLockSub[0][0]})) {
+            $mySubLock = (int){rsDocLockSub[0][0]};
+        }
+    }
+    $isUploaderLock = (
+        $groupId === 2
+        && (
+            ($loginLock !== '' && strcasecmp($usrLock, $loginLock) === 0)
+            || ($mySubLock > 0 && $subLock > 0 && $mySubLock === $subLock)
+        )
+    );
+    $forzaCorrezione = (!empty($_COOKIE['doc_invia_correzione']) && (string)$_COOKIE['doc_invia_correzione'] === '1');
+    if ($fileLock !== '' && !$isUploaderLock && !$forzaCorrezione) {
+        sc_error_message('Documento caricato dal subvettore: non modificabile.');
+        return;
+    }
+}
+
 if ($groupId === 2) {
     $err = array();
 
@@ -22,6 +62,10 @@ if ($groupId === 2) {
                 break;
             }
         }
+    }
+    // In modifica {file} arriva vuoto se non si ricarica: vale il file già in tabella.
+    if (!$hasFile && $fileLock !== '') {
+        $hasFile = true;
     }
     if (!$hasFile) {
         $err[] = 'file';

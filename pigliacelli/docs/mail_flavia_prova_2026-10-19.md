@@ -29,25 +29,27 @@ Operando lato PGL, dal momento che la prova è limitata, segnaliamo solo che:
 
 ## Cosa manca
 
-### 1. PEC obbligatoria in anagrafica
+Stato rivisto il 22/10/2026. Fatti i punti 1, 2, 3 e 5. Il resto è ancora aperto. Elenco aggiornato anche in `pigliacelli_briefing_sal_2026-10-21.md`.
 
-`form_subvettori_starting_wizard_onValidate` blocca ragione sociale, sede, CF, P.IVA, albo conto terzi, banca, IBAN, SDI e legale rappresentante. `{pec}` non è nell’elenco.
+### 1. PEC obbligatoria in anagrafica — fatto
 
-### 2. Scadenza assicurazione obbligatoria sul mezzo
+`form_subvettori_starting_wizard_onValidate` rifiuta la PEC vuota e la PEC non valida come email.
 
-La colonna `subvettori_mezzi.scadenza_assicurazioni` c’è. `form_subvettori_mezzi_onValidate` richiede targa, carta di circolazione e scadenza carta. Non legge `scadenza_assicurazioni`. Il 28/09 la polizza sul mezzo era stata lasciata fuori dalla fix.
+### 2. Scadenza assicurazione obbligatoria sul mezzo — fatto
 
-### 3. Categoria rifiuti → questionario → N. Albo Gestori
+`form_subvettori_mezzi_onValidate` richiede `scadenza_assicurazioni` insieme a targa, carta di circolazione e relativa scadenza.
 
-I radio `has_cat_trasp_rifiuti_1/4/5` restano sul mezzo. `num_albo_gestori` sta su `subvettori_dichiarazioni` e finisce nel PDF dichiarazioni. Nessun evento del questionario legge i flag del mezzo e nessuno rende `num_albo_gestori` obbligatorio se almeno una categoria è sì.
+### 3. Categoria rifiuti → questionario → N. Albo Gestori — fatto
+
+I radio restano sul mezzo. In bozza il questionario li precarica. `form_subvettori_dichiarazioni_onValidate` rende `num_albo_gestori` obbligatorio se almeno una categoria è Sì. Una dichiarazione già firmata non viene ricontrollata.
 
 ### 4. Niente scadenze nel passato
 
 `form_documenti_wizard_onValidate` e `form_documenti_onValidate` accettano `data_scadenza` se è compilata. Non la confrontano con oggi. Stesso buco sulle date di autista e mezzo.
 
-### 5. Ricevuta ANGA: 30 aprile automatico
+### 5. Ricevuta ANGA: 30 aprile automatico — fatto
 
-Sì. `form_subvettori_mezzi_onAfterInsert` / `onAfterUpdate` hanno già `mezDefault30Aprile()`: 30 aprile dell’anno in corso, oppure dell’anno dopo se oggi è oltre quella data. Si applica solo se la ricevuta è salvata dal form mezzo e la scadenza è vuota. Quei campi sul mezzo sono nascosti: il file si carica nello step documenti (`form_documenti_wizard`), dove la data è libera. Il default va spostato lì, sui tipi «Ricevuta pagamento ANGA».
+Se la scadenza è vuota e il tipo è «Ricevuta pagamento ANGA» (cat. 1, 4 o 5): oggi prima del 30 aprile → 30 aprile dell’anno in corso, altrimenti 30 aprile dell’anno successivo. Una data già compilata non viene sovrascritta. Lo slot nasce con la data in `onAfterInsert` / `onAfterUpdate` del mezzo. Le righe già vuote le riempie `form_documenti_wizard_onScriptInit`; `onLoadRecord` la mostra, `onValidate` la scrive in salvataggio.
 
 ### 6. Scadenze obbligatorie sui documenti obbligatori
 
