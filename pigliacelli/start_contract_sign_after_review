@@ -54,7 +54,7 @@ if (empty({rsScReview})) {
 
 $scId = (int){rsScReview[0][0]};
 
-// stati_contratti ID fissi: 3 = Compilato dal subvettore, 4 = In attesa firma subvettore
+// stati_contratti ID fissi: 3 = Accettato dal subvettore, 4 = In attesa firma subvettore
 $statiAmmessiIds = array(3, 4);
 
 sc_lookup(rsContrattoStato, "

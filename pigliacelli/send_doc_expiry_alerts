@@ -284,6 +284,36 @@ if (!function_exists('dea_mail_btn')) {
     }
 }
 
+if (!function_exists('dea_resolve_notify_from')) {
+    function dea_resolve_notify_from($preferLogin, $operatorLogins)
+    {
+        $preferLogin = trim((string)$preferLogin);
+        if ($preferLogin !== '' && strcasecmp($preferLogin, 'Guest') !== 0) {
+            $preferSql = str_replace("'", "''", $preferLogin);
+            sc_lookup(rsDeaFromPref, "
+                SELECT login FROM sec_users
+                WHERE active = 'Y' AND login = '" . $preferSql . "'
+                LIMIT 1
+            ");
+            if (!empty({rsDeaFromPref[0][0]})) {
+                return trim((string){rsDeaFromPref[0][0]});
+            }
+        }
+        sc_lookup(rsDeaFromAdmin, "
+            SELECT login FROM sec_users
+            WHERE active = 'Y' AND LOWER(login) = 'admin'
+            LIMIT 1
+        ");
+        if (!empty({rsDeaFromAdmin[0][0]})) {
+            return trim((string){rsDeaFromAdmin[0][0]});
+        }
+        if (is_array($operatorLogins) && !empty($operatorLogins[0])) {
+            return trim((string)$operatorLogins[0]);
+        }
+        return $preferLogin !== '' ? $preferLogin : 'admin';
+    }
+}
+
 if (!function_exists('dea_build_mails')) {
     /**
      * @param int $daysBefore  null per fixed; 0 = scaduto oggi/passato; >0 = in scadenza
@@ -421,7 +451,6 @@ if ($loginUrl === '') {
 $oggi = date('Y-m-d');
 $oggiMd = date('m-d');
 $notifyExpire = date('Y-m-d H:i:s', strtotime('+30 days'));
-$notifyFrom = 'admin';
 $notifyProfile = 'Pigliacelli_Notifications';
 
 sc_log_add('MAIL_DOCS_ALERT', 'START send_doc_expiry_alerts oggi=' . $oggi);
@@ -429,6 +458,7 @@ sc_log_add('MAIL_DOCS_ALERT', 'START send_doc_expiry_alerts oggi=' . $oggi);
 $operatori = dea_load_operatori();
 $operatorEmails = $operatori['emails'];
 $operatorLogins = $operatori['logins'];
+$notifyFromFallback = dea_resolve_notify_from('', $operatorLogins);
 
 // Carica regole attive
 $rulesByTipo = array();
@@ -557,42 +587,62 @@ if ({dsDea} === false) {
             );
 
             $channels = array();
-
-            if ($sendSub && $login !== '' && function_exists('sc_send_notification')) {
-                try {
-                    sc_send_notification(array(
-                        'title'        => $mails['subjectSub'],
-                        'message'      => $mails['textSub'],
-                        'destiny_type' => 'user',
-                        'to'           => $login,
-                        'from'         => $notifyFrom,
-                        'link'         => '',
-                        'dtexpire'     => $notifyExpire,
-                        'profile'      => $notifyProfile,
-                    ));
-                    $statNotifSub++;
-                    $channels[] = 'notif_sub';
-                } catch (Throwable $e) {
-                    sc_log_add('MAIL_DOCS_ALERT', "notif sub ERR doc=$documento_id — " . $e->getMessage());
-                }
+            $notifyFrom = dea_resolve_notify_from($login, $operatorLogins);
+            if ($notifyFrom === '') {
+                $notifyFrom = $notifyFromFallback;
             }
 
-            if ($sendOp && !empty($operatorLogins) && function_exists('sc_send_notification')) {
+            // Una sola occorrenza di sc_send_notification nel blank (SC); coda poi foreach.
+            $deaNotifBatch = array();
+            if ($sendSub && $login !== '') {
+                $deaNotifBatch[] = array(
+                    'kind'    => 'sub',
+                    'title'   => $mails['subjectSub'],
+                    'message' => $mails['textSub'],
+                    'to'      => $login,
+                    'from'    => $notifyFrom,
+                );
+            } elseif ($sendSub && $login === '') {
+                sc_log_add('MAIL_DOCS_ALERT', "notif sub SKIP doc=$documento_id — login documento vuoto");
+            }
+            if ($sendOp && !empty($operatorLogins)) {
+                $deaNotifBatch[] = array(
+                    'kind'    => 'op',
+                    'title'   => $mails['subjectOp'],
+                    'message' => $mails['textOp'],
+                    'to'      => implode(';', $operatorLogins),
+                    'from'    => $notifyFrom,
+                );
+            }
+            foreach ($deaNotifBatch as $deaNotif) {
                 try {
                     sc_send_notification(array(
-                        'title'        => $mails['subjectOp'],
-                        'message'      => $mails['textOp'],
+                        'title'        => $deaNotif['title'],
+                        'message'      => $deaNotif['message'],
                         'destiny_type' => 'user',
-                        'to'           => implode(';', $operatorLogins),
-                        'from'         => $notifyFrom,
+                        'to'           => $deaNotif['to'],
+                        'from'         => $deaNotif['from'],
                         'link'         => '',
                         'dtexpire'     => $notifyExpire,
                         'profile'      => $notifyProfile,
                     ));
-                    $statNotifOp++;
-                    $channels[] = 'notif_op';
+                    if ($deaNotif['kind'] === 'sub') {
+                        $statNotifSub++;
+                        $channels[] = 'notif_sub';
+                    } else {
+                        $statNotifOp++;
+                        $channels[] = 'notif_op';
+                    }
+                } catch (Exception $e) {
+                    sc_log_add(
+                        'MAIL_DOCS_ALERT',
+                        'notif ' . $deaNotif['kind'] . ' ERR doc=' . $documento_id . ' — ' . $e->getMessage()
+                    );
                 } catch (Throwable $e) {
-                    sc_log_add('MAIL_DOCS_ALERT', "notif op ERR doc=$documento_id — " . $e->getMessage());
+                    sc_log_add(
+                        'MAIL_DOCS_ALERT',
+                        'notif ' . $deaNotif['kind'] . ' ERR doc=' . $documento_id . ' — ' . $e->getMessage()
+                    );
                 }
             }
 

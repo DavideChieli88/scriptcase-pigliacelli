@@ -153,7 +153,7 @@ if (
 // stati_contratti (ID fissi):
 // 1 Da inviare al subvettore
 // 2 Inviato al subvettore
-// 3 Compilato dal subvettore
+// 3 Accettato dal subvettore (ex Compilato)
 // 4 In attesa della firma subvettore
 // 5 In attesa della firma committente
 // 6 Completato
@@ -179,7 +179,7 @@ switch ($stato) {
         sc_actionbar_hide("resend_committente_sign_link");
         break;
 
-    case 3: // Compilato dal subvettore — revisione admin + avvio firma
+    case 3: // Accettato dal subvettore — revisione admin + avvio firma
         sc_actionbar_show("select_new_contract");
         sc_actionbar_hide("show_contract_signed");
         sc_actionbar_show("send_contract_to_sign");

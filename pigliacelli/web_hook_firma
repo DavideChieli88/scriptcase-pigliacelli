@@ -3,10 +3,12 @@
  *
  * Flusso atteso (tipo 1, firma ordinata) — 3 chiamate HTTP:
  *   1) type=member, status=done  → vettore firmato → firmato_il, In attesa firma committente (mail committente manuale da grid)
+ *      + notifica SC operatori (gruppi 1/3/5)
  *   2) type=member, status=done  → committente firmato → nessuna email (in attesa chiusura procedura)
  *   3) type=procedure, status=done → Completato, data_inizio_contratto, attiva utente
  *      + mail completamento al subvettore (credenziali se active=N, link area riservata se active=Y)
  *      + mail completamento al committente (notifica, senza credenziali)
+ *      + notifica SC operatori (solo al primo passaggio a Completato)
  *   Rifiuti member/procedure → Rifiutato dal subvettore / Rifiutato dal committente (+ motivo in contratti.notes da body.comments)
  *
  * File: web_hook_firma/api_logs/GG-MM-AAAA.txt | Log: sc_log_add('WEBHOOK_FIRMA', …)
@@ -472,6 +474,11 @@ function webhook_set_stato_contratto($contrattoId, $statoNome, $tipo, $status)
         );
         if ($rowsUp > 0) {
             webhook_activate_subvettore_after_completato($contrattoId);
+            webhook_notify_ops_contratto(
+                $contrattoId,
+                'Contratto #' . $contrattoId . ' completato',
+                'Il contratto #' . $contrattoId . ' e\' stato firmato da entrambe le parti e risulta Completato.'
+            );
         } else {
             webhook_sc_log('completato: stato già Completato — skip attivazione/mail (duplicato procedure/workflow?)');
         }
@@ -1338,6 +1345,12 @@ function webhook_handle_member_callback($contrattoId, $memberId, $status, $stato
     webhook_update_contratto_firmato_il($contrattoId);
     webhook_set_stato_contratto($contrattoId, 'In attesa della firma committente', 'member', $status);
     webhook_sc_log('mail committente non inviata: invio manuale da grid_contratti contratto_id=' . $contrattoId);
+    webhook_notify_ops_contratto(
+        $contrattoId,
+        'Contratto #' . $contrattoId . ' firmato dal subvettore',
+        'Il subvettore ha firmato il contratto #' . $contrattoId
+            . '. Stato: In attesa della firma committente. Inviare il link di firma dalla griglia contratti.'
+    );
 }
 
 /** Chiamata 3: procedure done / finished */
@@ -1564,6 +1577,132 @@ function webhook_maybe_complete_wizard_after_verdi($subvettore_id)
     return true;
 }
 
+/**
+ * Notifica SC agli operatori (gruppi 1, 3, 5). Solo campanella, niente mail.
+ * Pattern come form_documenti / magic_link_review. Try/catch: non blocca il webhook.
+ */
+function webhook_notify_ops_contratto($contrattoId, $title, $message)
+{
+    $contrattoId = (int)$contrattoId;
+    $title = trim((string)$title);
+    $message = trim((string)$message);
+    if ($contrattoId <= 0 || $title === '' || $message === '') {
+        return false;
+    }
+    // Non usare function_exists('sc_send_notification'): dopo la generazione SC
+    // la macro non e' una function PHP e il check saltava la notifica.
+
+    sc_lookup(rsWhNotifOps, "
+        SELECT DISTINCT su.login
+        FROM sec_users su
+        INNER JOIN sec_users_groups sug ON sug.login = su.login
+        WHERE su.active = 'Y'
+          AND su.login IS NOT NULL AND TRIM(su.login) <> ''
+          AND sug.group_id IN (1, 3, 5)
+    ");
+
+    $operatorLogins = array();
+    if (isset({rsWhNotifOps[0][0]})) {
+        foreach ({rsWhNotifOps} as $row) {
+            $loginOp = trim((string)$row[0]);
+            if ($loginOp === '' || strcasecmp($loginOp, 'Guest') === 0) {
+                continue;
+            }
+            $operatorLogins[] = $loginOp;
+        }
+    }
+    $operatorLogins = array_values(array_unique($operatorLogins));
+    if (empty($operatorLogins)) {
+        webhook_sc_log('notifica SC saltata: nessun login operatore contratto_id=' . $contrattoId);
+        return false;
+    }
+
+    sc_lookup(rsWhNotifSub, "
+        SELECT COALESCE(s.ragione_sociale, ''), sc.subvettore_id,
+               COALESCE(s.login_subvettore, '')
+        FROM subvettori_contratti sc
+        INNER JOIN subvettori s ON s.id = sc.subvettore_id
+        WHERE sc.contratto_id = " . $contrattoId . "
+        ORDER BY sc.id ASC
+        LIMIT 1
+    ");
+    $ragione = !empty({rsWhNotifSub[0][0]}) ? trim((string){rsWhNotifSub[0][0]}) : '';
+    $subvettoreIdNotif = !empty({rsWhNotifSub[0][1]}) ? (int){rsWhNotifSub[0][1]} : 0;
+    $loginSubCand = !empty({rsWhNotifSub[0][2]}) ? trim((string){rsWhNotifSub[0][2]}) : '';
+    if ($ragione !== '' && strpos($message, $ragione) === false) {
+        $message .= ' Subvettore: ' . $ragione . '.';
+    }
+
+    $notifyProfile = trim(webhook_setting('notification_profile', 'Pigliacelli_Notifications'));
+    if ($notifyProfile === '') {
+        $notifyProfile = 'Pigliacelli_Notifications';
+    }
+    $notifyExpire = date('Y-m-d H:i:s', strtotime('+30 days'));
+
+    // from obbligatorio (doc SC): login del subvettore del contratto
+    $notifyFrom = '';
+    if ($subvettoreIdNotif > 0) {
+        sc_lookup(rsWhNotifFromSub, "
+            SELECT login FROM sec_users
+            WHERE active = 'Y'
+              AND subvettore_id = " . (int)$subvettoreIdNotif . "
+              AND login IS NOT NULL AND TRIM(login) <> ''
+            ORDER BY CASE WHEN LOWER(login) = 'guest' THEN 1 ELSE 0 END
+            LIMIT 1
+        ");
+        if (!empty({rsWhNotifFromSub[0][0]})) {
+            $notifyFrom = trim((string){rsWhNotifFromSub[0][0]});
+        }
+    }
+    if ($notifyFrom === '' && $loginSubCand !== '') {
+        $loginSubSql = str_replace("'", "''", $loginSubCand);
+        sc_lookup(rsWhNotifFromSubByLogin, "
+            SELECT login FROM sec_users
+            WHERE active = 'Y' AND login = '" . $loginSubSql . "'
+            LIMIT 1
+        ");
+        if (!empty({rsWhNotifFromSubByLogin[0][0]})) {
+            $notifyFrom = trim((string){rsWhNotifFromSubByLogin[0][0]});
+        }
+    }
+    if ($notifyFrom === '') {
+        sc_lookup(rsWhNotifFromAdmin, "
+            SELECT login FROM sec_users
+            WHERE active = 'Y' AND LOWER(login) = 'admin'
+            LIMIT 1
+        ");
+        if (!empty({rsWhNotifFromAdmin[0][0]})) {
+            $notifyFrom = trim((string){rsWhNotifFromAdmin[0][0]});
+        }
+    }
+    if ($notifyFrom === '') {
+        $notifyFrom = $operatorLogins[0];
+    }
+
+    try {
+        sc_send_notification(array(
+            'title'        => $title,
+            'message'      => $message,
+            'destiny_type' => 'user',
+            'to'           => implode(';', $operatorLogins),
+            'from'         => $notifyFrom,
+            'link'         => '',
+            'dtexpire'     => $notifyExpire,
+            'profile'      => $notifyProfile,
+        ));
+        webhook_sc_log(
+            'notifica SC OK contratto_id=' . $contrattoId
+            . ' title=' . $title
+            . ' from=' . $notifyFrom
+            . ' dest=' . implode(';', $operatorLogins)
+        );
+        return true;
+    } catch (Throwable $e) {
+        webhook_sc_log('notifica SC FAIL contratto_id=' . $contrattoId . ' ' . $e->getMessage());
+        return false;
+    }
+}
+
 function webhook_notify_ops_wizard_complete($subId, $ragioneSociale, $loginSub)
 {
     $subId = (int)$subId;
@@ -1667,23 +1806,64 @@ function webhook_notify_ops_wizard_complete($subId, $ragioneSociale, $loginSub)
     if ($notifyProfile === '') {
         $notifyProfile = 'Pigliacelli_Notifications';
     }
-    if (!empty($operatorLogins) && function_exists('sc_send_notification')) {
+    if (!empty($operatorLogins)) {
         $notifyTitle = 'Wizard completato — abilitare ' . $labelSub;
         $notifyMessage = 'Il subvettore ' . $labelSub
             . ' ha completato il wizard (firme verdi incluse). Verificare documenti e abilitare l\'account.';
         $notifyExpire = date('Y-m-d H:i:s', strtotime('+30 days'));
+        // from obbligatorio: login del subvettore che ha completato il wizard
+        $notifyFrom = '';
+        if ($subId > 0) {
+            sc_lookup(rsWhWizFromSub, "
+                SELECT login FROM sec_users
+                WHERE active = 'Y'
+                  AND subvettore_id = " . (int)$subId . "
+                  AND login IS NOT NULL AND TRIM(login) <> ''
+                ORDER BY CASE WHEN LOWER(login) = 'guest' THEN 1 ELSE 0 END
+                LIMIT 1
+            ");
+            if (!empty({rsWhWizFromSub[0][0]})) {
+                $notifyFrom = trim((string){rsWhWizFromSub[0][0]});
+            }
+        }
+        if ($notifyFrom === '' && $loginSub !== '') {
+            $loginSubSql = str_replace("'", "''", $loginSub);
+            sc_lookup(rsWhWizFromSubByLogin, "
+                SELECT login FROM sec_users
+                WHERE active = 'Y' AND login = '" . $loginSubSql . "'
+                LIMIT 1
+            ");
+            if (!empty({rsWhWizFromSubByLogin[0][0]})) {
+                $notifyFrom = trim((string){rsWhWizFromSubByLogin[0][0]});
+            }
+        }
+        if ($notifyFrom === '') {
+            sc_lookup(rsWhWizFromAdmin, "
+                SELECT login FROM sec_users
+                WHERE active = 'Y' AND LOWER(login) = 'admin'
+                LIMIT 1
+            ");
+            if (!empty({rsWhWizFromAdmin[0][0]})) {
+                $notifyFrom = trim((string){rsWhWizFromAdmin[0][0]});
+            }
+        }
+        if ($notifyFrom === '') {
+            $notifyFrom = $operatorLogins[0];
+        }
         try {
             sc_send_notification(array(
                 'title'        => $notifyTitle,
                 'message'      => $notifyMessage,
                 'destiny_type' => 'user',
                 'to'           => implode(';', $operatorLogins),
-                'from'         => '',
+                'from'         => $notifyFrom,
                 'link'         => '',
                 'dtexpire'     => $notifyExpire,
                 'profile'      => $notifyProfile,
             ));
-            webhook_sc_log('wizard notification ops inviata sub=' . $subId);
+            webhook_sc_log('wizard notification ops inviata sub=' . $subId . ' from=' . $notifyFrom);
+        } catch (Exception $e) {
+            webhook_sc_log('wizard notification FAIL ' . $e->getMessage());
         } catch (Throwable $e) {
             webhook_sc_log('wizard notification FAIL ' . $e->getMessage());
         }

@@ -4,7 +4,7 @@
  *
  * 1) Nome, cognome, email e telefono del rappresentante arrivano da subvettori.
  *    Se in accettazione sono diversi, si riscrivono su subvettori e si fa COMMIT.
- * 2) Imposta contratti.stato = Compilato dal subvettore
+ * 2) Imposta contratti.stato = Accettato dal subvettore (id 3; ex Compilato)
  * 3) Mail ad admin/operatori/committente (group 1, 3 e 5) — link solo sec_settings.login_url
  * 4) Notifica SC (sc_send_notification) agli stessi operatori
  * 5) Redirect a blank_magic_link_review_inviato (conferma invio / in verifica)
@@ -51,14 +51,17 @@ if ($contrattoId <= 0 || $subvettoreId <= 0) {
     return;
 }
 
+// stati_contratti id 3 = Accettato dal subvettore (in passato "Compilato dal subvettore")
 sc_lookup(rsStatoRev, "
     SELECT id
     FROM stati_contratti
-    WHERE nome = 'Compilato dal subvettore'
+    WHERE id = 3
+       OR nome IN ('Accettato dal subvettore', 'Compilato dal subvettore')
+    ORDER BY CASE WHEN id = 3 THEN 0 ELSE 1 END
     LIMIT 1
 ", "pigliacelli");
 if (empty({rsStatoRev[0][0]})) {
-    sc_log_add('MAGIC_LINK_REVIEW', "ERRORE: stato 'Compilato dal subvettore' assente in stati_contratti contratto=$contrattoId");
+    sc_log_add('MAGIC_LINK_REVIEW', "ERRORE: stato Accettato/Compilato (id 3) assente in stati_contratti contratto=$contrattoId");
 } else {
     $statoRevId = (int){rsStatoRev[0][0]};
     sc_exec_sql("
@@ -67,6 +70,7 @@ if (empty({rsStatoRev[0][0]})) {
         WHERE id = " . (int)$contrattoId . "
         LIMIT 1
     ", "pigliacelli");
+    sc_log_add('MAGIC_LINK_REVIEW', "stato contratto=$contrattoId → id=$statoRevId (Accettato dal subvettore)");
 }
 
 sc_log_add(
@@ -205,6 +209,8 @@ if (!function_exists('magic_link_review_mail_layout')) {
     }
 }
 
+// Login per notifica SC: tutti gli utenti attivi gruppi 1/3/5 (anche senza email).
+// Email per SMTP: solo indirizzi validi, non placeholder.
 sc_lookup(rsOpsReview, "
     SELECT DISTINCT su.login, su.email
     FROM sec_users su
@@ -212,12 +218,10 @@ sc_lookup(rsOpsReview, "
     WHERE su.active = 'Y'
       AND su.login IS NOT NULL
       AND TRIM(su.login) <> ''
-      AND su.email IS NOT NULL
-      AND TRIM(su.email) <> ''
       AND sug.group_id IN (1, 3, 5)
 ", "pigliacelli");
 
-$emailPlaceholder = array('admin@admin.com', 'admin@localhost', 'admin@example.com');
+$emailPlaceholder = array('admin@admin.com', 'admin@localhost', 'admin@example.com', 'admin@admin.it');
 $destinatari = array();
 $operatorLogins = array();
 $emailScartate = array();
@@ -229,19 +233,20 @@ if (isset({rsOpsReview[0][0]})) {
         if ($loginOp === '' || strcasecmp($loginOp, 'Guest') === 0) {
             continue;
         }
+        $operatorLogins[] = $loginOp;
         if ($email === '') {
+            $emailScartate[] = $loginOp . ' (email vuota — escluso da mail, incluso in notifica SC)';
             continue;
         }
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $emailScartate[] = $email . ' (formato non valido)';
+            $emailScartate[] = $loginOp . ' / ' . $email . ' (formato non valido)';
             continue;
         }
         if (in_array($email, $emailPlaceholder, true)) {
-            $emailScartate[] = $email . ' (email predefinita)';
+            $emailScartate[] = $loginOp . ' / ' . $email . ' (email predefinita)';
             continue;
         }
         $destinatari[] = $email;
-        $operatorLogins[] = $loginOp;
     }
 }
 $destinatari = array_values(array_unique($destinatari));
@@ -344,39 +349,103 @@ if (!empty($destinatari) && function_exists('sc_send_mail_api')) {
 }
 
 // === Notifica Scriptcase (gruppi 1, 3 e 5) ===
+// Non usare function_exists('sc_send_notification'): dopo la generazione SC la macro
+// non e' una function PHP e il check saltava il blocco senza log.
 $notifyProfile = trim(magic_link_review_setting('notification_profile', 'Pigliacelli_Notifications'));
 if ($notifyProfile === '') {
     $notifyProfile = 'Pigliacelli_Notifications';
 }
 
-if (!empty($operatorLogins) && function_exists('sc_send_notification')) {
+if (empty($operatorLogins)) {
+    sc_log_add('MAGIC_LINK_REVIEW', "nessun login operatore per notifica SC scId=$scId");
+} else {
     $notifyTitle = 'Contratto #' . (int)$contrattoId . ' accettato';
     $notifyRagione = $ragioneSociale !== '' ? $ragioneSociale : 'Subvettore';
     $notifyMessage = 'Il subvettore ' . $notifyRagione
         . ' ha accettato il contratto. Avviare la firma in griglia contratti '
         . '(Avvia firma dopo revisione).';
     $notifyExpire = date('Y-m-d H:i:s', strtotime('+30 days'));
+    $notifyTo = implode(';', $operatorLogins);
+
+    // from obbligatorio (doc SC): login del subvettore che ha accettato
+    $notifyFrom = '';
+    sc_lookup(rsNotifFromSub, "
+        SELECT login FROM sec_users
+        WHERE active = 'Y'
+          AND subvettore_id = " . (int)$subvettoreId . "
+          AND login IS NOT NULL AND TRIM(login) <> ''
+        ORDER BY CASE WHEN LOWER(login) = 'guest' THEN 1 ELSE 0 END
+        LIMIT 1
+    ");
+    if (!empty({rsNotifFromSub[0][0]})) {
+        $notifyFrom = trim((string){rsNotifFromSub[0][0]});
+    }
+    if ($notifyFrom === '') {
+        sc_lookup(rsNotifFromSubLogin, "
+            SELECT COALESCE(login_subvettore, '') FROM subvettori
+            WHERE id = " . (int)$subvettoreId . "
+            LIMIT 1
+        ", "pigliacelli");
+        $loginSubCand = !empty({rsNotifFromSubLogin[0][0]})
+            ? trim((string){rsNotifFromSubLogin[0][0]})
+            : '';
+        if ($loginSubCand !== '') {
+            $loginSubSql = str_replace("'", "''", $loginSubCand);
+            sc_lookup(rsNotifFromSubByLogin, "
+                SELECT login FROM sec_users
+                WHERE active = 'Y' AND login = '" . $loginSubSql . "'
+                LIMIT 1
+            ");
+            if (!empty({rsNotifFromSubByLogin[0][0]})) {
+                $notifyFrom = trim((string){rsNotifFromSubByLogin[0][0]});
+            }
+        }
+    }
+    if ($notifyFrom === '') {
+        sc_lookup(rsNotifFromAdmin, "
+            SELECT login FROM sec_users
+            WHERE active = 'Y' AND LOWER(login) = 'admin'
+            LIMIT 1
+        ");
+        if (!empty({rsNotifFromAdmin[0][0]})) {
+            $notifyFrom = trim((string){rsNotifFromAdmin[0][0]});
+        }
+    }
+    if ($notifyFrom === '') {
+        $notifyFrom = $operatorLogins[0];
+    }
+
+    sc_log_add(
+        'MAGIC_LINK_REVIEW',
+        'notifica SC invio profilo=' . $notifyProfile
+            . ' from=' . $notifyFrom
+            . ' dest=' . $notifyTo
+            . ' scId=' . (int)$scId
+    );
 
     try {
         sc_send_notification(array(
             'title'        => $notifyTitle,
             'message'      => $notifyMessage,
             'destiny_type' => 'user',
-            'to'           => implode(';', $operatorLogins),
-            'from'         => '',
+            'to'           => $notifyTo,
+            'from'         => $notifyFrom,
             'link'         => '',
             'dtexpire'     => $notifyExpire,
             'profile'      => $notifyProfile,
         ));
         sc_log_add(
             'MAGIC_LINK_REVIEW',
-            'notifica SC OK profilo=' . $notifyProfile . ' dest=' . implode(';', $operatorLogins) . ' scId=' . (int)$scId
+            'notifica SC OK profilo=' . $notifyProfile
+                . ' from=' . $notifyFrom
+                . ' dest=' . $notifyTo
+                . ' scId=' . (int)$scId
         );
+    } catch (Exception $e) {
+        sc_log_add('MAGIC_LINK_REVIEW', 'notifica SC ERRORE: ' . $e->getMessage());
     } catch (Throwable $e) {
         sc_log_add('MAGIC_LINK_REVIEW', 'notifica SC ERRORE: ' . $e->getMessage());
     }
-} elseif (empty($operatorLogins)) {
-    sc_log_add('MAGIC_LINK_REVIEW', "nessun login operatore per notifica SC scId=$scId");
 }
 
 // === Redirect pagina conferma subvettore ===

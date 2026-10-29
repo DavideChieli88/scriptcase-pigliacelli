@@ -451,43 +451,68 @@ if ({ds} !== false) {
         $htmlSub = $mails['htmlSub'];
         $htmlOp  = $mails['htmlOp'];
 
-        if ($login !== '' && function_exists('sc_send_notification')) {
-            try {
-                sc_send_notification(array(
-                    'title'        => $titoloSub,
-                    'message'      => $messaggioSub,
-                    'destiny_type' => 'user',
-                    'to'           => $login,
-                    'from'         => $notifyFrom,
-                    'link'         => '',
-                    'dtexpire'     => $notifyExpire,
-                    'profile'      => $notifyProfile,
-                ));
-                $statNotifSub++;
-                sc_log_add('MAIL_DOCS_EXPIRE', "notifica SC sub OK doc=$documento_id to=$login");
-            } catch (Throwable $e) {
-                sc_log_add('MAIL_DOCS_EXPIRE', "notifica SC sub ERRORE doc=$documento_id — " . $e->getMessage());
-            }
+        $fromDoc = $notifyFrom;
+        if ($login !== '') {
+            $fromDoc = $login;
+        }
+
+        // Una sola occorrenza di sc_send_notification nel blank (SC); coda poi foreach.
+        $expNotifBatch = array();
+        if ($login !== '') {
+            $expNotifBatch[] = array(
+                'kind'    => 'sub',
+                'title'   => $titoloSub,
+                'message' => $messaggioSub,
+                'to'      => $login,
+                'from'    => $fromDoc,
+            );
         } else {
             sc_log_add('MAIL_DOCS_EXPIRE', "notifica SC sub SKIP doc=$documento_id login vuoto");
         }
-
-        if (!empty($operatorLogins) && function_exists('sc_send_notification')) {
+        if (!empty($operatorLogins)) {
+            $expNotifBatch[] = array(
+                'kind'    => 'op',
+                'title'   => $titoloOp,
+                'message' => $messaggioOp,
+                'to'      => implode(';', $operatorLogins),
+                'from'    => $fromDoc,
+            );
+        }
+        foreach ($expNotifBatch as $expNotif) {
             try {
                 sc_send_notification(array(
-                    'title'        => $titoloOp,
-                    'message'      => $messaggioOp,
+                    'title'        => $expNotif['title'],
+                    'message'      => $expNotif['message'],
                     'destiny_type' => 'user',
-                    'to'           => implode(';', $operatorLogins),
-                    'from'         => $notifyFrom,
+                    'to'           => $expNotif['to'],
+                    'from'         => $expNotif['from'],
                     'link'         => '',
                     'dtexpire'     => $notifyExpire,
                     'profile'      => $notifyProfile,
                 ));
-                $statNotifOp++;
-                sc_log_add('MAIL_DOCS_EXPIRE', "notifica SC operatori OK doc=$documento_id");
+                if ($expNotif['kind'] === 'sub') {
+                    $statNotifSub++;
+                    sc_log_add(
+                        'MAIL_DOCS_EXPIRE',
+                        "notifica SC sub OK doc=$documento_id to=" . $expNotif['to'] . " from=" . $expNotif['from']
+                    );
+                } else {
+                    $statNotifOp++;
+                    sc_log_add(
+                        'MAIL_DOCS_EXPIRE',
+                        "notifica SC operatori OK doc=$documento_id from=" . $expNotif['from']
+                    );
+                }
+            } catch (Exception $e) {
+                sc_log_add(
+                    'MAIL_DOCS_EXPIRE',
+                    'notifica SC ' . $expNotif['kind'] . ' ERRORE doc=' . $documento_id . ' — ' . $e->getMessage()
+                );
             } catch (Throwable $e) {
-                sc_log_add('MAIL_DOCS_EXPIRE', "notifica SC operatori ERRORE doc=$documento_id — " . $e->getMessage());
+                sc_log_add(
+                    'MAIL_DOCS_EXPIRE',
+                    'notifica SC ' . $expNotif['kind'] . ' ERRORE doc=' . $documento_id . ' — ' . $e->getMessage()
+                );
             }
         }
 
