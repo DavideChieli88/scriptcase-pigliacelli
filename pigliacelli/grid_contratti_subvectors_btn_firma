@@ -1,0 +1,49 @@
+/**
+ * grid_contratti_subvectors → Action Bar (PHP, non Ajax)
+ * Name SC: sign_contract_subvettore
+ * Label: Firma contratto
+ *
+ * sc_redir verso blank_sign_subvettore, target _blank.
+ * Controlla stato 4 + link_subvettore prima del redirect (altrimenti tab bianca).
+ */
+
+$contrattoId = isset({id}) ? (int){id} : 0;
+if ($contrattoId <= 0) {
+    sc_error_message('Contratto non identificato.');
+    return;
+}
+
+sc_lookup(rsGcsfCtr, "
+    SELECT c.stato_contratto_id, c.easygn_sign_link
+    FROM contratti c
+    WHERE c.id = " . (int)$contrattoId . "
+    LIMIT 1
+", 'pigliacelli');
+
+if (!isset({rsGcsfCtr[0][0]})) {
+    sc_error_message('Contratto non trovato.');
+    return;
+}
+
+if ((int){rsGcsfCtr[0][0]} !== 4) {
+    sc_error_message('La firma del subvettore è disponibile solo quando il contratto è in attesa della sua firma.');
+    return;
+}
+
+$rawJson = trim((string){rsGcsfCtr[0][1]});
+$metaBtn = $rawJson !== '' ? json_decode($rawJson, true) : null;
+$linkSub = is_array($metaBtn) && isset($metaBtn['link_subvettore'])
+    ? trim((string)$metaBtn['link_subvettore'])
+    : '';
+if ($linkSub === '' || preg_match('#^https?://#i', $linkSub) !== 1) {
+    sc_error_message(
+        'Link EasyGN del subvettore assente. Riavviare il workflow di firma sul contratto '
+        . '(dopo aver cancellato i dati EasyGN non basta rimettere lo stato a 4).'
+    );
+    sc_log_add('FIRMA_SUB', 'STOP: link_subvettore assente contratto=' . $contrattoId);
+    return;
+}
+
+sc_log_add('FIRMA_SUB', 'redir blank firma contratto=' . $contrattoId);
+[contrattoId] = $contrattoId;
+sc_redir('blank_sign_subvettore', contrattoId=[contrattoId], '_blank');

@@ -3,16 +3,18 @@
 Wiki operativa per agenti/LLM. Aggiornare quando cambiano requisiti o naming.
 
 **Gerarchia requisiti (prevale dall’alto):**
-1. `mail_flavia_prova_2026-10-19.md` — PEC, assicurazione mezzo, Albo Gestori e ricevuta ANGA al 30 aprile sono nel codice; restano date passate, scadenze obbligatorie, documenti autista in DOCUMENTAZIONE, tendine PGL
-2. `pigliacelli_briefing_sal_2026-10-21.md` — tariffa cliente da `T2ViaggiClienti.IMPORTO_TOTALE`, prova Sgam 99001, prezzo unitario vs totale viaggio; sola lettura documenti, invio per correzione, niente modifica dopo la firma
-3. `pigliacelli_briefing_sal_2026-10-13.md` — vista contratto, review solo tratte, modale rappresentante, griglia documenti, blocco wizard
-4. `pigliacelli_briefing_sal_2026-09-30.md` — test wizard, sync SGA spezzata, firma contratti solo tratte
-5. `pigliacelli_briefing_sal_2026-09-28.md` — fix wizard; ANGA/RENTRI: flag sul mezzo, file nello step documenti
-6. `chiarimento_anga_rentri_2026-09-17.md` — nomi, cardinalità, scadenze (dove i file si caricano prevale il 28/09)
-7. `pigliacelli_briefing_sal_2026-09-16.md`
-8. `pigliacelli_briefing_sal_2026-07-21.md`
-9. `requisiti_pigliacelli_validazione_2026-07.md`
-10. `docs_elenco_documenti_subvettori.md` · `modello_flag_documenti.md`
+1. `pigliacelli_briefing_sal_2026-10-30.md` — call Erik: sync anagrafica insert/update vs impianto ~100; pulsanti in basso; scadenze readonly; upload Manuale UI; ottimizzare sync tratte; UAT notifiche; punti 5–6 Flavia → martedì
+2. `mail_flavia_prova_2026-10-29.md` — sync≠tratta, toolbar wizard, scadenze ANGA/RENTRI/Albo readonly, Manuale in firma, campanella fine wizard, Doc/Tratte PGL, preview+invio contratto; note su cosa non torna
+3. `mail_flavia_prova_2026-10-19.md` — PEC, assicurazione mezzo, Albo Gestori e ricevuta ANGA al 30 aprile sono nel codice; restano date passate, scadenze obbligatorie, documenti autista in DOCUMENTAZIONE, tendine PGL
+4. `pigliacelli_briefing_sal_2026-10-21.md` — tariffa cliente da `T2ViaggiClienti.IMPORTO_TOTALE`, prova Sgam 99001, prezzo unitario vs totale viaggio; sola lettura documenti, invio per correzione, niente modifica dopo la firma
+5. `pigliacelli_briefing_sal_2026-10-13.md` — vista contratto, review solo tratte, modale rappresentante, griglia documenti, blocco wizard
+6. `pigliacelli_briefing_sal_2026-09-30.md` — test wizard, sync SGA spezzata, firma contratti solo tratte
+7. `pigliacelli_briefing_sal_2026-09-28.md` — fix wizard; ANGA/RENTRI: flag sul mezzo, file nello step documenti
+8. `chiarimento_anga_rentri_2026-09-17.md` — nomi, cardinalità, scadenze (dove i file si caricano prevale il 28/09)
+9. `pigliacelli_briefing_sal_2026-09-16.md`
+10. `pigliacelli_briefing_sal_2026-07-21.md`
+11. `requisiti_pigliacelli_validazione_2026-07.md`
+12. `docs_elenco_documenti_subvettori.md` · `modello_flag_documenti.md`
 
 ---
 
@@ -59,7 +61,7 @@ Tabelle chiave: `subvettori`, `contratti`, `subvettori_contratti`, `tratte`, `co
 
 ## Catalogo rapido per dominio
 
-**Sync SGA:** `upsert_subvectors_basevettori`, `insert_new_trips_*`, `check_new_trips_nuovo_contratto_basevettori[_v2|_credenziali]`, `sync_subvettori_pec_da_sga`, `backfill_tratte_allegato_basevettori`
+**Sync SGA:** `insert_new_subvectors_basevettori` (T0, viaggi≥2024) → `upsert_subvectors_basevettori` (incrementale su `sync_date_subvettori`); `insert_new_trips_*`, `check_new_trips_nuovo_contratto_basevettori[_v2|_credenziali]`, `sync_subvettori_pec_da_sga`, `backfill_tratte_allegato_basevettori`
 
 **PDF/firma:** `nuovo_contratto_vettore`, `variazione_contratto`, `finalize_contract_subvector`, `easygn_start_wf[.php|_auto|_docs]`, `web_hook_firma`, `start_contract_sign_after_review`
 

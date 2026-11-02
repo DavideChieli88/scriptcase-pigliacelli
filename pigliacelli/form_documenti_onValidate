@@ -2,10 +2,44 @@
  * form_documenti → onValidate
  * group_id = 2: file + data_scadenza obbligatori.
  * altri gruppi: subvettore_id obbligatorio (login risolto in onBeforeInsert/Update).
+ *
+ * Solo subvettore: forza scadenze ANGA/RENTRI 30/04 e Albo 31/01.
  */
 
 sc_lookup(rsGrp, "SELECT group_id FROM sec_users_groups WHERE login = '[usr_login]' LIMIT 1");
 $groupId = !empty({rsGrp[0][0]}) ? (int){rsGrp[0][0]} : 0;
+
+if ($groupId === 2) {
+    $tipoFixVal = isset({tipo_documento_id}) ? (int){tipo_documento_id} : 0;
+    $nomeFixVal = '';
+    if ($tipoFixVal > 0) {
+        sc_lookup(rsDocFixVal, "
+            SELECT COALESCE(nome, '') FROM tipi_documento WHERE id = $tipoFixVal LIMIT 1
+        ", 'pigliacelli');
+        $nomeFixVal = !empty({rsDocFixVal[0][0]}) ? trim((string){rsDocFixVal[0][0]}) : '';
+    }
+    $nFixVal = strtolower($nomeFixVal);
+    $mdFixVal = '';
+    if ($nFixVal !== '') {
+        if (strpos($nFixVal, 'ricevuta pagamento anga') === 0 || strpos($nFixVal, 'ricevuta pagamento rentri') === 0) {
+            $mdFixVal = '04-30';
+        } elseif (
+            strpos($nFixVal, 'ricevuta') !== false
+            && strpos($nFixVal, 'albo') !== false
+            && strpos($nFixVal, 'conto terzi') !== false
+        ) {
+            $mdFixVal = '01-31';
+        }
+    }
+    if ($mdFixVal !== '') {
+        $yFixVal = (int)date('Y');
+        $scadFixVal = sprintf('%04d-%s', $yFixVal, $mdFixVal);
+        if (date('Y-m-d') >= $scadFixVal) {
+            $scadFixVal = sprintf('%04d-%s', $yFixVal + 1, $mdFixVal);
+        }
+        {data_scadenza} = $scadFixVal;
+    }
+}
 
 $docIdLock = isset({id}) ? (int){id} : 0;
 $fileLock = '';

@@ -113,6 +113,10 @@ sc_log_add(
 );
 
 // --- 18 idoneità ---
+$scad18Sql = 'NULL';
+if (isset({scadenza_idoneita_sanitaria}) && {scadenza_idoneita_sanitaria} !== '' && {scadenza_idoneita_sanitaria} !== 'null') {
+    $scad18Sql = "'" . str_replace("'", "''", (string){scadenza_idoneita_sanitaria}) . "'";
+}
 if ($fIdoneita !== '') {
     $fileSql = str_replace("'", "''", $fIdoneita);
     sc_lookup(rsU18, "
@@ -122,16 +126,22 @@ if ($fIdoneita !== '') {
     ", 'pigliacelli');
     if (!empty({rsU18[0][0]})) {
         sc_exec_sql(
-            "UPDATE documenti SET file='$fileSql', stato_documento_id=2, updated_at=NOW() WHERE id=" . (int){rsU18[0][0]},
+            "UPDATE documenti SET file='$fileSql', data_scadenza=$scad18Sql, stato_documento_id=2, updated_at=NOW() WHERE id=" . (int){rsU18[0][0]},
             'pigliacelli'
         );
     } else {
         sc_exec_sql("
-            INSERT INTO documenti (tipo_documento_id, subvettore_id, subvettore_autista_id, login, stato_documento_id, file)
-            VALUES (18, $subId, $autistaId, '$loginSql', 2, '$fileSql')
+            INSERT INTO documenti (tipo_documento_id, subvettore_id, subvettore_autista_id, login, stato_documento_id, file, data_scadenza)
+            VALUES (18, $subId, $autistaId, '$loginSql', 2, '$fileSql', $scad18Sql)
         ", 'pigliacelli');
     }
-    sc_log_add('AUT_DOCS', "UPSERT 18 $fileSql");
+    sc_log_add('AUT_DOCS', "UPSERT 18 $fileSql scad=$scad18Sql");
+} elseif ($scad18Sql !== 'NULL') {
+    sc_exec_sql("
+        UPDATE documenti
+        SET data_scadenza = $scad18Sql, updated_at = NOW()
+        WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = 18
+    ", 'pigliacelli');
 }
 
 // --- 19 patente ---
@@ -187,6 +197,10 @@ if ($fCqc !== '' && $tipoCqc > 0) {
 }
 
 // --- 20 formazione ---
+$scad20Sql = 'NULL';
+if (isset({scadenza_formazione_sicurezza}) && {scadenza_formazione_sicurezza} !== '' && {scadenza_formazione_sicurezza} !== 'null') {
+    $scad20Sql = "'" . str_replace("'", "''", (string){scadenza_formazione_sicurezza}) . "'";
+}
 if ($fFormaz !== '') {
     $fileSql = str_replace("'", "''", $fFormaz);
     sc_lookup(rsU20, "
@@ -196,19 +210,29 @@ if ($fFormaz !== '') {
     ", 'pigliacelli');
     if (!empty({rsU20[0][0]})) {
         sc_exec_sql(
-            "UPDATE documenti SET file='$fileSql', stato_documento_id=2, updated_at=NOW() WHERE id=" . (int){rsU20[0][0]},
+            "UPDATE documenti SET file='$fileSql', data_scadenza=$scad20Sql, stato_documento_id=2, updated_at=NOW() WHERE id=" . (int){rsU20[0][0]},
             'pigliacelli'
         );
     } else {
         sc_exec_sql("
-            INSERT INTO documenti (tipo_documento_id, subvettore_id, subvettore_autista_id, login, stato_documento_id, file)
-            VALUES (20, $subId, $autistaId, '$loginSql', 2, '$fileSql')
+            INSERT INTO documenti (tipo_documento_id, subvettore_id, subvettore_autista_id, login, stato_documento_id, file, data_scadenza)
+            VALUES (20, $subId, $autistaId, '$loginSql', 2, '$fileSql', $scad20Sql)
         ", 'pigliacelli');
     }
-    sc_log_add('AUT_DOCS', "UPSERT 20 $fileSql");
+    sc_log_add('AUT_DOCS', "UPSERT 20 $fileSql scad=$scad20Sql");
+} elseif ($scad20Sql !== 'NULL') {
+    sc_exec_sql("
+        UPDATE documenti
+        SET data_scadenza = $scad20Sql, updated_at = NOW()
+        WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = 20
+    ", 'pigliacelli');
 }
 
 // --- 21 DPI ---
+$scad21Sql = 'NULL';
+if (isset({scadenza_dpi_iii_categoria}) && {scadenza_dpi_iii_categoria} !== '' && {scadenza_dpi_iii_categoria} !== 'null') {
+    $scad21Sql = "'" . str_replace("'", "''", (string){scadenza_dpi_iii_categoria}) . "'";
+}
 if ($fDpi !== '') {
     $fileSql = str_replace("'", "''", $fDpi);
     sc_lookup(rsU21, "
@@ -218,16 +242,22 @@ if ($fDpi !== '') {
     ", 'pigliacelli');
     if (!empty({rsU21[0][0]})) {
         sc_exec_sql(
-            "UPDATE documenti SET file='$fileSql', stato_documento_id=2, updated_at=NOW() WHERE id=" . (int){rsU21[0][0]},
+            "UPDATE documenti SET file='$fileSql', data_scadenza=$scad21Sql, stato_documento_id=2, updated_at=NOW() WHERE id=" . (int){rsU21[0][0]},
             'pigliacelli'
         );
     } else {
         sc_exec_sql("
-            INSERT INTO documenti (tipo_documento_id, subvettore_id, subvettore_autista_id, login, stato_documento_id, file)
-            VALUES (21, $subId, $autistaId, '$loginSql', 2, '$fileSql')
+            INSERT INTO documenti (tipo_documento_id, subvettore_id, subvettore_autista_id, login, stato_documento_id, file, data_scadenza)
+            VALUES (21, $subId, $autistaId, '$loginSql', 2, '$fileSql', $scad21Sql)
         ", 'pigliacelli');
     }
-    sc_log_add('AUT_DOCS', "UPSERT 21 $fileSql");
+    sc_log_add('AUT_DOCS', "UPSERT 21 $fileSql scad=$scad21Sql");
+} elseif ($scad21Sql !== 'NULL') {
+    sc_exec_sql("
+        UPDATE documenti
+        SET data_scadenza = $scad21Sql, updated_at = NOW()
+        WHERE subvettore_autista_id = $autistaId AND tipo_documento_id = 21
+    ", 'pigliacelli');
 }
 
 // --- 30 permesso: file + flag → in_possesso (+ data_scadenza se presente) ---

@@ -89,3 +89,68 @@ if ($isInline) {
 // Una riga con flag_possesso=1, dopo il salvataggio, accendeva
 // "In possesso" anche sui documenti che non lo usano.
 sc_field_display({in_possesso}, 'off');
+
+// Modale edit (*_inline): sc_field_readonly in onLoadRecord spesso non tiene
+// sul datepicker. Qui si ripete autofill + readonly per ANGA/RENTRI/Albo.
+if ($isInline) {
+    $tipoIdLoad = isset({tipo_documento_id}) ? (int){tipo_documento_id} : 0;
+    $nomeTipoLoad = '';
+    if ($tipoIdLoad > 0) {
+        sc_lookup(rsDocWizScadNome, "
+            SELECT COALESCE(nome, '')
+            FROM tipi_documento
+            WHERE id = $tipoIdLoad
+            LIMIT 1
+        ", 'pigliacelli');
+        $nomeTipoLoad = !empty({rsDocWizScadNome[0][0]})
+            ? trim((string){rsDocWizScadNome[0][0]})
+            : '';
+    }
+    $nLoad = strtolower($nomeTipoLoad);
+    $mdLoad = '';
+    if ($nLoad !== '') {
+        if (
+            strpos($nLoad, 'ricevuta pagamento anga') === 0
+            || strpos($nLoad, 'ricevuta pagamento rentri') === 0
+        ) {
+            $mdLoad = '04-30';
+        } elseif (
+            strpos($nLoad, 'ricevuta') !== false
+            && strpos($nLoad, 'albo') !== false
+            && strpos($nLoad, 'conto terzi') !== false
+        ) {
+            $mdLoad = '01-31';
+        }
+    }
+    if ($mdLoad !== '') {
+        $yLoad = (int)date('Y');
+        $scadLoad = sprintf('%04d-%s', $yLoad, $mdLoad);
+        if (date('Y-m-d') >= $scadLoad) {
+            $scadLoad = sprintf('%04d-%s', $yLoad + 1, $mdLoad);
+        }
+        {data_scadenza} = $scadLoad;
+        sc_field_readonly({data_scadenza}, 'on');
+        // Datepicker SC: readonly da solo a volte resta cliccabile.
+        // Niente ids[i] nel JS: SC tratta [i] come globale.
+        sc_ajax_javascript("
+            (function () {
+                var el = document.getElementById('id_sc_field_data_scadenza');
+                if (!el) {
+                    el = document.getElementById('data_scadenza');
+                }
+                if (el) {
+                    el.readOnly = true;
+                    el.style.pointerEvents = 'none';
+                    el.style.backgroundColor = '#eee';
+                }
+                var cal = document.getElementById('id_img_data_scadenza');
+                if (cal) {
+                    cal.style.display = 'none';
+                    cal.onclick = function () { return false; };
+                }
+            })();
+        ");
+    }
+}
+
+

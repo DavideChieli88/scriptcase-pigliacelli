@@ -1,12 +1,12 @@
 // Scriptcase blank: upsert_subvectors_basevettori
-// Job schedulato (senza UI) e lancio da menu.
-// Dal browser mostra la scheda centrata. Lo schedule scrive solo i log.
-// Upsert subvettori da SGA (T2BaseVettori + BaCliFor) verso pigliacelli.
-// Su INSERT nuovo subvettore + utenza: CALL bootstrap_documenti_from_preset(sub_id, login).
-// Mail credenziali: coda mail_credenziali_inviata_at IS NULL → send_credenziali_subvettori_batch.
-//
-// Parametro URL: ?dry_run=1
-// Multi-utenza: email SGA diversa → disabilita vecchia utenza, crea nuova, rimette mail in coda.
+// Sync INCREMENTALE anagrafica (pulsante Sincronizza SGA / schedule). Non e' l'impianto T0.
+// Impianto iniziale: insert_new_subvectors_basevettori (viaggi ANNO>=2024 → ~100).
+// Filtro: SOCIETA=1, ATTIVO='S', blacklist, INSERT_DATA_ORA o UPDATE_DATA_ORA
+//          successivi a sec_settings.sync_date_subvettori. Niente filtro viaggi.
+// A fine run aggiorna sync_date_subvettori con GETDATE() Sgam (non ora PHP).
+// Su INSERT nuovo + utenza: CALL bootstrap_documenti_from_preset. Mail: coda → batch.
+// Parametro URL: ?dry_run=1 (non avanza sync_date_subvettori).
+// Multi-utenza: email SGA diversa → disabilita vecchia, crea nuova, rimette mail in coda.
 
 function upsert_sub_t0_log($msg)
 {
@@ -121,6 +121,24 @@ function upsert_sub_t0_sql_num($v)
         return "NULL";
     }
     return (string)(0 + $v);
+}
+
+/** Ora Sgam (GETDATE), stessa scala di INSERT/UPDATE_DATA_ORA. Formato Y-m-d H:i:s. */
+function upsert_sub_t0_sga_now($pdo_sga)
+{
+    try {
+        $stmtNow = $pdo_sga->query("SELECT CONVERT(varchar(19), GETDATE(), 120)");
+        $rowNow = $stmtNow ? $stmtNow->fetch(PDO::FETCH_NUM) : false;
+        if ($stmtNow) {
+            $stmtNow->closeCursor();
+        }
+        if (!empty($rowNow[0])) {
+            return trim((string)$rowNow[0]);
+        }
+    } catch (Throwable $e) {
+        upsert_sub_t0_log('WARN GETDATE SGA fallita: ' . $e->getMessage());
+    }
+    return date('Y-m-d H:i:s');
 }
 
 function upsert_sub_t0_generate_temp_password()
@@ -447,7 +465,7 @@ if (isset($_GET['dry_run']) && (string)$_GET['dry_run'] === '1') {
     $upsert_sub_dry_suffix = ' [DRY_RUN]';
 }
 
-upsert_sub_t0_log('START upsert subvettori T2BaseVettori' . $upsert_sub_dry_suffix);
+upsert_sub_t0_log('START upsert subvettori T2BaseVettori (incrementale)' . $upsert_sub_dry_suffix);
 
 $syncManualeRichiesto = 0;
 $agentMenu = isset($_SERVER['HTTP_USER_AGENT']) ? trim((string)$_SERVER['HTTP_USER_AGENT']) : '';
@@ -460,7 +478,7 @@ if ($agentMenu !== '') {
 sc_lookup(settingsRows, "
     SELECT set_name, set_value
     FROM sec_settings
-    WHERE set_name IN ('sgam_user', 'sgam_pswd', 'sgam_db', 'sgam_server')
+    WHERE set_name IN ('sgam_user', 'sgam_pswd', 'sgam_db', 'sgam_server', 'sync_date_subvettori')
 ", 'pigliacelli');
 
 $settings = array();
@@ -471,6 +489,21 @@ if (!empty({settingsRows})) {
     }
 }
 
+$sync_date_sub = isset($settings['sync_date_subvettori'])
+    ? trim((string)$settings['sync_date_subvettori'])
+    : '';
+if ($sync_date_sub === '') {
+    upsert_sub_t0_log('STOP manca sec_settings.sync_date_subvettori — lanciare prima insert_new_subvectors_basevettori (T0)');
+    if ($syncManualeRichiesto === 1) {
+        html_resoconto_subvettori(
+            'Sincronizzazione subvettori',
+            'Manca sync_date_subvettori. Eseguire prima l\'impianto T0.',
+            array()
+        );
+    }
+    return;
+}
+
 $pdo_sga = upsert_sub_t0_connetti_sga($settings);
 if ($pdo_sga === null) {
     upsert_sub_t0_log('STOP connessione SGA non disponibile');
@@ -479,6 +512,14 @@ if ($pdo_sga === null) {
     }
     return;
 }
+
+// Soglia da orologio Sgam (non PHP): stessa scala di INSERT/UPDATE_DATA_ORA
+$sync_sub_inizio = upsert_sub_t0_sga_now($pdo_sga);
+upsert_sub_t0_log(
+    'sync_date_subvettori soglia=' . $sync_date_sub
+    . ' inizio_run_sgam=' . $sync_sub_inizio
+    . ' php=' . date('Y-m-d H:i:s')
+);
 
 $sub_esistenti = array();
 sc_lookup(subEsistentiRows, "
@@ -499,6 +540,8 @@ if (!empty({subEsistentiRows})) {
 
 upsert_sub_t0_log('Subvettori presenti in pigliacelli: ' . count($sub_esistenti));
 
+// Incrementale: ATTIVO + blacklist + INSERT/UPDATE dopo sync_date_subvettori. Niente filtro viaggi.
+$sync_date_sql = upsert_sub_t0_sql_quote($sync_date_sub);
 $sql_sga = "
     SELECT
         tbvt.CODICE,
@@ -518,42 +561,19 @@ $sql_sga = "
        AND b.CLIENTE_FORNITORE = tbvt.FORNITORE_CLIFOR
        AND b.CODICE = tbvt.FORNITORE_CODICE
     WHERE tbvt.SOCIETA = 1
-      AND tbvt.CODICE IN (4152, 5911, 5967)
-    UNION ALL
-    SELECT
-        tbvt.CODICE,
-        tbvt.RAGIONE_SOCIALE,
-        COALESCE(NULLIF(RTRIM(tbvt.INDIRIZZO), ''), NULLIF(RTRIM(tbvt.VIA), '')) AS INDIRIZZO,
-        tbvt.LOCALITA,
-        tbvt.PROVINCIA,
-        tbvt.TELEFONO,
-        tbvt.CELLULARE,
-        NULLIF(RTRIM(tbvt.E_MAIL), '') AS E_MAIL,
-        NULLIF(RTRIM(tbvt.E_MAIL_CERTIFICATA), '') AS E_MAIL_CERTIFICATA,
-        b.PARTITA_IVA,
-        b.CODICE_FISCALE
-    FROM T2BaseVettori tbvt
-    LEFT JOIN BaCliFor b
-        ON b.SOCIETA = tbvt.SOCIETA
-       AND b.CLIENTE_FORNITORE = tbvt.FORNITORE_CLIFOR
-       AND b.CODICE = tbvt.FORNITORE_CODICE
-    WHERE tbvt.SOCIETA = 1
+      AND tbvt.ATTIVO = 'S'
       AND tbvt.CODICE NOT IN (
           94, 213, 648, 694, 980, 1072, 1480, 1541, 1989, 2408, 3115, 3644, 3752,
           4010, 4169, 4364, 4390, 4407, 4429, 4785, 5055, 5252, 5439, 5469, 5490,
           5607, 5611, 5799, 5878, 5885, 5914, 5963, 5976, 5990, 6042, 6051, 6086,
           6154, 6160, 6167, 6169, 6173, 6177, 6179, 6180, 6191, 6192, 6200, 6223,
-          6225, 6227, 6237, 6250, 6251, 6254, 6271, 6279, 6289, 6291, 6293, 6312, 6363,
-          4152, 5911, 5967
+          6225, 6227, 6237, 6250, 6251, 6254, 6271, 6279, 6289, 6291, 6293, 6312, 6363
       )
-      AND EXISTS (
-          SELECT 1
-          FROM T2ViaggiVettori tvv
-          WHERE tvv.VETTORE = tbvt.CODICE
-            AND tvv.ANNO >= 2024
-            AND tvv.SOCIETA = 1
+      AND (
+            (tbvt.INSERT_DATA_ORA IS NOT NULL AND tbvt.INSERT_DATA_ORA > " . $sync_date_sql . ")
+         OR (tbvt.UPDATE_DATA_ORA IS NOT NULL AND tbvt.UPDATE_DATA_ORA > " . $sync_date_sql . ")
       )
-    ORDER BY CODICE
+    ORDER BY tbvt.CODICE
 ";
 
 try {
@@ -838,6 +858,17 @@ while (($row = $stmt->fetch(PDO::FETCH_NUM)) !== false) {
 
 $stmt->closeCursor();
 
+if (!$upsert_sub_dry_run) {
+    sc_exec_sql("
+        INSERT INTO sec_settings (set_name, set_value)
+        VALUES ('sync_date_subvettori', " . upsert_sub_t0_sql_quote($sync_sub_inizio) . ")
+        ON DUPLICATE KEY UPDATE set_value = VALUES(set_value)
+    ", 'pigliacelli');
+    upsert_sub_t0_log('sync_date_subvettori aggiornato a ' . $sync_sub_inizio);
+} else {
+    upsert_sub_t0_log('DRY_RUN: sync_date_subvettori non aggiornato (resta ' . $sync_date_sub . ')');
+}
+
 $riepilogo = 'END letti_sga=' . $letti_sga
     . ' inseriti=' . $inseriti
     . ' aggiornati=' . $aggiornati
@@ -851,10 +882,12 @@ $riepilogo = 'END letti_sga=' . $letti_sga
     . ' senza_email=' . $senza_email
     . ' senza_pec=' . $senza_pec
     . ' senza_piva_cf=' . $senza_piva
+    . ' sync_da=' . $sync_date_sub
+    . ' sync_a=' . ($upsert_sub_dry_run ? $sync_date_sub : $sync_sub_inizio)
     . $upsert_sub_dry_suffix;
 
 upsert_sub_t0_log($riepilogo);
-sc_log_add('EXPORT_DATA', 'Upsert subvettori T0: ' . $riepilogo);
+sc_log_add('EXPORT_DATA', 'Upsert subvettori incrementale: ' . $riepilogo);
 
 if ($syncManualeRichiesto === 1) {
     $esitoLabel = 'Nessuna novità';

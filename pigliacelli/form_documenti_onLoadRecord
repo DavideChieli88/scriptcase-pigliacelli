@@ -1,0 +1,54 @@
+/**
+ * form_documenti → onLoadRecord (FLUSSO DOCUMENTALE)
+ *
+ * Solo group_id = 2 (subvettore): scadenze fisse precompilate e readonly.
+ * - Ricevuta pagamento ANGA* / RENTRI* → 30 aprile
+ * - Ricevuta … Albo … conto terzi → 31 gennaio
+ * Operatori: campo libero, nessuna forzatura.
+ */
+
+sc_lookup(rsDocFixGrp, "
+    SELECT group_id
+    FROM sec_users_groups
+    WHERE login = '[usr_login]'
+    LIMIT 1
+", 'pigliacelli');
+$grpFix = !empty({rsDocFixGrp[0][0]}) ? (int){rsDocFixGrp[0][0]} : 0;
+if ($grpFix !== 2) {
+    return;
+}
+
+$tipoId = isset({tipo_documento_id}) ? (int){tipo_documento_id} : 0;
+$nomeTipo = '';
+if ($tipoId > 0) {
+    sc_lookup(rsDocFixNome, "
+        SELECT COALESCE(nome, '') FROM tipi_documento WHERE id = $tipoId LIMIT 1
+    ", 'pigliacelli');
+    $nomeTipo = !empty({rsDocFixNome[0][0]}) ? trim((string){rsDocFixNome[0][0]}) : '';
+}
+if ($nomeTipo === '') {
+    return;
+}
+
+$n = strtolower($nomeTipo);
+$md = '';
+if (strpos($n, 'ricevuta pagamento anga') === 0 || strpos($n, 'ricevuta pagamento rentri') === 0) {
+    $md = '04-30';
+} elseif (
+    strpos($n, 'ricevuta') !== false
+    && strpos($n, 'albo') !== false
+    && strpos($n, 'conto terzi') !== false
+) {
+    $md = '01-31';
+}
+if ($md === '') {
+    return;
+}
+
+$y = (int)date('Y');
+$scad = sprintf('%04d-%s', $y, $md);
+if (date('Y-m-d') >= $scad) {
+    $scad = sprintf('%04d-%s', $y + 1, $md);
+}
+{data_scadenza} = $scad;
+sc_field_readonly({data_scadenza}, 'on');

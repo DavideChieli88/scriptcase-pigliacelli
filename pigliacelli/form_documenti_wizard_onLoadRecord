@@ -1,10 +1,9 @@
 /**
  * form_documenti_wizard → onLoadRecord
  *
- * Campo virtuale {required}: "Si" / "No" da tipi_documento.mandatory
- * del tipo_documento_id della riga.
- *
- * Setup SC: campo virtuale text (o label), Name = required, solo lettura.
+ * Campo virtuale {required}: "Si" / "No" da tipi_documento.mandatory.
+ * Wizard = flusso subvettore: scadenze fisse readonly
+ * (ANGA/RENTRI 30/04, Albo conto terzi 31/01).
  */
 
 {required} = 'No';
@@ -15,9 +14,10 @@ if ($tipoId === '' || $tipoId === null || $tipoId === 'undefined') {
 }
 $tipoId = (int)$tipoId;
 
+$nomeTipo = '';
 if ($tipoId > 0) {
     sc_lookup(rsDocReqMand, "
-        SELECT COALESCE(mandatory, 0)
+        SELECT COALESCE(mandatory, 0), COALESCE(nome, '')
         FROM tipi_documento
         WHERE id = $tipoId
         LIMIT 1
@@ -25,25 +25,30 @@ if ($tipoId > 0) {
     if (!empty({rsDocReqMand[0][0]}) && (int){rsDocReqMand[0][0]} === 1) {
         {required} = 'Si';
     }
+    $nomeTipo = !empty({rsDocReqMand[0][1]}) ? trim((string){rsDocReqMand[0][1]}) : '';
 }
 
-$scadRaw = isset({data_scadenza}) ? trim((string){data_scadenza}) : '';
-$scadVuota = (
-    $scadRaw === ''
-    || strcasecmp($scadRaw, 'null') === 0
-    || strpos($scadRaw, '0000-00-00') === 0
-);
-if ($tipoId > 0 && $scadVuota) {
-    sc_lookup(rsDocAngaNome, "
-        SELECT nome FROM tipi_documento WHERE id = $tipoId LIMIT 1
-    ", 'pigliacelli');
-    $nomeTipo = !empty({rsDocAngaNome[0][0]}) ? trim((string){rsDocAngaNome[0][0]}) : '';
-    if (stripos($nomeTipo, 'Ricevuta pagamento ANGA') === 0) {
-        $yRicAnga = (int)date('Y');
-        $scadRicAnga = sprintf('%04d-04-30', $yRicAnga);
-        if (date('Y-m-d') >= $scadRicAnga) {
-            $scadRicAnga = sprintf('%04d-04-30', $yRicAnga + 1);
-        }
-        {data_scadenza} = $scadRicAnga;
+$n = strtolower($nomeTipo);
+$md = '';
+if ($n !== '') {
+    if (strpos($n, 'ricevuta pagamento anga') === 0 || strpos($n, 'ricevuta pagamento rentri') === 0) {
+        $md = '04-30';
+    } elseif (
+        strpos($n, 'ricevuta') !== false
+        && strpos($n, 'albo') !== false
+        && strpos($n, 'conto terzi') !== false
+    ) {
+        $md = '01-31';
     }
+}
+if ($md !== '') {
+    $y = (int)date('Y');
+    $scad = sprintf('%04d-%s', $y, $md);
+    if (date('Y-m-d') >= $scad) {
+        $scad = sprintf('%04d-%s', $y + 1, $md);
+    }
+    {data_scadenza} = $scad;
+    sc_field_readonly({data_scadenza}, 'on');
+} else {
+    sc_field_readonly({data_scadenza}, 'off');
 }

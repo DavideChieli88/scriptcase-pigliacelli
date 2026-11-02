@@ -17,6 +17,9 @@ sc_log_add('AUT_VAL', "onValidate START autista=$autistaId flag=[" . (string){pe
 $vNominativo = isset({nominativo}) ? trim((string){nominativo}) : '';
 $vScadPat    = isset({scadenza_patente}) ? trim((string){scadenza_patente}) : '';
 $vScadCqc    = isset({scadenza_cqc}) ? trim((string){scadenza_cqc}) : '';
+$vScadIdon   = isset({scadenza_idoneita_sanitaria}) ? trim((string){scadenza_idoneita_sanitaria}) : '';
+$vScadForm   = isset({scadenza_formazione_sicurezza}) ? trim((string){scadenza_formazione_sicurezza}) : '';
+$vScadDpi    = isset({scadenza_dpi_iii_categoria}) ? trim((string){scadenza_dpi_iii_categoria}) : '';
 $vIdoneita   = isset({idoneita_sanitaria}) ? trim((string){idoneita_sanitaria}) : '';
 $vPatente    = isset({patente}) ? trim((string){patente}) : '';
 $vCqc        = isset({cqc}) ? trim((string){cqc}) : '';
@@ -54,6 +57,8 @@ if (!$hasIdoneitaSanitaria && $autistaId > 0) {
 }
 if (!$hasIdoneitaSanitaria) {
     $errors[] = 'Documento idoneità sanitaria';
+} elseif ($vScadIdon === '' || $vScadIdon === 'null') {
+    $errors[] = 'Scadenza idoneità sanitaria';
 }
 
 // --- 19 patente ---
@@ -111,6 +116,8 @@ if (!$hasFormazioneSicurezza && $autistaId > 0) {
 }
 if (!$hasFormazioneSicurezza) {
     $errors[] = 'Documento formazione sicurezza';
+} elseif ($vScadForm === '' || $vScadForm === 'null') {
+    $errors[] = 'Scadenza formazione sicurezza';
 }
 
 // --- 21 DPI ---
@@ -127,6 +134,8 @@ if (!$hasDpiIiiCategoria && $autistaId > 0) {
 }
 if (!$hasDpiIiiCategoria) {
     $errors[] = 'Documento DPI III categoria';
+} elseif ($vScadDpi === '' || $vScadDpi === 'null') {
+    $errors[] = 'Scadenza DPI III categoria';
 }
 
 // --- 30 permesso soggiorno (obbligatorio solo se flag=1) ---

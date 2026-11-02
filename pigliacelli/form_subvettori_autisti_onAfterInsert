@@ -111,11 +111,15 @@ sc_log_add(
 // --- 18 idoneità ---
 if ($fIdoneita !== '') {
     $fileSql = str_replace("'", "''", $fIdoneita);
+    $scadSql = 'NULL';
+    if (isset({scadenza_idoneita_sanitaria}) && {scadenza_idoneita_sanitaria} !== '' && {scadenza_idoneita_sanitaria} !== 'null') {
+        $scadSql = "'" . str_replace("'", "''", (string){scadenza_idoneita_sanitaria}) . "'";
+    }
     sc_exec_sql("
-        INSERT INTO documenti (tipo_documento_id, subvettore_id, subvettore_autista_id, login, stato_documento_id, file)
-        VALUES (18, $subId, $autistaId, '$loginSql', 2, '$fileSql')
+        INSERT INTO documenti (tipo_documento_id, subvettore_id, subvettore_autista_id, login, stato_documento_id, file, data_scadenza)
+        VALUES (18, $subId, $autistaId, '$loginSql', 2, '$fileSql', $scadSql)
     ", 'pigliacelli');
-    sc_log_add('AUT_DOCS', "INSERT 18 $fileSql");
+    sc_log_add('AUT_DOCS', "INSERT 18 $fileSql scad=$scadSql");
 }
 
 // --- 19 patente ---
@@ -149,21 +153,29 @@ if ($fCqc !== '' && $tipoCqc > 0) {
 // --- 20 formazione ---
 if ($fFormaz !== '') {
     $fileSql = str_replace("'", "''", $fFormaz);
+    $scadSql = 'NULL';
+    if (isset({scadenza_formazione_sicurezza}) && {scadenza_formazione_sicurezza} !== '' && {scadenza_formazione_sicurezza} !== 'null') {
+        $scadSql = "'" . str_replace("'", "''", (string){scadenza_formazione_sicurezza}) . "'";
+    }
     sc_exec_sql("
-        INSERT INTO documenti (tipo_documento_id, subvettore_id, subvettore_autista_id, login, stato_documento_id, file)
-        VALUES (20, $subId, $autistaId, '$loginSql', 2, '$fileSql')
+        INSERT INTO documenti (tipo_documento_id, subvettore_id, subvettore_autista_id, login, stato_documento_id, file, data_scadenza)
+        VALUES (20, $subId, $autistaId, '$loginSql', 2, '$fileSql', $scadSql)
     ", 'pigliacelli');
-    sc_log_add('AUT_DOCS', "INSERT 20 $fileSql");
+    sc_log_add('AUT_DOCS', "INSERT 20 $fileSql scad=$scadSql");
 }
 
 // --- 21 DPI ---
 if ($fDpi !== '') {
     $fileSql = str_replace("'", "''", $fDpi);
+    $scadSql = 'NULL';
+    if (isset({scadenza_dpi_iii_categoria}) && {scadenza_dpi_iii_categoria} !== '' && {scadenza_dpi_iii_categoria} !== 'null') {
+        $scadSql = "'" . str_replace("'", "''", (string){scadenza_dpi_iii_categoria}) . "'";
+    }
     sc_exec_sql("
-        INSERT INTO documenti (tipo_documento_id, subvettore_id, subvettore_autista_id, login, stato_documento_id, file)
-        VALUES (21, $subId, $autistaId, '$loginSql', 2, '$fileSql')
+        INSERT INTO documenti (tipo_documento_id, subvettore_id, subvettore_autista_id, login, stato_documento_id, file, data_scadenza)
+        VALUES (21, $subId, $autistaId, '$loginSql', 2, '$fileSql', $scadSql)
     ", 'pigliacelli');
-    sc_log_add('AUT_DOCS', "INSERT 21 $fileSql");
+    sc_log_add('AUT_DOCS', "INSERT 21 $fileSql scad=$scadSql");
 }
 
 // --- 30 permesso ---

@@ -7,8 +7,9 @@
  *
  * SETUP:
  *  1) App Report PDF con nome manuale_vettore, questo codice in onExecute.
- *  2) Copiare manuale_vettore.pdf (o il PDF originale) in templates_path
- *     oppure in contratti_base_dir. In repo e' gia' in docs/ e in radice.
+ *  2) PDF: templates_path, contratti_base_dir, documento_verde_template_dir,
+ *     oppure workspace _lib/file/doc (upload documenti). Cerca anche path
+ *     UAT php81/php82. In repo: manuale_vettore.pdf in radice e in docs/.
  *
  * Parametri: subvector, subvettoreId, documentoId, auto_save_pdf=S, return_to
  */
@@ -55,15 +56,28 @@ $tplRoots = array();
 if (defined('__DIR__')) {
     $tplRoots[] = __DIR__;
     $tplRoots[] = dirname(__DIR__);
+    // app/.../manuale_vettore → workspace/_lib/file/doc (upload documenti subvettore)
+    $tplRoots[] = dirname(__DIR__) . '/_lib/file/doc';
+    $tplRoots[] = dirname(__DIR__) . '/_lib/file/doc/form_documenti';
 }
 $tplRoots[] = dirname(__FILE__);
 $tplRoots[] = dirname(dirname(__FILE__));
 if (!empty($_SERVER['SCRIPT_FILENAME'])) {
-    $tplRoots[] = dirname((string)$_SERVER['SCRIPT_FILENAME']);
-    $tplRoots[] = dirname(dirname((string)$_SERVER['SCRIPT_FILENAME']));
+    $scriptDir = dirname((string)$_SERVER['SCRIPT_FILENAME']);
+    $workspaceDir = dirname($scriptDir);
+    $tplRoots[] = $scriptDir;
+    $tplRoots[] = $workspaceDir;
+    $tplRoots[] = $workspaceDir . '/_lib/file/doc';
+    $tplRoots[] = $workspaceDir . '/_lib/file/doc/form_documenti';
 }
 $tplRoots[] = 'C:/Users/dvdch/Desktop/Projects/scriptcase-pigliacelli/pigliacelli';
 $tplRoots[] = 'C:/Users/dvdch/Desktop/Projects/scriptcase-pigliacelli/pigliacelli/docs';
+
+// UAT/prod: templates globali + doc workspace (php81 e php82)
+$tplRoots[] = '/opt/Scriptcase/v9-php81/wwwroot/scriptcase/file/doc/templates';
+$tplRoots[] = '/opt/Scriptcase/v9-php82/wwwroot/scriptcase/file/doc/templates';
+$tplRoots[] = '/opt/Scriptcase/v9-php81/wwwroot/scriptcase/app/pigliacelli_workspace/_lib/file/doc';
+$tplRoots[] = '/opt/Scriptcase/v9-php82/wwwroot/scriptcase/app/pigliacelli_workspace/_lib/file/doc';
 
 $rsTpl = $this->Db->Execute("
     SELECT set_value
@@ -77,6 +91,7 @@ if ($rsTpl !== false) {
             $tplRoots[] = $p;
             $tplRoots[] = dirname($p);
             $tplRoots[] = $p . '/docs';
+            $tplRoots[] = $p . '/_lib/file/doc';
         }
         $rsTpl->MoveNext();
     }

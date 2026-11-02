@@ -102,3 +102,37 @@ if ($soloLettura) {
     sc_btn_display('ok', 'off');
     sc_btn_display('delete', 'off');
 }
+
+// Solo subvettore (group 2): scadenze ANGA / RENTRI / Albo preimpostate e readonly.
+if (!$soloLettura && (int)$group_id === 2) {
+    $tipoFix = isset({tipo_documento_id}) ? (int){tipo_documento_id} : 0;
+    $nomeFix = '';
+    if ($tipoFix > 0) {
+        sc_lookup(rsDocFixInit, "
+            SELECT COALESCE(nome, '') FROM tipi_documento WHERE id = $tipoFix LIMIT 1
+        ", 'pigliacelli');
+        $nomeFix = !empty({rsDocFixInit[0][0]}) ? trim((string){rsDocFixInit[0][0]}) : '';
+    }
+    $nFix = strtolower($nomeFix);
+    $mdFix = '';
+    if ($nFix !== '') {
+        if (strpos($nFix, 'ricevuta pagamento anga') === 0 || strpos($nFix, 'ricevuta pagamento rentri') === 0) {
+            $mdFix = '04-30';
+        } elseif (
+            strpos($nFix, 'ricevuta') !== false
+            && strpos($nFix, 'albo') !== false
+            && strpos($nFix, 'conto terzi') !== false
+        ) {
+            $mdFix = '01-31';
+        }
+    }
+    if ($mdFix !== '') {
+        $yFix = (int)date('Y');
+        $scadFix = sprintf('%04d-%s', $yFix, $mdFix);
+        if (date('Y-m-d') >= $scadFix) {
+            $scadFix = sprintf('%04d-%s', $yFix + 1, $mdFix);
+        }
+        {data_scadenza} = $scadFix;
+        sc_field_readonly({data_scadenza}, 'on');
+    }
+}

@@ -1809,7 +1809,7 @@ function webhook_notify_ops_wizard_complete($subId, $ragioneSociale, $loginSub)
     if (!empty($operatorLogins)) {
         $notifyTitle = 'Wizard completato — abilitare ' . $labelSub;
         $notifyMessage = 'Il subvettore ' . $labelSub
-            . ' ha completato il wizard (firme verdi incluse). Verificare documenti e abilitare l\'account.';
+            . ' ha completato il wizard. Verificare documenti e abilitare l\'account.';
         $notifyExpire = date('Y-m-d H:i:s', strtotime('+30 days'));
         // from obbligatorio: login del subvettore che ha completato il wizard
         $notifyFrom = '';

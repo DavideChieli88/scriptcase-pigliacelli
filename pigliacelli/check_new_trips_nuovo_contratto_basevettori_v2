@@ -1616,8 +1616,8 @@ log_export_tratte(
     'finestra sync da ' . $soglia_data_ora . ' a ' . $fine_sync_data_ora .
     ' | batch_minutes=' . $batch_minutes .
     ' | manuale=' . $syncManualeRichiesto .
-    ' | build=tipo1_loc_v6'
-);
+    ' | build=tipo1_loc_v10_bf_classic'
+  );
 
 $sgam_user   = $settings['sgam_user'];
 $sgam_pswd   = $settings['sgam_pswd'];
@@ -2401,6 +2401,8 @@ if (!empty($subs_tipo1)) {
             WHERE v.SOCIETA = 1
               AND RTRIM(v.VETTORE) = '" . $codiceSql . "'
               AND v.ANNO >= 2024
+              AND v.IMPORTO_UNITARIO IS NOT NULL
+              AND v.IMPORTO_UNITARIO > 0
         ";
         $stmt_viaggi_sub = $pdo_sga->query($sql_viaggi_sub);
         $righeBf = $stmt_viaggi_sub->fetchAll(PDO::FETCH_NUM);

@@ -1,0 +1,1005 @@
+﻿ott 30, 2026
+Pigliacelli Workspace | Briefing e SAL
+invitato L'elenco degli invitati è nascosto dall'organizzatore della riunione.
+Allegati Pigliacelli Workspace | Briefing e SAL
+Record delle riunioni Trascrizione 
+
+
+Riepilogo
+Sincronizzazione vettori e flussi documentali gestiti con prioritàGestione vettori e sincronizzazioneImpostata la sincronizzazione dei vettori tramite data di aggiornamento. Modificata la posizione dei pulsanti nei flussi documentali.Funzionalità e notificheRichiesto il precaricamento dei campi di scadenza. Verificato il corretto funzionamento delle notifiche di completamento del wizard.Pianificazione e ottimizzazioneDefinito il piano operativo per le scadenze imminenti. Ottimizzata la logica di sincronizzazione delle tratte per ridurre i tempi.
+
+
+Decisioni
+Concordato
+Separazione tra impianto iniziale e sincronizzazione È stato stabilito di separare l'importazione iniziale dei vettori tramite un job dedicato rispetto alla sincronizzazione successiva basata sui campi di inserimento e aggiornamento.
+Posizionamento dei pulsanti e campi bloccati È stato concordato di posizionare i pulsanti in fondo a tutte le schermate e di rendere precompilati e non modificabili i campi relativi alle scadenze.
+Creazione della funzione di upload documenti È stata decisa la realizzazione di una sezione con funzione di upload per consentire il caricamento dei documenti direttamente da interfaccia.
+Semplificazione della sincronizzazione tramite campo modificato Adozione di una logica di sincronizzazione basata esclusivamente sull'estrazione delle tratte modificate o inserite rispetto all'ultima data di sincronizzazione.
+
+
+Passaggi successivi
+[Davide] Filtri Sincronizzazione: Implementare la logica di filtro basata sui campi insert data ora e update data ora per i job di sincronizzazione vettori.
+[Davide] Aggiunta Pulsanti: Inserire i pulsanti di interfaccia sotto tutte le finestre del software.
+[Davide] Bloccare Campi: Configurare i campi rentry e pagamento albo terzi come precaricati e non modificabili nella gestione del subvettore.
+[Davide] Funzione Upload: Sviluppare una funzione per permettere il caricamento dei documenti dall'interfaccia utente, salvandoli automaticamente sul server.
+[Davide] Test Notifiche: Verificare il corretto funzionamento delle notifiche di sistema all'interno dell'ambiente di UAT.
+[Il gruppo] Preparazione Riunione: Eseguire sessioni di test approfondite per preparare l'incontro con il cliente previsto per martedì.
+[Davide Chieli] Verifica Punti 3-4: Verificare il corretto funzionamento dei punti 3 e 4 su AT e comunicare l'esito a Erik entro pranzo.
+[Davide Chieli] Implementazione Modifiche: Implementare le modifiche richieste per i punti 1 e 2, includendo la gestione della scadenza precompilata e bloccata e la disposizione dei pulsanti in basso.
+[Davide Chieli] Ottimizzazione Sincronizzazione: Ottimizzare la query di sincronizzazione delle tratte utilizzando il campo modificato per migliorare le prestazioni.
+[Erik Capoccetta] Risposta Cliente: Rispondere alla mail del cliente entro pranzo in base all'esito delle verifiche effettuate su AT.
+[Erik Capoccetta] Gestione Punti 5-6: Gestire la risposta relativa ai punti 5 e 6 comunicando al cliente che la questione sarà affrontata martedì durante l'incontro di persona.
+
+
+Dettagli
+Analisi della query iniziale dei vettori e gestione degli aggiornamenti: Erik Capoccetta segnala che l'impianto iniziale dei vettori deve basarsi esclusivamente su quei 100 vettori filtrati come concordato originariamente dal cliente (00:01:45) (00:03:52). Davide Chieli spiega che rimuovendo il filtro precedentemente utilizzato il sistema ha importato 1400 subvettori, ma Erik Capoccetta ribadisce che la query per la sincronizzazione tramite il pulsante "Sincronizza SGA" deve considerare tutti i vettori in modo indiscriminato che abbiano una data di inserimento (`insert_data_ora`) o di aggiornamento (`update_data_ora`) successiva all'ultimo scaricamento (00:03:52) (00:07:09). Davide Chieli si impegna ad azzerare le anagrafiche, separare il job iniziale con i 100 vettori da quello di sincronizzazione basato sui campi di update/insert, ed effettuare i test necessari inserendo dati fittizi (00:08:51) (00:10:59).
+
+Posizionamento dei pulsanti nei flussi documentali: Erik Capoccetta e Davide Chieli affrontano la richiesta del cliente di spostare i pulsanti in basso su tutte le schermate dei flussi documentali (00:16:14) (00:32:33). Nonostante le lamentele del cliente e della dirigenza (riportate da Francesca e Filippo) riguardo a ritardi e incomprensioni, Erik Capoccetta stabilisce che la modifica deve essere implementata immediatamente per evitare appigli di contestazione in vista dell'incontro in presenza previsto per martedì (00:17:18) (00:31:18).
+
+Gestione della scadenza precompilata e non modificabile: In merito alla compilazione dei documenti, Erik Capoccetta richiede di impostare i campi relativi al rentry e al pagamento albo terzi in modo che siano precaricati e resi non modificabili all'interno del formato subvettore. Davide Chieli conferma che si occuperà di questa implementazione aggiuntiva (00:32:33) (00:48:00).
+
+Verifica e caricamento del manuale del vettore: Davide Chieli segnala difficoltà nel verificare la corretta collocazione dei file nella cartella sul server UAT a causa della mancanza di accessi diretti tramite FileZilla, bloccati probabilmente dalle restrizioni delle whitelist IP della VPN (00:33:38). Erik Capoccetta propone di sviluppare una funzione di upload dedicata nell'interfaccia affinché gli utenti possano caricare e aggiornare i PDF direttamente dal gestionale senza accedere al server, pianificando di stimare circa due ore o più per lo sviluppo (00:34:46) (00:37:39). Nel frattempo, Davide Chieli verifica il corretto funzionamento tramite test manuali (00:35:56).
+
+Notifiche di completamento del wizard: Davide Chieli dimostra che le notifiche relative al completamento del wizard da parte del subvettore funzionano correttamente in ambiente di sviluppo (dev), mostrando un esempio di notifica ricevuta (00:37:39) (00:52:19). Erik Capoccetta richiede di ripetere e confermare il test anche in ambiente UAT (00:37:39) (00:39:58).
+
+Gestione dei gruppi di operatori per le notifiche: Durante i test sulle notifiche, Erik Capoccetta e Davide Chieli discutono la profilazione degli utenti, evidenziando che gli amministratori vedono anche la fatturazione, mentre gli operatori dei trasporti e dell'ufficio vettori visualizzano selettivamente solo le rispettive sezioni (00:52:19). Davide Chieli verifica che le notifiche raggiungano i gruppi corretti (inclusi admin e Pigliacelli), e concordano di eseguire prove mirate con un account operatore per confermare la ricezione (00:53:43).
+
+Gestione dei bug contestati dal cliente relativi ai contratti: Davide Chieli ed Erik Capoccetta analizzano le segnalazioni del cliente riguardanti la presunta impossibilità di visualizzare l'anteprima del contratto prima dell'invio e la mancata ricezione dello stesso da parte del vettore (00:42:18) (00:45:39). Entrambi concordano sul fatto che le segnalazioni siano infondate o relative a test inesistenti, poiché non risultano contratti generati o perché i test sono stati eseguiti con indirizzi email inesistenti o errati (00:43:23) (00:45:39). Erik Capoccetta decide di occuparsi personalmente di rispondere al cliente e di affrontare la questione durante l'incontro di martedì (00:49:07).
+
+Verifica dei Subvettori e Gestione delle Comunicazioni PEC: Davide Chieli e Erik Capoccetta esaminano i dati relativi al subvettore 127 e i test effettuati il 29 ottobre (00:56:06). Analizzando l'importazione dei dati associati a NAL, Davide Chieli esprime preoccupazione riguardo a possibili problemi con i certificati e la ricezione dei messaggi. Erik Capoccetta ipotizza che il malfunzionamento sia dovuto all'invio di notifiche da un indirizzo email standard verso caselle PEC abilitate a ricevere esclusivamente da altre PEC, criticando l'uso di una PEC reale durante la fase di test (01:00:18).
+
+Definizione del Piano Operativo e delle Scadenze: Erik Capoccetta definisce le priorità e richiede a Davide Chieli di verificare tempestivamente il corretto funzionamento dei punti 3 e 4 nell'ambiente di collaudo (AT) entro l'orario di pranzo, così da poter riscontrare un'email in sospeso (01:01:39). Parallelamente, Davide Chieli deve completare i punti 1 e 2 affinché possano essere testati nuovamente in AT nella giornata di lunedì, in vista della prova in diretta programmata per martedì (01:02:33).
+
+Analisi e Ottimizzazione della Sincronizzazione delle Tratte: Erik Capoccetta contesta i tempi prolungati della procedura di sincronizzazione eseguita da Davide Chieli, la quale analizza tutte le tratte a partire dal 2024 senza un filtraggio mirato. Davide Chieli specifica che il processo esegue un controllo duplicato verificando le nuove tratte su SGA, lo stato del wizard dei subvettori e il recupero dei dati storici dal database (01:03:44). Erik Capoccetta sostiene la necessità di snellire il codice utilizzando un filtro basato sul campo modificato fornito da SGA, evidenziando che nell'ambiente di sviluppo l'operazione richiede appena un minuto (01:04:59). Davide Chieli accetta di riesaminare e semplificare la logica di sincronizzazione, confermando l'invio degli aggiornamenti a Erik Capoccetta prima di pranzo (01:06:14).
+
+
+Dovresti rivedere le note di Gemini per assicurarti che siano accurate. Ricevi suggerimenti e scopri come Gemini prende appunti
+Qual è la qualità di queste note specifiche? Rispondi a un breve sondaggio? Facci sapere cosa ne pensi e quanto le note siano state utili per le tue esigenze.
+ott 30, 2026
+Pigliacelli Workspace | Briefing e SAL - Trascrizione
+00:00:40
+
+Davide Chieli: Ciao Erik.
+Erik Capoccetta: Eccoci. Ciao Davide, buongiorno.
+Davide Chieli: Ciao. Buond. Dammi un secondo. Mi senti in realtà?
+Erik Capoccetta: Sì, sì, ti sento bene, ti sento e ti vedo.
+Davide Chieli: Va bene.
+Erik Capoccetta: No, scusa, sono andato un po' lungo, c'è un po' di email da mo non ti vedo più e non ti sento più.
+Davide Chieli: Ok,
+Erik Capoccetta: Eccoti.
+Davide Chieli: mi senti? Vedi?
+Erik Capoccetta: Sei scomparso un attimo. Sei scomparso.
+Davide Chieli: Ah, ok. Allora,
+Erik Capoccetta: No, dico scusa, ma sono andato lungo con delle mail, purtroppo.
+Davide Chieli: sì, sì, tranquillo.
+Erik Capoccetta: Comincia la giornata. Allora, io direi andiamo punto per punto,
+Davide Chieli: Sì,
+Erik Capoccetta: vediamo quello che è vero,
+Davide Chieli: sì.
+Erik Capoccetta: quello che non è vero e vediamo quello che sono richieste in più rispetto a cose che già
+Davide Chieli: Allora,
+Erik Capoccetta: avevano stato.
+Davide Chieli: io ho fatto proprio adesso, in realtà fino a ieri sera alle 10:00 stavo ancora testando che avevo l'ansia, non ho dormito stanotte per l'ansia che ho detto c**** che succede?
+
+
+00:01:45
+
+Davide Chieli: Io io purtroppo ho fatto un'ora di sonno stanotte,
+Erik Capoccetta: Eh,
+Davide Chieli: mi credi?
+Erik Capoccetta: eh, lo so,
+Davide Chieli: Comunque,
+Erik Capoccetta: ma questo cliente purtroppo devi imparare a prenderlo con le
+Davide Chieli: eh no, ci ho ucciso,
+Erik Capoccetta: D'accordo. Eh, purtroppo è così. Questi sono particolari. Io sinceramente mi sono un po' arrabbiato ieri perché quando poi scrivono
+Davide Chieli: eh. Poi lo sai, io non voglio fa bruto.
+Erik Capoccetta: queste cose mi dà fastidio perché sembra quasi che se ne stanno approfittando, quindi
+Davide Chieli: Ho l'impressione io ho l'impressione che qualcosa stanno sbagliando a fare, eh, perché non mi torna. Comunque facciamo un check.
+Erik Capoccetta: è molto semplice.
+Davide Chieli: Io come come al solito premetto che sto
+Erik Capoccetta: Comunque, allora, per quanto riguarda il punto uno,
+Davide Chieli: Sì.
+Erik Capoccetta: io poi ci ho riflettuto ieri dopo che tu mi hai detto quella cosa e effettivamente però ehm la query iniziale, cioè l'impianto iniziale, tu devi importare quei vettori. Io la farei però con quella che ci hanno detto loro, cioè tutti i vettori a partire dal 2024 esclusi quei codici che però che hanno però
+
+
+00:02:47
+
+Davide Chieli: Allora,
+Erik Capoccetta: almeno un
+Davide Chieli: prima cosa, i vettori non hanno un anno sulla T2 base vettori.
+Erik Capoccetta: eh se vanno su B società, però
+Davide Chieli: La società non non l'ho in quel caso lì non l'ho presa, non ho la società non l'ho presa,
+Erik Capoccetta: Eh no, beh, perché ci sono pure i dati là, eh.
+Davide Chieli: no? I dati che ci hanno detto da qui proprio che ci hanno detto, cioè li abbiamo fatti insieme erano da T2 base vitture, sono tutti i dati che servono.
+Erik Capoccetta: però Duri inizialmente andavano incrociati con via società proprio per fare questa cosa dell'anno,
+Davide Chieli: Noi l'anno lo trovavamo dai viaggi, capito? Noi trovavamo almeno un viaggio,
+Erik Capoccetta: no?
+Davide Chieli: eh,
+Erik Capoccetta: Però questo mo a noi non ci interessano più i viaggi.
+Davide Chieli: appunto, io infatti l'ho levato quella quel quel filtro lì l'ho levato ed ha funzionato, però eh banalmente adesso sono 1400 subvettori, non sono più 106.
+Erik Capoccetta: Eh no, però tu il filtro lo devi fare lo devi fare dobbiamo capire un attimo una cosa perché un conto è l'impianto iniziale, ok?
+
+
+00:03:52
+
+Erik Capoccetta: quella base anagrafica dalla quale loro vogliono partire e devono essere
+Davide Chieli: Esatto. Ok.
+Erik Capoccetta: quei 700 là,
+Davide Chieli: 200 200 M.
+Erik Capoccetta: cioè sì 100, scusa, no, 700, quei 100 là devono essere quelli deve essere la base. Quindi una cosa è la prima query dove tu ti scarichi i dati di quei 100. La query che invece loro lanciano tramite il pulsante sincronizza SGA, quella deve prendere tutti i vettori indiscriminatamente che però hanno una data di modifica
+Davide Chieli: Ok.
+Erik Capoccetta: o creazione successiva all'ultimo eh all'ultima all'ultimo scaricamento, all'ultima volta che hanno premuto il pulsante.
+Davide Chieli: E il problema è che appunto, cioè, quindi devo controllare l'update. Non so che cosa ci sta su
+Erik Capoccetta: No, c'era quel campo modificato e inserito. C'erano quei due campi.
+Davide Chieli: eh quello sto dicendo. Update update data ora o insert data ora,
+Erik Capoccetta: Eh eh quei campi là.
+Davide Chieli: quelli là.
+Erik Capoccetta: Eh beh, quello sì. Eh beh, ma quello lo dovevi controllare a prescindere.
+Davide Chieli: No, io non lo controllo questo.
+Erik Capoccetta: Eh, ma ti ricordi all'inizio lo controllavamo.
+
+
+00:05:01
+
+Davide Chieli: No,
+Erik Capoccetta: Sì, sì.
+Davide Chieli: ma lo controlamo sulle tratte,
+Erik Capoccetta: Eh,
+Davide Chieli: non sul sui subettoni.
+Erik Capoccetta: eh. No, ma beh, anche sui vettori, però quello deve essere importante quello che se
+Davide Chieli: Vabbè, questa ripeto, è una cosa che abbiamo aggiunto adesso perché prima non ce n'era bisogno.
+Erik Capoccetta: Eh, sì,
+Davide Chieli: Vabbè.
+Erik Capoccetta: però, cioè, se ti ricordi il job quello giornaliero doveva c'aveva una query che controllava proprio quei
+Davide Chieli: Mh.
+Erik Capoccetta: campi insert o update e prendeva solo quelli,
+Davide Chieli: Sì, sì. No, ma quello lo fa ancora. Ecco, quello lo fa ancora. Il check New Trips lo fa ancora.
+Erik Capoccetta: no? New Trips.
+Davide Chieli: controlla i eh l'anagrafica invece non l'ha mai fatto questo check perché lui
+Erik Capoccetta: Cerca anche per l'anagrafica.
+Davide Chieli: controllava solo i subvettori nuovi.
+Erik Capoccetta: Eh no,
+Davide Chieli: Punto.
+Erik Capoccetta: e tu devi se devi, cioè quel cercare perché sennò come sai quali sono quelli nuovi o modificati?
+Davide Chieli: Vabbè, ripeto, se era semplice, basta che una volta che li hai importati, se loro aggiungono qualcosa vanno in in update, cioè è un potente la cosa.
+
+
+00:05:57
+
+Erik Capoccetta: Come fai però a sapere che hanno modificato esattamente uno che tu cioè che hanno modificato quello. Devi per forza leggerti il campo update o insert, senò come fai a sapere che l'hanno modificato?
+Davide Chieli: No, se questa, ripeto, con questa nuova eh implementazione qui, allora mi serve qualcosa tipo update. Esatto.
+Erik Capoccetta: Eh,
+Davide Chieli: Però una cosa che abbiamo aggiunto adesso, perché prima non la facevamo perché abbiamo avevamo già dei delle un set già pronto, eh, e non ci facevamo questo problema.
+Erik Capoccetta: eh, però di quel set tu se ricordi dovevi comunque una volta fatta la prima impianto dovevi Vabbè
+Davide Chieli: Vabbè.
+Erik Capoccetta: comunque eh dobbiamo dobbiamo fare il primo impianto sono quei 100 poi che
+Davide Chieli: Mh.
+Erik Capoccetta: è una queri un adantum che lanciamo Noi prima di dargli il coso, vabbè, la possiamo fare pure mo e mettiamo come data di ultimo aggiornamento quel campo che c'avevi nei setting nella tabella sec set.
+Davide Chieli: Sì.
+Erik Capoccetta: il momento in cui abbiamo lanciato quella guerra,
+Davide Chieli: Mh. Mm.
+Erik Capoccetta: il job che lanciano tramite il pulsante deve avere invece i filtri per updated o insert a partire da quella data che legge nel set setting.
+
+
+00:07:09
+
+Davide Chieli: Mh. Vabbè, io metterei un'altra data di sincronizzazione, giusto per stare tranquilli.
+Erik Capoccetta: Vabbè, mettiamo oggi,
+Davide Chieli: Ok,
+Erik Capoccetta: tanto se poi loro inseriscono modificano un vettore e se già gli aggiorna quel campo, eh,
+Davide Chieli: però devo prendere Allora, devo capire un attimo su SGA che cosa devo prendere.
+Erik Capoccetta: e quei campi updated de Eh
+Davide Chieli: Eh, aspetta, ma dove stanno? fammi vedere un attimo. Allora, DBO tabelle la connessione interrotta.
+Erik Capoccetta: si è bloccato qualcosa.
+Davide Chieli: Che è successo?
+Erik Capoccetta: Prova prova a disconnettere e riconnettere.
+Davide Chieli: Ok,
+Erik Capoccetta: Sì, dove vettori?
+Davide Chieli: allora
+Erik Capoccetta: Vediamo un po'. Eh, questa c'avrà 80 miliardi di campi. Ci saranno pure in quei due là. Scorriamo.
+Davide Chieli: sì, solitamente ci sono, penso.
+Erik Capoccetta: Ma saranno alla fine?
+Davide Chieli: Ok.
+Erik Capoccetta: Partiamo un po' dalla fine, va. Ordini di caricord calcolo inizio. Calcolo calcolo consorzio provincia località
+Davide Chieli: Indiriz accenzaale.
+Erik Capoccetta: attivo. Vabbè, attivo.
+Davide Chieli: Io ho messo anche attivo come filtro.
+
+
+00:08:51
+
+Erik Capoccetta: Sì, vabbè, abbiamo visto che è attivo. Teniamolo. Ma intanto non Ecco.
+Davide Chieli: Eh, però ved Nal nal nal.
+Erik Capoccetta: Eh, ecco qua. Ok, vedi? Oh, insert questi campi qua dobbiamo
+Davide Chieli: Ok, qui c'è update data ora e insert data ora, però qui sono tutti n quasi.
+Erik Capoccetta: eh vabbè dove non li trova sarà problema di SGA, ma non è un problema nostro.
+Davide Chieli: Ah,
+Erik Capoccetta: Tanto noi il primo impianto glielo facciamo. Scusa, prendine uno. Ah, no, perché qua perché questa è la copia nostra.
+Davide Chieli: questa è la copia. Sì,
+Erik Capoccetta: Ehm, vabbè, comunque penso che saranno valorizzati sti campi perché sennò come funziona quel gestionale?
+Davide Chieli: eh.
+Erik Capoccetta: Funzione.
+Davide Chieli: Non lo so. Questa è la copia alla
+Erik Capoccetta: Vabbè, ma noi li dobbiamo considerare così. Quindi nella query che loro fanno, nel diciamo nella query che che sta nel job che loro lanciano con il pulsante, sincronizza SGA, sia per i viaggi che per l'anagrafica devi considerare questi due campi, insert data ora o update data ora.
+
+
+00:10:01
+
+Davide Chieli: io di solito prendo prendo update e poi metto la colh a insert.
+Erik Capoccetta: Eh,
+Davide Chieli: Eh, nel caso in cui non ci sono, come per esempio questo caso qua,
+Erik Capoccetta: non te li riporta.
+Davide Chieli: non me li premite quei vettori,
+Erik Capoccetta: E certo, vabbè, vuol dire che non li deve prendere.
+Davide Chieli: ma vabbè,
+Erik Capoccetta: Se se poi si trovano un vettore che non si non viene riportato,
+Davide Chieli: questo tanto per mh
+Erik Capoccetta: si va su SGA, si vedono questi due campi, se stanno a NAL è un problema di SGA, chiamano l'assistenza di SGA e se lo fanno risolvere. Se loro hanno modificato un vettore o hanno inserito e ha messo il campo NAL,
+Davide Chieli: Mh.
+Erik Capoccetta: cavoli loro, non è un problema nostro.
+Davide Chieli: Vabbè, ma questa la devo implementare un attimo, devo devo separare un attimo.
+Erik Capoccetta: Eh, e quindi vabbè,
+Davide Chieli: Vabbè,
+Erik Capoccetta: al punto uno qua c'ha ragione.
+Davide Chieli: sì, però ripeto, alla fine c'ha ragione, ho bastato levare il filtro perché funzionasse. Cioè io ho riprovato adesso su AT, davvero che ho importato 1400 subvettori, però c'era anche il subvettore loro,
+
+
+00:10:59
+
+Erik Capoccetta: Eh eh vabbè,
+Davide Chieli: mi sembra.
+Erik Capoccetta: però non doveva funzionare, cioè doveva funzionare con il filtro update o insert, quindi quella c'ha ragione.
+Davide Chieli: E questa cosa te l'ho detto, non c'era non era stata discussa, quindi vabbè, la prendo per buona adesso e la faccio. Eh, questi sono i dati di Vabbè, sono i dati, diciamo, di scap questi qua veri che stanno tutti mh
+Erik Capoccetta: Vabbè, quindi mo questi li azzeri di nuovo tutti.
+Davide Chieli: mh.
+Erik Capoccetta: Rifai l'import iniziale con un altro job che app parte, te lo metti a parte.
+Davide Chieli: Allora,
+Erik Capoccetta: Job iniziale.
+Davide Chieli: faccio velocizato. Quindi il job' la vecchia qui che ha eh anche eh che c'ha anche almeno un viaggio,
+Erik Capoccetta: Il filtro sui viaggi.
+Davide Chieli: giusto?
+Erik Capoccetta: Sì.
+Davide Chieli: la che c'era prima, mentre il sincronizza adesso c'è un altro job che semplicemente va a controllare tutti i subvettori nuovi dalla sync date originaria fino al quindi diciamo al nuovo insert o update,
+Erik Capoccetta: Esatto. Se io faccio Abbiamo fatto la queri di impianto. Vabbè, mo che ne so la fai alle lo
+
+
+00:12:10
+
+Davide Chieli: cioè se l'insert o update è successivo alla al sync date lo prendo.
+Erik Capoccetta: prendo. Esatto. Quelli devono essere i due fig. Ah,
+Davide Chieli: Ok.
+Erik Capoccetta: l'avevamo detto mo è perché me lo ricordo bene.
+Davide Chieli: No, no,
+Erik Capoccetta: Sì, sì. No,
+Davide Chieli: no,
+Erik Capoccetta: me lo ricordo.
+Davide Chieli: sicuramente no. zero totale. Non abbiamo proprio zero di questa cosa.
+Erik Capoccetta: Ma sì, perché sennò come facevi a sapere quali avevano modificato o no? Scusa, è impossibile.
+Davide Chieli: Ma noi i subvettori non quando vengono modificati c'hanno il codice SGA
+Erik Capoccetta: Ma che vuol dire? Se io, ad esempio, aggiorno uno che tu hai già caricato, come fai a sapere che l'ha modificato?
+Davide Chieli: perché lui prende il quando loro aggiornano No.
+Erik Capoccetta: Tu tu andavi a leggere sempre solo quelli iniziali, se lo se andava bene che avevano modificato uno di quelli iniziali te lo riportava. Invece era era sbagliato come logica. Tu dovevi usare il campo insert o update perché se uno se loro avessero modificato o riattivato un vettore che tu non stava nei codici iniziali.
+
+
+00:13:11
+
+Davide Chieli: Veniva fatto nel check new trips questo check.
+Erik Capoccetta: Eh, eh, ma no, no,
+Davide Chieli: Questo check veniva fatto per check nutrix veniva cioè se loro modificavano i dati del subvettore veniva aggiornata anagrafica.
+Erik Capoccetta: eh no, però loro la devono aggiornare a monte la quindi cioè nel nella revisione della logica ti dovevi riportare questo questo dato,
+Davide Chieli: Eh perché ripeto era più cioè da come era stato specificato, noi c'avevamo quel set lì. Comunque vabbè è poca roba,
+Erik Capoccetta: eh.
+Davide Chieli: si si può aggiungere.
+Erik Capoccetta: Ok. E quindi qua punto uno ha ragione. Mo gli risponderò che era corretto.
+Davide Chieli: Sì.
+Erik Capoccetta: Avevamo interpretato male la cosa.
+Davide Chieli: Vabbè, ma ma El sul test è normale che qualcosa vada storto, cioè non si può aspettare che vado tutto bene così po,
+Erik Capoccetta: Ma no, infatti. Sì.
+Davide Chieli: soprattutto su una cosa che noi non possiamo testare a prima mano, possiamo, cioè non abbiamo sga sottomano che lo possiamo modificare noi parametri,
+Erik Capoccetta: No, ma te l'ho detto come fare. Inserisci un record tu.
+
+
+00:14:05
+
+Davide Chieli: eh, e l'ho fatto, eh io così lo sto facendo. Mo faccio vedere. Io ho aggiunto proprio adesso l'ho fatto sto testo.
+Erik Capoccetta: Mo ti devi andare a modificare sti ti devi andare a valorizzare quei cambi perché non credo che si valorizzino da soli e insert e update non credo che c'abbiano un default.
+Davide Chieli: Quali?
+Erik Capoccetta: Boh, puoi provare quello che hai inserito tu. Qual è? Ce l'hai il codice?
+Davide Chieli: Questi quelli là che ho inserito io adesso.
+Erik Capoccetta: Eh?
+Davide Chieli: No, io qua non ce l'ho messo proprio. Insert update.
+Erik Capoccetta: Eh no, vedi se ce l'ha segnato di default il database.
+Davide Chieli: Ah, vediamo. Non penso proprio. Sono inal. Non pensezo proprio. Allora,
+Erik Capoccetta: Quindi questa
+Davide Chieli: ma se son impossibile che
+Erik Capoccetta: vabbè basta che lo ordinavi.
+Davide Chieli: No, vabbè, so vedere proprio dalla struttura del database. Qua ci dovrebbe stare.
+Erik Capoccetta: No, son nallo, vedi?
+Davide Chieli: Eh, vedi?
+Erik Capoccetta: Non ce l'
+Davide Chieli: Non c'ha il default.
+
+
+00:15:12
+
+Davide Chieli: Allora, dove sta?
+Erik Capoccetta: No,
+Davide Chieli: Eh,
+Erik Capoccetta: non c'anno niente.
+Davide Chieli: sono tutti così.
+Erik Capoccetta: E vabbè. Eh, vuol dire che volerai tu e fare un test.
+Davide Chieli: No, vabbè, io li posso aggiungere insert data ora e update data ora gli metto dei dei dati fittizzi, chiaramente.
+Erik Capoccetta: Eh, dico, per fare i test li puoi i popoli ci metti i dati tu in modo tale che vedi se te li
+Davide Chieli: Mh.
+Erik Capoccetta: ricaricano,
+Davide Chieli: Ah, no, certo, è quello che sto facendo. Io sto sto io quando faccio questo script che ho fatto io,
+Erik Capoccetta: eh.
+Davide Chieli: tutti questi script sono semplicemente de vanno a valorizzare tutti i campi che mi servono,
+Erik Capoccetta: Eh, perfetto.
+Davide Chieli: capito? Semplicemente qui vado a aggiungere anche quelli là, eh, vado a aggiungere anche intert da ora e update data ora, però non so se metterli entrambi.
+Erik Capoccetta: No, quando fai l'insert metti solo insert poi per testare se se si
+Davide Chieli: Eh, infatti. Vabbè.
+Erik Capoccetta: se funziona il job che ti prende solo uno con la modifica,
+
+
+00:16:14
+
+Davide Chieli: Mh.
+Erik Capoccetta: fai metti update, ci modifichi in dato tipo ragione sociale e vedi se te l'ha ripresa.
+Davide Chieli: Ok.
+Erik Capoccetta: Quindi questo qua c'ha ragione. Punto uno, abbiamo capito quello che dobbiamo fare.
+Davide Chieli: Sì, sì, sì. Ma questo già. Vabbè, questo ci sta. Eh,
+Erik Capoccetta: Lato punto due,
+Davide Chieli: poi eh questo
+Erik Capoccetta: nella compilazione dei vari flussi documentari abbiamo chiesto di spostare, se possibile i pulsanti e vabbè,
+Davide Chieli: l'ho messo, però vi faccio vedere un attimo. Allora, non so che cosa intendono, mo ti faccio vedere perché io ci li ho visti, quindi questo è l'ultimo che ho fatto,
+Erik Capoccetta: ma c'erano già da prima c'erano già,
+Davide Chieli: no? Come?
+Erik Capoccetta: cioè erano già fatti.
+Davide Chieli: Eh sì, però non so se intendono. Mo ti faccio vedere. Allora, qua ci sta, qua ci sta. Qui non ci sta perché non mi sembrava utile metterlo.
+Erik Capoccetta: E vabbè, mettili dappertutto vorrebbi.
+Davide Chieli: Qua manco è che vengono brutti, capito? Vengono. Vabbè, qua ci sta.
+
+
+00:17:18
+
+Erik Capoccetta: Ah,
+Davide Chieli: Qua ci sta.
+Erik Capoccetta: scusa, eh, rispondo un attimo a Filippo. Aspetta.
+Davide Chieli: Sì. Qua no. Francesca. Eh, ciao Francesca. Ciao, buongiorno. Ciao sul documento tutti quanti. Eh, allora e li stamo vedendo proprio adesso su con Erik Francesca, proprio adesso sono in gol con lui. Facciamo così dati cioè facciamo le cose o le cose salari o non sa fare le sa fare dice fare fare un certo modo perché non posso c'ha ragione se no perché era esteticamente era esteticamente brutto non per altro era proprio bruttissimo questo qua confronta Faccio faccio questo lì perché chiaramente sono solo è meno utile pronta, parla, dice chiama, cioè questo lavoro sta andando avanti da troppo tempo. giorno facciamo le cose parli così così e non va bene. Son cose logiche, no? Perché fanno sapere che funzionano? Perché non fanno parte le cose bene logicamente sono fatte. Cose sono fatto un po' così un po' così bisogna sempre controllare sto fat cioè ho preso sono una persona autonoma nel lavoro.
+
+
+00:21:50
+
+Davide Chieli: No, cioè no. Eh, Francesca, io non so che dirti perché veramente non so che dire, perché noi le cose le stiamo le stiamo facendo. Ripeto, è una fase di test, quindi ci può stare che escano dei bagghettini, ma eh non pensavo che vede le cose, si accetta o di lavoro, si accettano le cose. Eh, ma come vi ho detto anche io, come ho detto a te e come ho detto anche a Erik, purtroppo io in questo momento ho No. Erik, dammi un secondo. Sono in telefono. Francisco, dammi un secondo.
+Erik Capoccetta: Vabbè. M.
+Davide Chieli: E, ci sei?
+Erik Capoccetta: Sì, eccomi.
+Davide Chieli: Niente. Vabbè, mi Francesca mi diceva il cliente è arrabbiato perché non abbiamo visto i pulsanti perché non ci sono delle cose e
+Erik Capoccetta: Sì, eh sì.
+Davide Chieli: vabbè.
+Erik Capoccetta: Sì, m'ha chiamato anche Filippo, a me ha fatto, insomma, m'ha detto che qu ha chiamato questa Flavia e si è lamentata che ovviamente, soprattutto su sta cosa della sincronizzazione la dicevano da giugno, noi non siamo stati in grado di capirlo né a voce né con lo scritto, quindi vabbè, gli ha fatto tutta una una daché dovevamo magari lamentarci noi che stanno chiedendo sempre cose, alla fine ci siamo Siamo messi nella posizione e nella quale dobbiamo sempre subire perché magari mancano quelle cose che ovviamente quando poi ti ti portano le evidenze non è che puoi puoi controbattere in qualche modo, cioè c'ha una ragione,
+
+
+00:28:20
+
+Davide Chieli: Vabbè, eh, io non lo so più che fare questo progetto, sto impazzendo, guardo. Vabbè.
+Erik Capoccetta: no? E che semplicemente, capito? Loro approfittano, però noi dobbiamo essere dall'altra parte ineccepibili perché se vogliamo poi sollevargli delle cose eh non non dobbiamo avere dei punti in cui loro invece possono controbattere perché poi ci frega.
+Davide Chieli: Ma il problema di Er senza test, cioè purtroppo senza test non se può fa'.
+Erik Capoccetta: Eh, ma questa è una cosa che si poteva testare, cioè,
+Davide Chieli: Sì,
+Erik Capoccetta: capito?
+Davide Chieli: questa cosa in effetti questa cosa qui in effetti sì,
+Erik Capoccetta: Eh,
+Davide Chieli: perché magari è stata una sciocchezza questo filtro che non ho visto proprio perché pensavo fosse già ho
+Erik Capoccetta: eh.
+Davide Chieli: corretto quella parte,
+Erik Capoccetta: Hai capito? Eh,
+Davide Chieli: quindi però capito è una cosa che in mezzo
+Erik Capoccetta: quindi qua che gli vai a dire? Cioè, se poi
+Davide Chieli: secondo se se si si fa, cioè non pure i pulsanti, non so se la Francesca ha detto che mancano le pulsanti, sono delle cose che ci sono, non è che non ci sono,
+
+
+00:29:17
+
+Erik Capoccetta: eh sì,
+Davide Chieli: solo che le vogliono giù, cioè Oh.
+Erik Capoccetta: sì, capito. Però ci sono questi poi sono non è che sono del della materia del settore o sono persone comprensive, hai visto? No, cioè sfruttano anche la virgola per poterti poi mettere in difficoltà.
+Davide Chieli: Ah!
+Erik Capoccetta: E per cui noi non ci deve stare sta virgola, dobbiamo fare in modo che non ci sia perché se ci sta ci ci massacrano pure con quella colgono l'occasione. Io, per esempio, avrei voluto su questa cosa di inserire le altre scadenze, le altre robe. Mi sarei voluto un attimo far sentire dicendo l'avete testato 15 volte,
+Davide Chieli: None. Ja.
+Erik Capoccetta: non ce l'avete mai detto perché ce lo state dicendo mo alla 15a? Cioè ce lo potevi dire pure alla prima e invece mo non è che puoi parlare perché ovviamente
+Davide Chieli: Sì.
+Erik Capoccetta: quella ti ribatte. Sì, ma io t' ho chiesto una cosa da 3 mesi, tu ancora non me l'hai fatta, come dico io. E quindi devi stare in silenzio, eh, che vuoi fare?
+
+
+00:30:19
+
+Davide Chieli: M.
+Erik Capoccetta: Perché io poi quando eh anche sta cosa poi capito? Vabbè, mo dobbiamo lavorare. Tieni presente che bisogna ogni piccolo dettaglio, cioè perché sennò
+Davide Chieli: Ma hai capito? E purtroppo non cioè è proprio la la base del software engineering, il non è il bug, non è che certe cose sono talmente piccole che se le scopre solo testando,
+Erik Capoccetta: sì,
+Davide Chieli: purtroppo.
+Erik Capoccetta: lo so, però tipo questa cosa de cioè le cose evidenti, no,
+Davide Chieli: Sì.
+Erik Capoccetta: però eh se tu facevi un test, ti dico fammi fare un test di inserire un vettore come t' avevo Ho detto io suo
+Davide Chieli: No, l'ho fatto, ve l'ho detto, però non ci ho fatto caso che veniva inserite anche.
+Erik Capoccetta: eh eh siccome loro ci tenevano a sto fatto del concetto che
+Davide Chieli: Ma mo capito se io io glielo glielo rilascio glielo rilascio oggi. Se fanno un test lunedì e funziona.
+Erik Capoccetta: sì, è risò, però capito non gli dovevamo dare proprio l'atito,
+Davide Chieli: Ah, gli do a parlare.
+Erik Capoccetta: eh.
+Davide Chieli: capito?
+
+
+00:31:18
+
+Erik Capoccetta: Capito? che è un conto, perché poi questa sono persone che, te l'ho detto, sfruttano il cavillo per poter fare casino e quindi eh poi è già un progetto che ho capito che si sta dilungando oltre il dovuto eh in amministrazione sono
+Davide Chieli: Eh, lo so.
+Erik Capoccetta: nervosi.
+Davide Chieli: Eh,
+Erik Capoccetta: Francesca,
+Davide Chieli: lo so.
+Erik Capoccetta: Filippo, ogni volta che sentono che arriva una mail da parte di questi saltano dalla sedia perché e quindi eh ad esempio eh questi hanno richiesto che martedì andiamo lì in presenza, sicuramente ci ci massacreranno conoscendo l'ambiente. Io, se hai visto, ho fatto di tutto per poterla fare online, ma eh cioè ci fa proprio un'imboscata ci stanno facendo, quindi se meglio andare
+Davide Chieli: Vabbè.
+Erik Capoccetta: eh con con l'armatura pronta che non c'abbia buchi. Quindi mo leggiamo punto per punto quello che ha detto questa qua.
+Davide Chieli: Sì.
+Erik Capoccetta: Cerchiamo di fare in modo che non ci sia neanche facendo testa, ripetizione. Tanto implementarlo sono cose di 5 minuti e magari
+Davide Chieli: Mh. Sì.
+Erik Capoccetta: fai 3 ore di test per cercare proprio la proprio stress.
+
+
+00:32:33
+
+Davide Chieli: Eh sì.
+Erik Capoccetta: Eh, purtroppo, capito? Noi non avendo un un reparto dedicato a fare questo,
+Davide Chieli: Mh mh.
+Erik Capoccetta: perché se tu c'avevi il reparto lo consegnavi prima di darlo al cliente, lo davi al reparto, quelli fanno solo quello,
+Davide Chieli: Eh, lo so, lo so.
+Erik Capoccetta: una giornata e te ti tirano fuori il mondo prima che ancora che arriva il cliente che arriva perfetto. Ti
+Davide Chieli: Ma il problema è capire cosa hanno fatto loro. Io questo non riesco a capire perché loro dicono mo ti leggiamo ti faccio quella cosa che hanno detto dopo. Eh, non mi torna. La criticità maggiore riguarda il contratto, questa cosa qua.
+Erik Capoccetta: Sì, vabbè, andiamo per punti. Quindi,
+Davide Chieli: Andiamo per punti,
+Erik Capoccetta: allora, punto uno,
+Davide Chieli: va.
+Erik Capoccetta: abbiamo capito che bisogna fare quell'intervento là, poi, punto due,
+Davide Chieli: Sì.
+Erik Capoccetta: abbiamo capito che bisogna mettere i pulsanti sotto a tutte le finestre
+Davide Chieli: Eh, e limit bene.
+Erik Capoccetta: ogni schermato. Questo qua è una richiesta nuova, però oramai va fatta, quindi in automatico gli devi popolare sempre i campi del rentry e del pagamento albo terzi, rendendoli non modificabili.
+
+
+00:33:38
+
+Erik Capoccetta: Ok.
+Davide Chieli: Mh, non modificabile. però eh di quello del subvettore oppure
+Erik Capoccetta: non modificabile nel formato
+Davide Chieli: quella là.
+Erik Capoccetta: subvettore. Sì,
+Davide Chieli: Ok.
+Erik Capoccetta: quindi quando quello ti sta caricando il documento la scadenza non deve essere modificabile in queste tre tipologie, deve essere pre precaricato.
+Davide Chieli: Eh, ok,
+Erik Capoccetta: Quindi questa è un'altra cosa da fare. Punto 3. M'avevi detto che mancava il documento, quindi mo si dovrebbe vedere.
+Davide Chieli: ci dovrebbe sta. Il problema qual è? Perché io non ho accesso, anche quel caso lì, io non ho accesso al server di UAT, quindi che ho dovuto fare? Ho dovuto caricare un documento manuale di vettore come un documento qualsiasi.
+Erik Capoccetta: Mh
+Davide Chieli: In questo modo va in automatico quella cartella là.
+Erik Capoccetta: mh.
+Davide Chieli: Però io non ho avuto non ho accesso alla macchina di UT neanche con
+Erik Capoccetta: No,
+Davide Chieli: l'FTP.
+Erik Capoccetta: per esempio, eh, per questa cosa, no, i documenti che loro devono caricare,
+Davide Chieli: M.
+Erik Capoccetta: gli potremmo fare una funzione di upload in modo che caricano un documento e automaticamente si salva nella cartella.
+
+
+00:34:46
+
+Erik Capoccetta: Cioè, non è che devono andare sul server pure loro, loro non ci dovranno mai andare. Dobbiamo fare una funzione che caricano sto PDF e lo mettono quello si salva sul sul server anche un domani che lo dovranno aggiornare, capito?
+Davide Chieli: Mh
+Erik Capoccetta: vanno là, aggiorna, ricarica il PDF aggiornato e a posto. Quindi facciamo una sezione, magari ci costa 2 ore di lavoro, però ci salva
+Davide Chieli: di più. Sì, qualche di più, però vabbè la cosa dei de Blake perché se mi dai gli accessi, capito alla macchina io riesco a vedere tutti le cartelle se sono corrette, cioè dove vanno bene, se i file vanno bene nel pat giusto. Eh, non so per quale motivo. Io mo sull FFTP non ho accesso
+Erik Capoccetta: l'FTP da dove però.
+Davide Chieli: da F il Zill.
+Erik Capoccetta: Eh no, da f zilla, ma quello perché sempre in VPN funziona.
+Davide Chieli: Ah, e allora è inutile che va a posto.
+Erik Capoccetta: Dovrebbe funzionare sempre in VPN, no? Però sennò se si collega. Sì, perché poi hanno fatto mi sa white list solo sull l'IP di del server di
+
+
+00:35:56
+
+Davide Chieli: M.
+Erik Capoccetta: Script, quindi mi sa che non ci si può accedere.
+Davide Chieli: Vabbè.
+Erik Capoccetta: fammi controllare un attimo perché se ce l'avevo pure io salvato qua con Fzilla. Eh, un po' ce l'avevo. No, pigliacelli workspace, però mh in effetti non si collega più. O avranno fatto il blocco blocco degli IP. Sì, ma questo ci si accede solo su, mi sa su VPN, quindi ci puoi fare ben poco.
+Davide Chieli: Eh, Eh, perciò vedere questa è una difficoltà in più a testare le cose se non
+Erik Capoccetta: Ah, ma se tu sai che si devi mettere sempre dentro quella cartella.
+Davide Chieli: adesso è libare,
+Erik Capoccetta: M no, non mi fa.
+Davide Chieli: capito? A parte su script case che io vedo l' file doc, poi vedo il manuale vettore su non riesco a controllarlo questa cosa. Cioè so che ci sta per esperienza, ma sennò non lo posso vedere.
+Erik Capoccetta: Ma mo che l'hai caricato però te lo vede?
+Davide Chieli: A me inat lo vedi lo vede?
+Erik Capoccetta: Ah, e vabbè, allora
+Davide Chieli: Cioè io ho fatto quella screen che ti ho mandato ieri, era perché si vedeva, diciamo, mo proverò a fare nuovo subvettore e in maniera vecchia, una vecchia maniera su facciamo faccio il test e vedo se funziona pure quello là l'altra volta
+
+
+00:37:39
+
+Erik Capoccetta: mh Ok, però in generale magari troviamo un modo per poterglielo fare fare da da interfaccia così
+Davide Chieli: così li caricano,
+Erik Capoccetta: almeno quest eh almeno questi che non c'hanno bisogno di firma,
+Davide Chieli: eh.
+Erik Capoccetta: che con gli altri,
+Davide Chieli: Mh.
+Erik Capoccetta: ovvio, dobbiamo fare il posizionamento delle firme, tutto poi.
+Davide Chieli: Ok.
+Erik Capoccetta: Quindi mo ci da ricapitol, vabbè, poi ricapitoliamo tutto quello che c'è da fare. Punto 4. Completata la procedura di registrazione del vettore, riceviamo la mail. Per utilità possiamo ricevere una notifica.
+Davide Chieli: Già la facci. L'ho controllata,
+Erik Capoccetta: Questa c'è.
+Davide Chieli: funziona.
+Erik Capoccetta: Ah, e ok. Quindi questa funziona, eh.
+Davide Chieli: Questa è dev su altri devo controllarla, ma funziona in dev.
+Erik Capoccetta: Eh, e vabbè, proviamolo anche su AT,
+Davide Chieli: Faccio vedere.
+Erik Capoccetta: così poi
+Davide Chieli: Eh, come ti dicevo, capito? Se io se mi d se posso testare io testo.
+Erik Capoccetta: Eh, certo. No, che devi testare, devi testare,
+Davide Chieli: Mh.
+Erik Capoccetta: eh.
+Davide Chieli: Se stanno facendo loro le cose questa era Vabbè.
+
+
+00:38:38
+
+Erik Capoccetta: Vabbè, che ti importa? E tu ti fai un vettore tuo,
+Davide Chieli: Ah, ok.
+Erik Capoccetta: m cioè te lo vai a fare tanto sul DBDS già ci puoi comunque accedere.
+Davide Chieli: Sì, comunque questo qua funzionava, cioè non è che non funzionava. Vi faccio vedere la notifica che mi è arrivata prima.
+Erik Capoccetta: Eh, ma tanto poi le notifiche non è tanto una cosa dipendente dal server. Se funziona in un modo,
+Davide Chieli: M
+Erik Capoccetta: funziona pure
+Davide Chieli: che Ah, eccola qua sul vettore ha completato il wizard.
+Erik Capoccetta: Ah,
+Davide Chieli: Questa qui è stata eliminata. Vabbè, questa è fusa.
+Erik Capoccetta: m quindi arriva
+Davide Chieli: Sì, sì, sì, ci arriva questa qua. Ieri, vedi? Questa qui è ilettore. Accettato il contratto. Avviare la F, cioè ci sono le notifiche.
+Erik Capoccetta: Scusa, ma se tu entri su AT con uno dei loro account, no,
+Davide Chieli: Sì,
+Erik Capoccetta: ma ci sono le notifiche là,
+Davide Chieli: non lo so,
+Erik Capoccetta: eh?
+Davide Chieli: non lo so quali sono i loro account,
+
+
+00:39:58
+
+Erik Capoccetta: Vabbè,
+Davide Chieli: però dovrei vedere.
+Erik Capoccetta: ce l'abbiamo noi un operatore per entrare, no?
+Davide Chieli: Sì,
+Erik Capoccetta: Eh, eh, vedi che ci stanno.
+Davide Chieli: eh. Ma ci sta qua un elemento scaduto.
+Erik Capoccetta: Eh no,
+Davide Chieli: Io non lo so.
+Erik Capoccetta: però eh anche sul
+Davide Chieli: Non lo so,
+Erik Capoccetta: database bisogna vedere se sono state generate Eh
+Davide Chieli: però ci sono qua le notifiche. Bah. Ah, quella cosa che ti volevo dire, Rolò, per dirti avrebbero dovuto creare un contratto, non è stato creato nulla qua. Quindi che c**** hanno creato? Cioè, di che stanno parlando? Non sto capendo.
+Erik Capoccetta: eh, infatti.
+Davide Chieli: Non questa mi sfugge. Comunque andiamo avanti col
+Erik Capoccetta: Vabbè, quindi la notifica proviamola,
+Davide Chieli: Sì,
+Erik Capoccetta: riproviamola pure su AT e e vediamo.
+Davide Chieli: va bene.
+Erik Capoccetta: Completata la procedura di registrazione del vettore. No, vabbè. Ok. Completata la registrazione del vettore lato Pigliacelli, non troviamo riferimenti allo stesso nella sezione documentazione e tratte che gli sono state assegnate.
+
+
+00:41:07
+
+Erik Capoccetta: Ma beh, le tratte non ci stanno perché se mi se mi dici che lo devo caricare pure
+Davide Chieli: Non può essere impossibile. Esatto.
+Erik Capoccetta: senza tratte, la tratta gliela carichi dopo. Se entri su documentazione non ci sta il vettore che hanno fatto.
+Davide Chieli: Sì, ci sta.
+Erik Capoccetta: E allora, cioè
+Davide Chieli: Aspetta, questa è watt. Mo non mi ricordo qual è, eh, però ne hanno creato visuale due. Giovedì 26, tipo. Eccoli qua. Qua ci sono i due subvettori.
+Erik Capoccetta: eh no, loro dicono nei documenti
+Davide Chieli: Sì, andiamo a vedere.
+Erik Capoccetta: Eh,
+Davide Chieli: Eccoli qua,
+Erik Capoccetta: come no, ci sono, son stupidi.
+Davide Chieli: stanno un attimo.
+Erik Capoccetta: Yeah. Vabbè, quindi qui ci sono, lo trovano nella prima colonna.
+Davide Chieli: Io non ho capito che stanno dicendo, ti dico la verità, perciò ti so confuso. Non questo è i documenti degli altri,
+Erik Capoccetta: Quindi questo, vedi se ci sono pure le tratte a sto punto,
+Davide Chieli: però no,
+Erik Capoccetta: cioè e vabbè,
+Davide Chieli: le date non ci possono essere, mi sa.
+
+
+00:42:18
+
+Davide Chieli: O no? Oh, sì.
+Erik Capoccetta: se non ci hanno fatto un contratto, giustamente,
+Davide Chieli: Come si chiamava la Joed Forse? Mi ricordo come l'hanno chiamato, no? E non ci sono dat di questo qua
+Erik Capoccetta: ma se è nuovo. Vabbè, quindi punto 5 eh ha ha ragione,
+Davide Chieli: perché c'ha ragione,
+Erik Capoccetta: no? Dico punto 5, c'abbiamo ragione noi, scusami.
+Davide Chieli: eh.
+Erik Capoccetta: Punto C deve semplicemente andare là e vederlo. Poi la criticità maggiore riguarda il contratto. Prima di inviarlo l'operatore ha necessità di vedere il documento. Che vuol dire?
+Davide Chieli: Ma io questa cosa pure mi sfugge. No,
+Erik Capoccetta: vedere l'anteprima, forse.
+Davide Chieli: ma di che stanno parlando? Qui non ci stanno contratti, è normale che non lo possono vedere, cioè.
+Erik Capoccetta: Eh, infatti.
+Davide Chieli: E poi non ho capito se l'hanno completato il Wizard o no. fammi controllare pure questa cosa.
+Erik Capoccetta: Beh, se ci stanno i documenti.
+Davide Chieli: No, se i documenti ci sono, non è detto che l' abbiamo completato il Wizard, però No,
+
+
+00:43:23
+
+Erik Capoccetta: Ah, sì.
+Davide Chieli: Wizard è completato. Questo no, però questo no, questo è un altro,
+Erik Capoccetta: Allora,
+Davide Chieli: sorry. Ok, questo è tantestra. No, qui però questo qui giovedì 26. Questo l'hanno fatto. Questo è il primo, secondo me, che hanno finito. Eh, per questo qui effettivamente la mail rappresentante ci sta. Eh, i dati li hanno inseriti.
+Erik Capoccetta: ma poi sono anche stupidi perché è ovvio che non gli arriva la mail,
+Davide Chieli: Ma credenziale stati Esatto,
+Erik Capoccetta: devono mettere la mail vera.
+Davide Chieli: questa è la cosa che ti volevo dire. Qua hanno messo sta mail qua e grazie al c**** che non arriva niente. Cioè se non esiste sta mail è normale che non arriva niente.
+Erik Capoccetta: Vabbè,
+Davide Chieli: A parte che questa mail vabbè e allora arriverebbe come ti dicevo prima, le credenziali arrivano sulla mail subvetture, il contratto arriva sulla PEC.
+Erik Capoccetta: scusa, come hanno fatto a completare il Wizard se è arrivata sta mail qua?
+Davide Chieli: Quale mail?
+Erik Capoccetta: Cioè la mail quella di benvenuto non arriva questa qua giovedì 26_ quella per fare il wizard.
+
+
+00:44:33
+
+Erik Capoccetta: Come hanno fatto a finirlo?
+Davide Chieli: Sì,
+Erik Capoccetta: Sarà vera sta mail allora.
+Davide Chieli: sarà vero. Allora,
+Erik Capoccetta: Ah!
+Davide Chieli: il problema è che loro hanno messo come pecc che hanno messo
+Erik Capoccetta: Eh,
+Davide Chieli: Oh,
+Erik Capoccetta: niente.
+Davide Chieli: o è andato nello spam. Non c'è niente qua.
+Erik Capoccetta: Ah,
+Davide Chieli: È strano che non ci sia, però ci deve stare per forza la pecca. Non.
+Erik Capoccetta: scusa. Poi se volete fare un contratto, dovevano inserire delle tratte o no?
+Davide Chieli: Sì. No, c'è secondo me c'è qualche cosa di maluso.
+Erik Capoccetta: Ma sicuramente, vabbè, eh, abbiamo capito, però vorrei capire questa cosa. Oggi possiamo solo inviarlo senza visionarlo. Loro che vogliono vedere l'anteprima del contratto del contratto.
+Davide Chieli: Ma di che? Cioè io il contratto quando se quando sei attivo tipo qua è visibile qua dentro,
+Erik Capoccetta: Infatti di che stanno parlando?
+Davide Chieli: però loro non hanno contratti lì dentro su AT,
+Erik Capoccetta: Eh,
+Davide Chieli: cioè perciò non sto capendo di che stanno parlando,
+
+
+00:45:39
+
+Erik Capoccetta: vabbè, quindi anche questo anche questi due punti secondo me
+Davide Chieli: però ci sta l'anteprima, l'abbiamo messa.
+Erik Capoccetta: eh sì. M cioè poi ha detto che ha provato a contattarmi, non ho capito quando. No.
+Davide Chieli: Ma prima di inviare la finità maggiore riguarda il contratto? Ma è normale se non è stato, cioè c'è qualcosa che mi sfugge. Poi io sono, cioè ho un po' paura che loro, ripeto, non abbiano ricevuto la mail. Testando l'invio del contratto abbiamo riscontrato che non viene ricevuto dal vettore. Come l'hanno testato l'invio del contratto?
+Erik Capoccetta: Eh, infatti se non c'è nessun contratto
+Davide Chieli: Cioè, non c'è nessun contratto, come l'hanno testato?
+Erik Capoccetta: non non lo so, guarda.
+Davide Chieli: Ma io sono perplesso.
+Erik Capoccetta: Vabbè. Eh, allora punti 5 e se non non hanno ragione, sono bug inesistenti, eh. Però i punti 1 2 3 e 4 vanno vanno
+Davide Chieli: No, il quattro abbiamo detto ci sta.
+Erik Capoccetta: e quattro va provato. Mi devi assicurarti che sia effettivamente eh però i
+Davide Chieli: Infatti ci sta.
+
+
+00:47:00
+
+Davide Chieli: Ok.
+Erik Capoccetta: punti 1 2 e 3. Quindi punto uno, devi rivedere,
+Davide Chieli: Il tre è fatto e l'ho corretto già su AT. Mo devo ricontrollarlo, però ci sta pure questo.
+Erik Capoccetta: eh. Quindi azzera tutte le anagrafiche,
+Davide Chieli: Eh,
+Erik Capoccetta: ti fai un test, eh, fai il primo impianto con quei 100 vettori secondo la la query che ci hanno detto loro all'inizio e poi provi a inserire un vettore a mano e lanci il job per vedere
+Davide Chieli: Mhm.
+Erik Capoccetta: se si prende i dati.
+Davide Chieli: Quindi allora solo una cosa, insert data ora e update data ora stava su tutti i due base vettori,
+Erik Capoccetta: Sì.
+Davide Chieli: devo controllare quella, giusto?
+Erik Capoccetta: Sì.
+Davide Chieli: Eh, quindi devono essere, abbiamo detto quelli là superiori alla syncate e originale,
+Erik Capoccetta: Ah,
+Davide Chieli: giusto?
+Erik Capoccetta: sync date che s'aggiorna ogni volta che loro premono.
+Davide Chieli: sincronizza subettori.
+Erik Capoccetta: Ovviamente le sync date per le tratte e per le anagrafiche sono separate, no?
+Davide Chieli: Sì, sì, ne faccio due come ti ho detto io.
+Erik Capoccetta: Eh,
+
+
+00:48:00
+
+Davide Chieli: Sì, sì, sì,
+Erik Capoccetta: ok. Poi devi mettere i tre pulsanti in basso.
+Davide Chieli: però boh.
+Erik Capoccetta: Vabbè, facilissimo.
+Davide Chieli: Eh, però boh, cioè, vabbè, sì, questa cosa mi ha mi ha sconvolto, guarda. Io non lo so. Vabbè, Francesca m'ha si è arrabbiata perché appunto Vabbè, ci sta. Io capisco pure che stanno nervosissimi tutti quanti. Vabbè,
+Erik Capoccetta: Vabbè, se li vogliono in basso mettiamoli in basso,
+Davide Chieli: sì. Sì, sì, va bene.
+Erik Capoccetta: cioè e devi gestire la scadenza precompilata e bloccata per questi per questi
+Davide Chieli: Ah, questa cosa la devo fare per forza.
+Erik Capoccetta: che quale 2.2.
+Davide Chieli: È il punto, come ti ho detto, è una cosa in più.
+Erik Capoccetta: Eh vabbè, sì, ormai ci siamo, cioè non è che stiamo nella posizione di potergli dire
+Davide Chieli: Vabbè, al massimo questa cosa non modificabile che è una rogna. Vabbè, ma gliela faccio.
+Erik Capoccetta: eh queste cose qua,
+Davide Chieli: Vabbè, va buono.
+Erik Capoccetta: e poi verificare che il manuale del vettore si veda,
+Davide Chieli: Mh mh mh.
+
+
+00:49:07
+
+Erik Capoccetta: verificare che arriva la notifica e invece punti 56 e 6 gli dirò poi io E
+Davide Chieli: 56. Non ho proprio capito com'è possibile perché, ripeto, non hanno creato nessun non hanno fatto nulla.
+Erik Capoccetta: vabbè, mo vabbè, mo gli le rispondo io dicendole poi che martedì quando andiamo lì affronteremo la questione.
+Davide Chieli: Mh.
+Erik Capoccetta: Per martedì devono essere fatte ste cose, ovviamente va da sé.
+Davide Chieli: Sì, sì, è chiaro.
+Erik Capoccetta: Eh,
+Davide Chieli: Va bene.
+Erik Capoccetta: niente, eh, mi raccomando, cioè, fai tutti i test possibili, immaginabili, deve essere deve essere perfetto,
+Davide Chieli: Cercherò la perfezione.
+Erik Capoccetta: no? Cioè,
+Davide Chieli: Cercherò di fare il meglio del posso.
+Erik Capoccetta: perfetto. Per quanto possibile, però queste cose che hanno detto devono funzionare.
+Davide Chieli: Eh,
+Erik Capoccetta: Cioè,
+Davide Chieli: lo so.
+Erik Capoccetta: tu puoi anche inserire un vettore su SGA, tanto non è che poi lo vedono, eh. Su SGA quell'altro, quello loro, quello vero, che per testare in nuat si collega a quello.
+Davide Chieli: Ah, dici che lo posso fa'?
+Erik Capoccetta: Eh, sì, poi lo cancelli che fa.
+
+
+00:50:18
+
+Davide Chieli: Ok. Eh, il viaggio non posso aggiungerlo su
+Erik Capoccetta: No, da ad miner pure il viaggio poi pot
+Davide Chieli: eh dico, potrei farlo pure quello. Potenzialmente lo potrei fare,
+Erik Capoccetta: Sì,
+Davide Chieli: però quello è invasivo,
+Erik Capoccetta: lo cioè il tempo che fai il test magari.
+Davide Chieli: capito? Cioè, fa insert su tante tabelle diverse.
+Erik Capoccetta: Eh, vabbè, eh assicurati sul vettore che è una tabella sola. Fallo, fallo su quello,
+Davide Chieli: Sul sul vettore lo farei sul sul là, non lo so.
+Erik Capoccetta: no? sul viaggio lo fanno loro. Abbiamo Siamo sicuri che funziona. rivedi le guero, per assicurarti che sia così, però Eh, test sul vettore lo farei io, anche se poi tanto è un record, manco lo vedono.
+Davide Chieli: Sì, infatti. Sì.
+Erik Capoccetta: E poi ci serve, quindi lo dobbiamo fare,
+Davide Chieli: No, perché poi appare su SGA,
+Erik Capoccetta: quindi eh vabbè,
+Davide Chieli: capito? Non per altro.
+Erik Capoccetta: ma non è che stanno là ogni secondo a vedere, eh. Tu il tempo che fai il test poi lo levi.
+
+
+00:51:19
+
+Davide Chieli: Eh, posso io ce l'ho i permessi per cancellare su SGA,
+Erik Capoccetta: Sì, sì.
+Davide Chieli: fla delit su SGA. La posso fare io.
+Erik Capoccetta: Eh, credo di sì, eh.
+Davide Chieli: È grave che la posso fare.
+Erik Capoccetta: Eh,
+Davide Chieli: Bene.
+Erik Capoccetta: credo che si possa fare. Se proprio non la puoi fare, gli diciamo che l'abbiamo inserito noi per provare, tanto stanno facendo le prove.
+Davide Chieli: Non lo so. Dovremmo chiedere il permesso per fare una cosa del genere, secondo me. Però,
+Erik Capoccetta: E come fai a provare? E vabbè, lo puoi fare qua su dev, tanto poi è speculare il database. Fallo su, dai, fallo su Dev, poi poi su AT lo faremo fare a loro. Magari lo faccio io con loro quando siamo là martedì, così siamo sicuri Eh
+Davide Chieli: però boh, io i test li sto facendo, cioè su Dev funzionano. Mo per dirti un attimo volevo continuare un attimo, eh. Ti faccio vedere se hai ancora tempo. Finiamo sto test. Dove sta?
+
+
+00:52:19
+
+Davide Chieli: Questo è questo qui è il vettore che ho creato io adesso da eh da debever. Quindi ho aggiunto questo qui. Dovrei aver quasi completato il funnel. Eh
+Erik Capoccetta: Eh, ma mo diciamo non c'ha senso testare se se prima non fai quelle modifiche. No,
+Davide Chieli: vabbè, questo era solo Sì, ha senso testare in effetti perché questa è le tratte.
+Erik Capoccetta: queste è le tratte. Ok. Vabbè, qua devi firmare ancora tutti i documenti.
+Davide Chieli: Devi solo fare questo, diciamo, vi attivazione. Questo volevo farti vedere anche che arriva la notifica, almeno in dev. Allora, questa è sono i documenti che vabbè caricati dal subvettore nuovo, quindi qua il subvettore è stato creato,
+Erik Capoccetta: Hm.
+Davide Chieli: non ha tratte, quindi entra nel caso di eh contratto di tipo uno.
+Erik Capoccetta: M.
+Davide Chieli: Adesso loggo come admin. Ah!
+Erik Capoccetta: Vediamo la notifica. Ah! Eh! Eh, non è che arriva solo all'adminatore.
+Davide Chieli: Eccolo qua. No, arrivano quest l'admin. Sono tutti admin,
+
+
+00:53:43
+
+Erik Capoccetta: Ah,
+Davide Chieli: quindi non è possibile.
+Erik Capoccetta: ok.
+Davide Chieli: Ok, quindi qua ci sta. Mo io che cosa vado a fare?
+Erik Capoccetta: Come sono admin? Sono operatori dei viaggi perché adminò vede anche la sezione, la fatturazione poi, eh.
+Davide Chieli: No, e vabbè, allora poi magari gli scambio per adesso quello che mi hanno detto loro, perché io c'ho una mail che loro mi indicavano, erano tutti uno tranne Marcocia che era operatore.
+Erik Capoccetta: Eh, e forse loro stanno provando con Marcoccia e non arriva a Marcoccia.
+Davide Chieli: Comunque è anche operatore lui, cioè è anche cè è speculare comunque non c'è problema su questo.
+Erik Capoccetta: Ah, no, magari accertati,
+Davide Chieli: un Sì,
+Erik Capoccetta: fallo con un operatore la prova,
+Davide Chieli: sì, sì, vabbè,
+Erik Capoccetta: eh.
+Davide Chieli: vabbè, quindi praticamente gli operatori non hanno non vedranno la fatturazione il modulo 1.
+Erik Capoccetta: Mh.
+Davide Chieli: Questa è la differenza.
+Erik Capoccetta: Sì, perché poi ci sono gli operatori della fatturazione e gli operatori del de dei vettori dell'ufficio trasporti, quindi operatori della fatturazione vedono solo la fatturazione, operatori dei trasporti vedono solo la sta parte dei vettori,
+
+
+00:54:52
+
+Davide Chieli: Questa parte qui.
+Erik Capoccetta: l'admino.
+Davide Chieli: Ah, ok, va bene. Sì, sì, questa roba, però adesso come adesso sono speculari,
+Erik Capoccetta: No,
+Davide Chieli: cioè non comunque io
+Erik Capoccetta: basta che magari hai messo la notifica che arriva solo a un gruppo e a quell'altro non
+Davide Chieli: arrivano a tre a tre gruppi, 1 3 5 sarebbe adminatori e Pigliacelli che c'ha il gruppo a parte
+Erik Capoccetta: Ah, eh beh, allora all eh no sì,
+Davide Chieli: lui.
+Erik Capoccetta: esatto. Vabbè, allora quindi eh fai la prova,
+Davide Chieli: Vabbè,
+Erik Capoccetta: vediamo
+Davide Chieli: faccio la prova nuovi. È fatto. Io che cosa faccio adesso? Eh, vado a prendermi un attimo un viaggio nuovo, lo metto su eh di beaver. Eccolo qua. Quindi merce merce codice. Vabbè, mi ha fatto mi ha fatto la vado adesso a sincronizzare il tratte. Quindi ho messo la roba su SGA.
+Erik Capoccetta: อื
+Davide Chieli: Allora, dove sta adesso? Tratte sincronizza tratte. Un contratto nuovo. Tratte sincronizzate una.
+Erik Capoccetta: Mh.
+
+
+00:56:06
+
+Davide Chieli: E quindi adesso io c'ho 24. Eccolo qua. Merowet 521.
+Erik Capoccetta: Anteprima la puoi fare.
+Davide Chieli: Questa loro dovevano fa' come e come no.
+Erik Capoccetta: No, anteprima la puoi fare.
+Davide Chieli: Questa è Ma loro non ce l'hanno il
+Erik Capoccetta: Eh beh, allora che cacchio stanno a Sì,
+Davide Chieli: cioè non è vuota questa pagina a loro.
+Erik Capoccetta: sì. Se vai sulla lentina invece ti porta dentro, puoi vedere tutte le informazioni sulle tratte.
+Davide Chieli: Esatto.
+Erik Capoccetta: Ok, vai. Aspetta che è Francesca.
+Davide Chieli: Ah. Boh, non lo so che c**** hanno provato questi non lo so.
+Erik Capoccetta: Eccomi Davide. Allora,
+Davide Chieli: Tutto ok?
+Erik Capoccetta: sì, vabbè, sempre per ribadirmi cose, eh. Troppo se uno sta in difetto che devi fare allora che stai vedendo adesso?
+Davide Chieli: No, sto vedendo un attimo che casa hanno fatto. Quindi qua c'è il 127, quindi il subvettore ci sta. Stavo vedendo che hanno fatto, stavo cercando di capire che hanno fatto. Quindi qua ci sta la prova del 29 ottobre, quindi ieri che hanno fatto ci sta il subvettore.
+
+
+01:00:18
+
+Erik Capoccetta: Ah.
+Davide Chieli: Il subvettore è questo qua, è del 127 subvettore il D. fammi vedere un attimo. Stavo cercando un attimo, ripeto, di capire che hanno combinato. Ecco qua. C vedi questo qua. Hanno fatto il subvettore con
+Erik Capoccetta: Scusa, come mai ci sono tutti quegli altri ID con NAL?
+Davide Chieli: eh questi qua sono adesso ho fatto io l'import quello là,
+Erik Capoccetta: Ah, ho capito.
+Davide Chieli: quello là appunto senza il filtro semplicemente.
+Erik Capoccetta: Sì, sì.
+Davide Chieli: Infopec core Carmine. Io non vorrei che poi in realtà tipo pure i certificati si danno un problema e quindi magari se nello spam. Qui effettivamente risulta completato questo wizard.
+Erik Capoccetta: Ma allora può essere che stanno mandando a una PEC, da un indirizzo riposta normale È chiaro che non gli arriva.
+Davide Chieli: Non lo so come funzioni questa cosa.
+Erik Capoccetta: Eh sì, perché alcune per sono abilitate da ricevere solo da perk.
+Davide Chieli: Ah,
+Erik Capoccetta: Eh eh certo.
+Davide Chieli: addirittura che a me arriva a me la pec mia arrivano anche le mie normali.
+
+
+01:01:39
+
+Erik Capoccetta: Eh vabbè perché la tua hai messo magari nelle impostazioni certe
+Davide Chieli: Eh,
+Erik Capoccetta: pec solo ricevono solo da pec, quindi ho capito qual è il problema. M ma dico, stai facendo i test,
+Davide Chieli: ok,
+Erik Capoccetta: usi una pec vera, ma sei deficiente, cioè
+Davide Chieli: voglio vedere un attimo questa cosa. Questa è Vabbè, dopo comunque te l'ho fatto vedere che funziona, no?
+Erik Capoccetta: sì, sì,
+Davide Chieli: Sì,
+Erik Capoccetta: funziona. Dai, allora,
+Davide Chieli: non l'ho fatto vedere il contratto.
+Erik Capoccetta: rimaniamo così. Tu sistema questi questi questi punti uno e due e assicurati poi che tre e quattro funzionino. Poi me lo fai sapere?
+Davide Chieli: Sì,
+Erik Capoccetta: Allora, fa una cosa, assicurati prima che tre e quattro funzionano, così io poi gli posso rispondere alla mail.
+Davide Chieli: no, tratto effettivamente qui non ce l'hanno su questo subvettore. Vabbè,
+Erik Capoccetta: Eh,
+Davide Chieli: chiaramente.
+Erik Capoccetta: eh, capito? Assicurati che 3 e qu funzionano e me lo fai sapere entro la mattinata
+Davide Chieli: Eh,
+Erik Capoccetta: così.
+Davide Chieli: io mo non so se hanno sincronizzato le tratte di questo tizio correttamente.
+
+
+01:02:33
+
+Davide Chieli: Io questo non so che è successo qua.
+Erik Capoccetta: Eh, vabbè, ma questo, cioè, cioè una cosa che vedranno loro.
+Davide Chieli: Mm. Vabbè.
+Erik Capoccetta: Allora, facciamo un attimo il piano operativo.
+Davide Chieli: Sì,
+Erik Capoccetta: Mi fai sapere subito se tre e quattro funzionano su AT?
+Davide Chieli: sì,
+Erik Capoccetta: Così io poi le posso rispondere alla mail entro pranzo e poi devi lavorare su uno
+Davide Chieli: sì. M. Ok.
+Erik Capoccetta: e due e devono essere pronti. Poi casomai lunedì li proviamo prima che eh vabbè tanto il punto
+Davide Chieli: Sì.
+Erik Capoccetta: du 2.1 è facile e quell'altri due sono un po' più stupicciosi, però eh entro lunedì devono essere fatti. riproviamo, noi li riproviamo in AT, facciamo un ultimo giro così poi martedì quando andiamo là facciamo una prova in
+Davide Chieli: Mh.
+Erik Capoccetta: diretta.
+Davide Chieli: Poi bisogna vedere che cosa hanno fatto nelle tratte, cioè il gaggio come l'hanno aggiunto su su SGA,
+Erik Capoccetta: E vabbè,
+Davide Chieli: perché se loro hanno aggiunto effettivamente sul bettore l'ora ci sta adesso.
+Erik Capoccetta: poi vediamo.
+Davide Chieli: Mo non so se questa cosa è venuta dopo o prima.
+
+
+01:03:44
+
+Erik Capoccetta: Eh, ma se tu fai sincronizza che fa?
+Davide Chieli: Sta ancora sincronizzando.
+Erik Capoccetta: Eh, come mai però?
+Davide Chieli: No, ci vuole un po'.
+Erik Capoccetta: Eh,
+Davide Chieli: Non è immediato.
+Erik Capoccetta: ma perché qua tu non hai messo il filtro dall'ultima sincronizzazione?
+Davide Chieli: Sì, sì, sì, ci sta.
+Erik Capoccetta: Ah, e ci mette così tanto
+Davide Chieli: Sì, perché adesso ricontrolla anche se trova qualcosa, ricontrolla tutte le tratte dal 2024.
+Erik Capoccetta: e come Vai.
+Davide Chieli: Eh, perché è lungo da spiegare, diciamo. Vabbè, comunque fa un check doppio praticamente, perché lui fa cerca le praticamente che cosa fa? Cerca le tratte eh nuove su SGA. Ehm, controller, diciamo, che ci sono i subvettori abbiano completato il wizard,
+Erik Capoccetta: Mh.
+Davide Chieli: che non ci siano tratte per questo vettore zero in prima
+Erik Capoccetta: Mh.
+Davide Chieli: istanza e poi si va a recuperare le tratte eventualmente ehm precedenti dal DB.
+Erik Capoccetta: E perché se già ce l'hai
+Davide Chieli: Eh, non è detto che ce l'ho già perché non vengono prese se non come ti dicevo, non diciamo le tratte non vengono prese se eh abbiamo
+
+
+01:04:59
+
+Erik Capoccetta: eh, ma tu tu c'hai il campo modificato, se poi l'hanno modificata, cioè tu devi filtrare, devi prendere solo le tratte che sono state impossibile che vai a sincronizzare 345 tratte.
+Davide Chieli: eh però zero modificato e zero nuove è zero allegati.
+Erik Capoccetta: Eh, appunto, non le devi proprio considerare nel filtro quelle tratte là. Usalo,
+Davide Chieli: cioè
+Erik Capoccetta: usa il campo modificato perché
+Davide Chieli: uso
+Erik Capoccetta: sennò eh perché ti vai a recuperare quella del 2024. Allora,
+Davide Chieli: eh perché mh
+Erik Capoccetta: cioè se loro fanno una modifica,
+Davide Chieli: M.
+Erik Capoccetta: logicamente io penso che il SGA mi vada a popolare quel campo modificato A con la data in cui hanno fatto la modifica. È inutile che io mi vada a riprendere tutte le tratte del sì che ci mette milioni d'anni su cosa a fare
+Davide Chieli: Vabbè, ciè messo un po' perché alla fine questa cosa Tam. Vabbè, la controllo di nuovo, vedo se la posso semplificare.
+Erik Capoccetta: Ma io sì, semplificherei, tu devi solo prendere quelle modificate o inserite rispetto alla all'ultima data di sincronizzazione e noi ci dobbiamo aspettare che SGA funzioni come ci hanno detto.
+
+
+01:06:14
+
+Erik Capoccetta: Quindi che se uno fa una modifica mi va a mettere il campo modificato a con la data ora in cui è stata fatta la modifica.
+Davide Chieli: Esatto. Sì.
+Erik Capoccetta: Io non è che devo presumere che SGA non funziona. Se SGA poi non funziona, se la prendono con SGA. Sennò noi dobbiamo snellire.
+Davide Chieli: Oh.
+Erik Capoccetta: Infatti, cio hai visto su su dev un minuto la fai la la sincronizzazione e quello pure c'ha il database vecchio.
+Davide Chieli: Mh.
+Erik Capoccetta: Infatti eh no,
+Davide Chieli: Vabbè, questa cosa la ricontrollo.
+Erik Capoccetta: ricontrolla perché non può essere che ci metta così tanto.
+Davide Chieli: Va bene.
+Erik Capoccetta: Va bene Davide,
+Davide Chieli: Eh,
+Erik Capoccetta: allora fammi sapere entro pranzo queste cose così io poi ce le posso rispondere alla mail. Mi raccomando, cerchiamo di evitare un'altra
+Davide Chieli: sì, sì.
+Erik Capoccetta: stalza,
+Davide Chieli: Sì, strigliate le prendo anche io, quindi figurati, è normale che uno vorrebbe evitare qualsiasi problema.
+Erik Capoccetta: appunto.
+Davide Chieli: E certo. Vabbè,
+Erik Capoccetta: Va bene, c più tardi,
+Davide Chieli: ci tentiamo più tardi.
+Erik Capoccetta: dai. Buon lavoro.
+Davide Chieli: Ciao. Ciao.
+
+
+Trascrizione terminata dopo 01:07:30
+
+Questa trascrizione modificabile è stata generata dal computer e potrebbe contenere errori. È possibile anche modificare manualmente il testo dopo la creazione.
+

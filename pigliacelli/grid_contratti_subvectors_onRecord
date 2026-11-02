@@ -1,0 +1,65 @@
+/**
+ * grid_contratti_subvectors → onRecord
+ * Incluso show/hide di sign_contract_subvettore (Firma contratto).
+ */
+
+$stato = {stato_contratto_id};
+switch ($stato) {
+
+    case 1: // Da inviare al subvettore
+        sc_actionbar_hide("open_template_pdf");
+        sc_actionbar_hide("view_contract");
+        sc_actionbar_hide("show_form_subvettori_contratti_review");
+        sc_actionbar_hide("sign_contract_subvettore");
+        break;
+
+    case 2: // Inviato al subvettore
+        sc_actionbar_show("open_template_pdf");
+        sc_actionbar_hide("view_contract");
+        sc_actionbar_show("show_form_subvettori_contratti_review");
+        sc_actionbar_hide("sign_contract_subvettore");
+        break;
+
+    case 3: // Compilato dal subvettore — revisione admin + avvio firma
+        sc_actionbar_show("open_template_pdf");
+        sc_actionbar_hide("view_contract");
+        sc_actionbar_hide("show_form_subvettori_contratti_review");
+        sc_actionbar_hide("sign_contract_subvettore");
+        break;
+
+    case 4: // In attesa della firma subvettore
+        sc_actionbar_show("open_template_pdf");
+        sc_actionbar_hide("view_contract");
+        sc_actionbar_hide("show_form_subvettori_contratti_review");
+        sc_actionbar_show("sign_contract_subvettore");
+        break;
+
+    case 5: // In attesa della firma committente
+        sc_actionbar_hide("open_template_pdf");
+        sc_actionbar_show("view_contract");
+        sc_actionbar_hide("show_form_subvettori_contratti_review");
+        sc_actionbar_hide("sign_contract_subvettore");
+        break;
+
+    case 6: // Completato
+        sc_actionbar_hide("open_template_pdf");
+        sc_actionbar_show("view_contract");
+        sc_actionbar_hide("show_form_subvettori_contratti_review");
+        sc_actionbar_hide("sign_contract_subvettore");
+        break;
+
+    case 7: // Rifiutato dal subvettore
+    case 8: // Rifiutato dal committente
+        sc_actionbar_hide("open_template_pdf");
+        sc_actionbar_show("view_contract");
+        sc_actionbar_hide("show_form_subvettori_contratti_review");
+        sc_actionbar_hide("sign_contract_subvettore");
+        break;
+
+    default:
+        sc_actionbar_hide("open_template_pdf");
+        sc_actionbar_hide("view_contract");
+        sc_actionbar_hide("show_form_subvettori_contratti_review");
+        sc_actionbar_hide("sign_contract_subvettore");
+        break;
+}

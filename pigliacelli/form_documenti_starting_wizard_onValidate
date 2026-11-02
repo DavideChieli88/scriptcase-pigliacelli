@@ -6,6 +6,7 @@
  * Tipi non mandatory e non flag_possesso: nessun blocco.
  *
  * Non usare sc_error_exit (form multi-step / AJAX).
+ * Wizard subvettore: forza scadenze ANGA/RENTRI 30/04, Albo 31/01.
  */
 
 $err = array();
@@ -13,15 +14,39 @@ $err = array();
 $tipoId = isset({tipo_documento_id}) ? (int){tipo_documento_id} : 0;
 $isMandatory  = 0;
 $isFlagPossesso = 0;
+$nomeTipoDoc = '';
 if ($tipoId > 0) {
     sc_lookup(rsWizDocTipoMand, "
-        SELECT COALESCE(mandatory, 0), COALESCE(flag_possesso, 0)
+        SELECT COALESCE(mandatory, 0), COALESCE(flag_possesso, 0), COALESCE(nome, '')
         FROM tipi_documento
         WHERE id = $tipoId
         LIMIT 1
     ", 'pigliacelli');
     $isMandatory    = !empty({rsWizDocTipoMand[0][0]}) ? (int){rsWizDocTipoMand[0][0]} : 0;
     $isFlagPossesso = !empty({rsWizDocTipoMand[0][1]}) ? (int){rsWizDocTipoMand[0][1]} : 0;
+    $nomeTipoDoc    = !empty({rsWizDocTipoMand[0][2]}) ? trim((string){rsWizDocTipoMand[0][2]}) : '';
+}
+
+$nFix = strtolower($nomeTipoDoc);
+$mdFix = '';
+if ($nFix !== '') {
+    if (strpos($nFix, 'ricevuta pagamento anga') === 0 || strpos($nFix, 'ricevuta pagamento rentri') === 0) {
+        $mdFix = '04-30';
+    } elseif (
+        strpos($nFix, 'ricevuta') !== false
+        && strpos($nFix, 'albo') !== false
+        && strpos($nFix, 'conto terzi') !== false
+    ) {
+        $mdFix = '01-31';
+    }
+}
+if ($mdFix !== '') {
+    $yFix = (int)date('Y');
+    $scadFissa = sprintf('%04d-%s', $yFix, $mdFix);
+    if (date('Y-m-d') >= $scadFissa) {
+        $scadFissa = sprintf('%04d-%s', $yFix + 1, $mdFix);
+    }
+    {data_scadenza} = $scadFissa;
 }
 
 // Tipi flag_possesso: validazione condizionale
