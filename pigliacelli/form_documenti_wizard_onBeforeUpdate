@@ -7,10 +7,18 @@
  * Casi gestiti:
  *  A) nuovo file in $_FILES → salva su disco + forza {file} basename
  *  B) SC ajax upload: {file} punta a un tmp (sc_… / path) diverso dal DB → sposta in doc/
+ *  C) {file} resta = nome DB (sostituzione): SC ha gia' scritto il nuovo in path_doc/tmp
+ *     ma non aggiorna il campo → prende il file piu' recente != DB e forza {file}
  *
- * Log: cerca WIZ_DOCS in Application Log dopo Salva.
- * Niente COMMIT qui (SC ha gia' la tx aperta).
+ * Log: tag WIZARD + WIZ_DOCS.
+ * COMMIT serve (altrimenti Fatal "active transaction"), ma PRIMA si fa
+ * UPDATE documenti file+scadenza: cosi' i dati restano anche se SC non ripete l'UPDATE.
  */
+
+$wizDocLog = function ($msg) {
+    sc_log_add('WIZARD', 'DOCS ' . $msg);
+    sc_log_add('WIZ_DOCS', $msg);
+};
 
 $docId = isset({id}) ? (int){id} : 0;
 $fileField = trim((string){file});
@@ -20,26 +28,71 @@ if (isset($this->nmgp_opcao)) {
     $op = strtolower(trim((string)$this->nmgp_opcao));
 } elseif (isset($_POST['nmgp_opcao'])) {
     $op = strtolower(trim((string)$_POST['nmgp_opcao']));
+} elseif (isset($_GET['nmgp_opcao'])) {
+    $op = strtolower(trim((string)$_GET['nmgp_opcao']));
 }
 
 $fileKeys = array();
 if (!empty($_FILES) && is_array($_FILES)) {
     foreach ($_FILES as $k => $up) {
-        $err = is_array($up) && isset($up['error']) ? (int)$up['error'] : -1;
-        $nm  = is_array($up) && isset($up['name']) ? (string)$up['name'] : '';
-        $fileKeys[] = $k . '(err=' . $err . ',name=' . $nm . ')';
+        $err = is_array($up) && isset($up['error']) ? $up['error'] : -1;
+        if (is_array($err)) {
+            $err = (int)reset($err);
+        } else {
+            $err = (int)$err;
+        }
+        $nm = is_array($up) && isset($up['name']) ? $up['name'] : '';
+        if (is_array($nm)) {
+            $nm = (string)reset($nm);
+        }
+        $tmp = is_array($up) && isset($up['tmp_name']) ? $up['tmp_name'] : '';
+        if (is_array($tmp)) {
+            $tmp = (string)reset($tmp);
+        }
+        $fileKeys[] = $k . '(err=' . $err . ',name=' . $nm . ',tmp=' . basename((string)$tmp) . ')';
     }
 }
 
-if (function_exists('sc_log_add')) {
-    sc_log_add(
-        'WIZ_DOCS',
-        'onBeforeUpdate ENTER doc=' . $docId
-        . ' op=[' . $op . ']'
-        . ' fileField=[' . $fileField . ']'
-        . ' FILES=[' . (empty($fileKeys) ? '-' : implode('|', $fileKeys)) . ']'
-    );
+$postKeys = array();
+$postFileish = array();
+if (!empty($_POST) && is_array($_POST)) {
+    foreach ($_POST as $pk => $pv) {
+        $postKeys[] = (string)$pk;
+        if (count($postKeys) > 80) {
+            break;
+        }
+        $pkL = strtolower((string)$pk);
+        if (
+            strpos($pkL, 'file') === false
+            && strpos($pkL, 'upload') === false
+            && strpos($pkL, 'doc') === false
+            && strpos($pkL, 'nmgp') === false
+        ) {
+            continue;
+        }
+        if (is_array($pv)) {
+            $postFileish[] = $pk . '=[array:' . count($pv) . ']';
+            continue;
+        }
+        $pvS = trim((string)$pv);
+        if (strlen($pvS) > 100) {
+            $pvS = substr($pvS, 0, 97) . '...';
+        }
+        $postFileish[] = $pk . '=' . $pvS;
+        if (count($postFileish) >= 20) {
+            break;
+        }
+    }
 }
+
+$wizDocLog(
+    'onBeforeUpdate ENTER doc=' . $docId
+    . ' op=[' . $op . ']'
+    . ' fileField=[' . $fileField . ']'
+    . ' FILES=[' . (empty($fileKeys) ? '-' : implode('|', $fileKeys)) . ']'
+    . ' POST_fileish=[' . (empty($postFileish) ? '-' : implode('|', $postFileish)) . ']'
+    . ' POST_keys=' . count($postKeys)
+);
 
 // --- helper locali (niente sc_lookup dentro function) ---
 $wizSafeBase = function ($name) {
@@ -139,6 +192,100 @@ $markReplaced = function ($docId, $newName, $savedPath) {
     );
 };
 
+// Chiude tx su $this->Db (ADODB-PDO) + connessione 'pigliacelli'.
+// sc_exec_sql('COMMIT') da solo NON basta: PDO resta inTransaction →
+// SC BeginTrans in nm_acessa_banco → Fatal "already an active transaction".
+$wizCloseTx = function () {
+    try {
+        if (isset($this->Db) && is_object($this->Db)) {
+            try {
+                if (!empty($this->Db->transCnt)) {
+                    while (!empty($this->Db->transCnt)) {
+                        $this->Db->CommitTrans();
+                    }
+                }
+            } catch (Throwable $e) {
+                // ok
+            }
+            try {
+                if (isset($this->Db->_connectionID)
+                    && $this->Db->_connectionID instanceof PDO
+                    && $this->Db->_connectionID->inTransaction()
+                ) {
+                    $this->Db->_connectionID->commit();
+                }
+            } catch (Throwable $e) {
+                // ok
+            }
+            try {
+                $this->Db->Execute('COMMIT');
+            } catch (Throwable $e) {
+                // ok
+            }
+            try {
+                $this->Db->Execute('SET autocommit = 1');
+            } catch (Throwable $e) {
+                // ok
+            }
+            if (property_exists($this->Db, '_hastrans')) {
+                $this->Db->_hastrans = false;
+            }
+            if (property_exists($this->Db, 'transCnt')) {
+                $this->Db->transCnt = 0;
+            }
+        }
+    } catch (Throwable $e) {
+        // ok
+    }
+    try {
+        sc_exec_sql('COMMIT', 'pigliacelli');
+    } catch (Throwable $e) {
+        // ok
+    }
+    try {
+        sc_exec_sql('SET autocommit = 1', 'pigliacelli');
+    } catch (Throwable $e) {
+        // ok
+    }
+};
+
+// UPDATE nostro + close tx (macro {campo} non dentro la closure).
+$wizPersistAndCommit = function ($docId, $fileName, $scadSql) use ($wizDocLog, $wizCloseTx) {
+    $docId = (int)$docId;
+    $sets = array(
+        'stato_documento_id = 2',
+        'is_not_ok = 0',
+        'updated_at = NOW()',
+    );
+    if ($fileName !== '') {
+        $sets[] = "file = '" . str_replace("'", "''", $fileName) . "'";
+    }
+    if ($scadSql !== '') {
+        $sets[] = "data_scadenza = '" . str_replace("'", "''", $scadSql) . "'";
+    }
+    if ($docId > 0 && count($sets) > 0) {
+        // sc_exec_sql("...") in SC non valuta concat PHP: build su variabile.
+        $wizSqlPersist = 'UPDATE documenti SET ' . implode(', ', $sets) . ' WHERE id = ' . $docId;
+        sc_exec_sql($wizSqlPersist, 'pigliacelli');
+    }
+    $wizCloseTx();
+    $wizDocLog(
+        "persist+COMMIT doc=$docId file=[$fileName] scad=[$scadSql]"
+    );
+};
+
+// Scadenza gia' valorizzata da onValidate / form (Y-m-d o dd/mm/yyyy).
+$scadRawP = isset({data_scadenza}) ? trim((string){data_scadenza}) : '';
+if (strpos($scadRawP, ' ') !== false) {
+    $scadRawP = trim(substr($scadRawP, 0, 10));
+}
+$wizScadSql = '';
+if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $scadRawP, $mm)) {
+    $wizScadSql = $mm[1] . '-' . $mm[2] . '-' . $mm[3];
+} elseif (preg_match('/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/', $scadRawP, $mm)) {
+    $wizScadSql = sprintf('%04d-%02d-%02d', (int)$mm[3], (int)$mm[2], (int)$mm[1]);
+}
+
 // --- A) upload classico $_FILES ---
 $upload = null;
 $uploadKey = '';
@@ -148,8 +295,8 @@ if (!empty($_FILES) && is_array($_FILES)) {
             continue;
         }
         // SC a volte manda name/tmp_name come array
-        $name = $up['name'];
-        $tmp  = $up['tmp_name'];
+        $name = isset($up['name']) ? $up['name'] : '';
+        $tmp  = isset($up['tmp_name']) ? $up['tmp_name'] : '';
         $err  = isset($up['error']) ? $up['error'] : UPLOAD_ERR_NO_FILE;
         if (is_array($name)) {
             $name = reset($name);
@@ -162,32 +309,43 @@ if (!empty($_FILES) && is_array($_FILES)) {
         } else {
             $err = (int)$err;
         }
-        if ($name === '' || $tmp === '' || $err !== UPLOAD_ERR_OK) {
+        $name = (string)$name;
+        $tmp = (string)$tmp;
+        if ($tmp === '' || $err !== UPLOAD_ERR_OK) {
             continue;
+        }
+        if ($name === '') {
+            $name = 'upload.bin';
         }
         if (!is_uploaded_file($tmp) && !is_readable($tmp)) {
             continue;
         }
-        $upload = array('name' => (string)$name, 'tmp_name' => (string)$tmp);
+        $upload = array('name' => $name, 'tmp_name' => $tmp);
         $uploadKey = (string)$key;
         break;
     }
 }
 
+$wizCommitOnly = $wizCloseTx;
+
 if ($upload !== null) {
     if (empty($dirList)) {
         sc_error_message('Cartella documenti non configurata (contratti_base_dir / Documents Path).');
+        $wizCommitOnly();
         return;
     }
-    $newName = $wizUniqueName($docId, $upload['name']);
+    // Nome originale (sanitizzato), senza prefisso doc{id}_timestamp_.
+    $newName = $wizSafeBase($upload['name']);
     $bin = @file_get_contents($upload['tmp_name']);
     if ($bin === false || $bin === '') {
         sc_error_message('Upload non leggibile.');
+        $wizCommitOnly();
         return;
     }
     $savedPath = $saveBinToDirs($bin, $newName);
     if ($savedPath === '') {
         sc_error_message('Impossibile salvare il nuovo file nella cartella documenti.');
+        $wizCommitOnly();
         return;
     }
     {file} = $newName;
@@ -195,9 +353,8 @@ if ($upload !== null) {
         unset($_FILES[$uploadKey]);
     }
     $markReplaced($docId, $newName, $savedPath);
-    if (function_exists('sc_log_add')) {
-        sc_log_add('WIZ_DOCS', "onBeforeUpdate replace FILES doc=$docId → $newName path=$savedPath");
-    }
+    $wizDocLog("onBeforeUpdate replace FILES doc=$docId → $newName path=$savedPath");
+    $wizPersistAndCommit($docId, $newName, $wizScadSql);
     return;
 }
 
@@ -250,21 +407,46 @@ if ($fileField !== '' && ($looksLikeTmp || $isNewVsDb)) {
     if (is_readable($src) && !is_dir($src)) {
         if (empty($dirList)) {
             sc_error_message('Cartella documenti non configurata (contratti_base_dir / Documents Path).');
+            $wizCommitOnly();
             return;
         }
-        $newName = $wizUniqueName($docId, $fieldBase);
+        // Se SC ha gia' messo il file in path_doc col suo nome (es. blank (2)(30).pdf),
+        // riusalo: niente prefisso doc{id}_timestamp_.
+        $srcBase = basename(str_replace('\\', '/', $src));
+        $alreadyInDoc = false;
+        $srcNorm = str_replace('\\', '/', $src);
+        $srcReal = @realpath($src);
+        foreach ($dirList as $d) {
+            $d = rtrim(str_replace('\\', '/', $d), '/');
+            if (strcasecmp($d . '/' . $srcBase, $srcNorm) === 0) {
+                $alreadyInDoc = true;
+                break;
+            }
+            $pReal = @realpath($d . '/' . $srcBase);
+            if ($srcReal !== false && $pReal !== false && $pReal === $srcReal) {
+                $alreadyInDoc = true;
+                break;
+            }
+        }
+        if ($alreadyInDoc && strpos($srcBase, 'sc_') !== 0) {
+            {file} = $srcBase;
+            $markReplaced($docId, $srcBase, $srcNorm);
+            $wizDocLog("onBeforeUpdate replace TMP/FIELD reuse doc=$docId old=$fileDb → $srcBase src=$src");
+            $wizPersistAndCommit($docId, $srcBase, $wizScadSql);
+            return;
+        }
+        // Da tmp sc_*: salva col basename SC (fieldBase), non col prefisso nostro.
+        $newName = (strpos($fieldBase, 'sc_') === 0)
+            ? $wizUniqueName($docId, $fieldBase)
+            : $wizSafeBase($fieldBase);
         $bin = @file_get_contents($src);
         if ($bin !== false && $bin !== '') {
             $savedPath = $saveBinToDirs($bin, $newName);
             if ($savedPath !== '') {
                 {file} = $newName;
                 $markReplaced($docId, $newName, $savedPath);
-                if (function_exists('sc_log_add')) {
-                    sc_log_add(
-                        'WIZ_DOCS',
-                        "onBeforeUpdate replace TMP/FIELD doc=$docId old=$fileDb → $newName src=$src"
-                    );
-                }
+                $wizDocLog("onBeforeUpdate replace TMP/FIELD doc=$docId old=$fileDb → $newName src=$src");
+                $wizPersistAndCommit($docId, $newName, $wizScadSql);
                 return;
             }
         }
@@ -274,13 +456,245 @@ if ($fileField !== '' && ($looksLikeTmp || $isNewVsDb)) {
     if ($isNewVsDb && $fieldBase !== '') {
         {file} = $fieldBase;
         $markReplaced($docId, $fieldBase, '');
-        if (function_exists('sc_log_add')) {
-            sc_log_add(
-                'WIZ_DOCS',
-                "onBeforeUpdate rename-only doc=$docId old=$fileDb → $fieldBase (src non leggibile: $fieldNorm)"
-            );
-        }
+        $wizDocLog("onBeforeUpdate rename-only doc=$docId old=$fileDb → $fieldBase (src non leggibile: $fieldNorm)");
+        $wizPersistAndCommit($docId, $fieldBase, $wizScadSql);
         return;
+    }
+}
+
+$wizDocLog(
+    'onBeforeUpdate preC doc=' . $docId
+    . ' db=[' . $fileDb . ']'
+    . ' field=[' . $fieldBase . ']'
+    . ' tmp=' . ($looksLikeTmp ? '1' : '0')
+    . ' newVsDb=' . ($isNewVsDb ? '1' : '0')
+    . ' dirs=[' . implode(',', $dirList) . ']'
+);
+
+// --- C) Sostituzione: {file} resta = nome gia' in DB.
+// L'ajax SC scrive spesso il nuovo PDF in path_doc PRIMA del Salva (request separata),
+// quindi al Salva non c'e' $_FILES: si cerca un file piu' recente di fileDb.
+if ($docId > 0 && $fileDb !== '' && !$looksLikeTmp && !$isNewVsDb) {
+    $candSrc = '';
+    $candName = '';
+    $now = time();
+    $maxAge = 900;
+
+    $fileDbMtime = 0;
+    foreach ($dirList as $d) {
+        $pOld = rtrim(str_replace('\\', '/', $d), '/') . '/' . $fileDb;
+        if (is_file($pOld)) {
+            $mtOld = @filemtime($pOld);
+            if ($mtOld !== false) {
+                $fileDbMtime = (int)$mtOld;
+            }
+            break;
+        }
+    }
+
+    // 1) POST con path/nome diverso dal DB
+    if (!empty($_POST) && is_array($_POST)) {
+        foreach ($_POST as $pk => $pv) {
+            if (!is_string($pv)) {
+                continue;
+            }
+            $pv = trim($pv);
+            if ($pv === '' || stripos($pv, 'application/') === 0) {
+                continue;
+            }
+            $pkL = strtolower((string)$pk);
+            $bn = basename(str_replace('\\', '/', $pv));
+            if ($bn === '' || strcasecmp($bn, $fileDb) === 0) {
+                continue;
+            }
+            $interesting =
+                strpos($pkL, 'file') !== false
+                || strpos($pkL, 'upload') !== false
+                || strpos($bn, 'sc_') === 0
+                || strpos($pv, '/tmp') !== false
+                || strpos($pv, '\\tmp') !== false;
+            if (!$interesting) {
+                continue;
+            }
+            $candSrc = str_replace('\\', '/', $pv);
+            $candName = $bn;
+            break;
+        }
+    }
+
+    // 2) File in path_doc piu' recente di fileDb (ajax SC gia' completato)
+    if ($candSrc === '' || !is_readable($candSrc)) {
+        $best = '';
+        $bestMt = 0;
+        $bestName = '';
+        $bestScore = -1;
+        // Preferisci varianti SC dello stesso nome: "a.pdf" → "a(1).pdf"
+        $stemDb = preg_replace('/\(\d+\)+(?=\.[^.]+$)/', '', $fileDb);
+        $stemDb = strtolower((string)$stemDb);
+        foreach ($dirList as $d) {
+            $d = rtrim(str_replace('\\', '/', $d), '/');
+            if (!is_dir($d)) {
+                continue;
+            }
+            $dh = @opendir($d);
+            if ($dh === false) {
+                continue;
+            }
+            while (($fn = readdir($dh)) !== false) {
+                if ($fn === '.' || $fn === '..') {
+                    continue;
+                }
+                if (strcasecmp($fn, $fileDb) === 0) {
+                    continue;
+                }
+                if (!preg_match('/\.(pdf|png|jpe?g|gif|doc|docx|xls|xlsx|zip)$/i', $fn)
+                    && strpos($fn, 'sc_') !== 0
+                    && strpos($fn, 'doc' . $docId . '_') !== 0
+                ) {
+                    continue;
+                }
+                $full = $d . '/' . $fn;
+                if (!is_file($full) || !is_readable($full)) {
+                    continue;
+                }
+                $sz = @filesize($full);
+                if ($sz === false || $sz < 32) {
+                    continue;
+                }
+                $mt = @filemtime($full);
+                if ($mt === false || ($now - $mt) > $maxAge) {
+                    continue;
+                }
+                // Deve essere piu' nuovo del file gia' in DB (evita sola-data).
+                if ($fileDbMtime > 0 && $mt <= $fileDbMtime) {
+                    continue;
+                }
+                $score = 0;
+                $stemFn = preg_replace('/\(\d+\)+(?=\.[^.]+$)/', '', $fn);
+                $stemFn = strtolower((string)$stemFn);
+                if ($stemDb !== '' && $stemFn === $stemDb) {
+                    $score += 100;
+                }
+                if (strpos($fn, 'doc' . $docId . '_') === 0) {
+                    $score += 50;
+                }
+                $score += (int)$mt; // tie-break: piu' recente
+                if ($score >= $bestScore) {
+                    $bestScore = $score;
+                    $bestMt = $mt;
+                    $best = $full;
+                    $bestName = $fn;
+                }
+            }
+            closedir($dh);
+        }
+        if ($best !== '') {
+            $candSrc = $best;
+            $candName = $bestName;
+        }
+    }
+
+    // 3) Fallback tmp SC
+    if ($candSrc === '' || !is_readable($candSrc)) {
+        $tmpDirs = array();
+        foreach ($dirList as $d) {
+            $tmpDirs[] = rtrim($d, '/') . '/../tmp';
+            $tmpDirs[] = rtrim($d, '/') . '/tmp';
+        }
+        if (!empty($_SERVER['DOCUMENT_ROOT'])) {
+            $dr = rtrim(str_replace('\\', '/', (string)$_SERVER['DOCUMENT_ROOT']), '/');
+            $tmpDirs[] = $dr . '/scriptcase/tmp';
+            $tmpDirs[] = $dr . '/tmp';
+        }
+        $best = '';
+        $bestMt = 0;
+        foreach (array_unique($tmpDirs) as $td) {
+            $td = str_replace('\\', '/', $td);
+            if (!is_dir($td)) {
+                continue;
+            }
+            $dh = @opendir($td);
+            if ($dh === false) {
+                continue;
+            }
+            while (($fn = readdir($dh)) !== false) {
+                if ($fn === '.' || $fn === '..') {
+                    continue;
+                }
+                if (strpos($fn, 'sc_') !== 0) {
+                    continue;
+                }
+                $full = $td . '/' . $fn;
+                if (!is_file($full) || !is_readable($full)) {
+                    continue;
+                }
+                $sz = @filesize($full);
+                if ($sz === false || $sz < 32) {
+                    continue;
+                }
+                $mt = @filemtime($full);
+                if ($mt === false || ($now - $mt) > $maxAge) {
+                    continue;
+                }
+                if ($mt >= $bestMt) {
+                    $bestMt = $mt;
+                    $best = $full;
+                    $candName = $fn;
+                }
+            }
+            closedir($dh);
+        }
+        if ($best !== '') {
+            $candSrc = $best;
+        }
+    }
+
+    if ($candSrc !== '' && !is_dir($candSrc) && is_readable($candSrc) && !empty($dirList)) {
+        $origName = $candName !== '' ? $candName : basename($candSrc);
+        // Se e' gia' nel path_doc con nome "finale" SC (es. file(16).pdf), riusa quel basename.
+        $alreadyInDoc = false;
+        $candBase = basename(str_replace('\\', '/', $candSrc));
+        $candReal = @realpath($candSrc);
+        foreach ($dirList as $d) {
+            $d = rtrim(str_replace('\\', '/', $d), '/');
+            if (strcasecmp($d . '/' . $candBase, str_replace('\\', '/', $candSrc)) === 0) {
+                $alreadyInDoc = true;
+                break;
+            }
+            $pReal = @realpath($d . '/' . $candBase);
+            if ($candReal !== false && $pReal !== false && $pReal === $candReal) {
+                $alreadyInDoc = true;
+                break;
+            }
+        }
+        if ($alreadyInDoc && strpos($candBase, 'sc_') !== 0) {
+            {file} = $candBase;
+            $markReplaced($docId, $candBase, $candSrc);
+            $wizDocLog("onBeforeUpdate replace C reuse doc=$docId old=$fileDb → $candBase src=$candSrc");
+            $wizPersistAndCommit($docId, $candBase, $wizScadSql);
+            return;
+        }
+        // Preferisci il nome SC (candName), non doc{id}_timestamp_.
+        $newName = (strpos($origName, 'sc_') === 0)
+            ? $wizUniqueName($docId, $origName)
+            : $wizSafeBase($origName);
+        $bin = @file_get_contents($candSrc);
+        if ($bin !== false && $bin !== '') {
+            $savedPath = $saveBinToDirs($bin, $newName);
+            if ($savedPath !== '') {
+                {file} = $newName;
+                $markReplaced($docId, $newName, $savedPath);
+                $wizDocLog("onBeforeUpdate replace C copy doc=$docId old=$fileDb → $newName src=$candSrc");
+                $wizPersistAndCommit($docId, $newName, $wizScadSql);
+                return;
+            }
+        }
+    } else {
+        $wizDocLog(
+            "onBeforeUpdate C miss doc=$docId file=[$fileField] db=[$fileDb]"
+            . " dbMtime=$fileDbMtime dirs=" . count($dirList)
+            . " cand=[$candSrc]"
+        );
     }
 }
 
@@ -292,6 +706,12 @@ if ($fileField !== '') {
     }
 }
 
-if (function_exists('sc_log_add')) {
-    sc_log_add('WIZ_DOCS', "onBeforeUpdate NO-UPLOAD doc=$docId file=[$fileField] db=[$fileDb]");
+$filePersist = trim((string){file});
+if ($filePersist !== '') {
+    $filePersist = basename(str_replace('\\', '/', $filePersist));
 }
+$wizDocLog("onBeforeUpdate NO-UPLOAD doc=$docId file=[$fileField] db=[$fileDb]");
+$wizPersistAndCommit($docId, $filePersist, $wizScadSql);
+
+
+

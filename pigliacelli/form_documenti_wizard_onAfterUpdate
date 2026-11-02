@@ -1,22 +1,26 @@
 /**
  * form_documenti_wizard → onAfterUpdate
  *
- * - Se c'e' un file → stato_documento_id = 2 (Caricato), anche in sostituzione.
- * - Forza basename in DB (niente path/subdir).
- * - Se onBeforeUpdate ha sostituito il file, conferma UPDATE su documenti.file.
+ * - Forza in DB file (+ scadenza) dopo il Salva SC.
+ * - Se onBeforeUpdate ha sostituito il file, usa il nome in sessione.
  *
  * Niente mail/notifica operatori qui: partono solo a fine step 6
  * (Invia per attivazione).
- * Niente COMMIT: lo gestisce SC (nm_commit_db).
  */
 
 $docId = 0;
 if (isset({id}) && (int){id} > 0) {
     $docId = (int){id};
 }
-if (function_exists('sc_log_add')) {
-    sc_log_add('WIZ_DOCS', 'onAfterUpdate ENTER doc=' . $docId . ' file=[' . trim((string){file}) . ']');
-}
+$replHint = (!empty($_SESSION['wizard_doc_file_replaced']) ? '1' : '0');
+sc_log_add(
+    'WIZARD',
+    'DOCS onAfterUpdate ENTER doc=' . $docId
+    . ' file=[' . trim((string){file}) . ']'
+    . ' scad=[' . (isset({data_scadenza}) ? trim((string){data_scadenza}) : '') . ']'
+    . ' replaced_sess=' . $replHint
+);
+
 if ($docId <= 0) {
     return;
 }
@@ -60,7 +64,7 @@ if ($replaced !== null && !empty($replaced['file'])) {
 
 if ($fileNow === '') {
     sc_lookup(rsWizDocSt, "
-        SELECT COALESCE(file, ''), COALESCE(stato_documento_id, 0)
+        SELECT COALESCE(file, '')
         FROM documenti
         WHERE id = $docId
         LIMIT 1
@@ -68,33 +72,75 @@ if ($fileNow === '') {
     $fileNow = !empty({rsWizDocSt[0][0]})
         ? basename(str_replace('\\', '/', trim((string){rsWizDocSt[0][0]})))
         : '';
-    $statoDb = !empty({rsWizDocSt[0][1]}) ? (int){rsWizDocSt[0][1]} : 0;
-} else {
-    sc_lookup(rsWizDocSt2, "
-        SELECT COALESCE(stato_documento_id, 0)
-        FROM documenti
-        WHERE id = $docId
-        LIMIT 1
-    ", 'pigliacelli');
-    $statoDb = !empty({rsWizDocSt2[0][0]}) ? (int){rsWizDocSt2[0][0]} : 0;
 }
 
-if ($fileNow === '') {
-    return;
+// Normalizza data_scadenza → Y-m-d per SQL
+$scadRaw = isset({data_scadenza}) ? trim((string){data_scadenza}) : '';
+if (strpos($scadRaw, ' ') !== false) {
+    $scadRaw = trim(substr($scadRaw, 0, 10));
+}
+$scadSql = '';
+if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $scadRaw, $m)) {
+    $scadSql = $m[1] . '-' . $m[2] . '-' . $m[3];
+} elseif (preg_match('/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/', $scadRaw, $m)) {
+    $scadSql = sprintf('%04d-%02d-%02d', (int)$m[3], (int)$m[2], (int)$m[1]);
 }
 
-$fileSql = str_replace("'", "''", $fileNow);
+$sets = array(
+    'stato_documento_id = 2',
+    'is_not_ok = 0',
+    'updated_at = NOW()',
+);
+if ($fileNow !== '') {
+    $fileSql = str_replace("'", "''", $fileNow);
+    $sets[] = "file = '$fileSql'";
+    {file} = $fileNow;
+}
+if ($scadSql !== '') {
+    $sets[] = "data_scadenza = '$scadSql'";
+}
 
-sc_exec_sql("
-    UPDATE documenti
-    SET file = '$fileSql',
-        stato_documento_id = 2,
-        is_not_ok = 0,
-        updated_at = NOW()
-    WHERE id = $docId
-", 'pigliacelli');
+// sc_exec_sql("...") in SC: concat/implode PRIMA su variabile PHP.
+// Niente COMMIT qui: siamo DENTRO la tx SC (BeginTrans → AfterUpdate → NM_commit_db).
+// Un COMMIT/CommitTrans qui → Fatal "There is no active transaction" al commit SC.
+$wizSqlForce = 'UPDATE documenti SET ' . implode(', ', $sets) . ' WHERE id = ' . $docId;
+sc_exec_sql($wizSqlForce, 'pigliacelli');
 
-if (function_exists('sc_log_add')) {
-    $how = $replaced !== null ? 'replace' : 'update';
-    sc_log_add('WIZ_DOCS', "wizard onAfterUpdate doc=$docId → stato=2 file=$fileNow ($how, prev_stato=$statoDb)");
+$how = $replaced !== null ? 'replace' : 'update';
+sc_log_add(
+    'WIZARD',
+    "DOCS onAfterUpdate done doc=$docId → file=[$fileNow] scad=[$scadSql] ($how)"
+);
+
+// Editable grid inline: dopo Salva la griglia padre non si aggiorna da sola
+// (persist+COMMIT bypassa parte del refresh SC). Refresh parent + chiudi modale.
+$wizApl = isset($this->Ini->nm_cod_apl) ? strtolower((string)$this->Ini->nm_cod_apl) : '';
+$wizInline = (
+    substr($wizApl, -7) === '_inline'
+    || strpos(str_replace('\\', '/', strtolower((string)__FILE__)), '_inline') !== false
+);
+if ($wizInline) {
+    sc_ajax_javascript("
+        (function () {
+            try {
+                var p = window.parent;
+                if (p) {
+                    if (typeof p.nm_gp_submit === 'function') {
+                        try { p.nm_gp_submit('', '', '', false); } catch (e0) {}
+                    } else if (typeof p.nm_atualiza === 'function') {
+                        try { p.nm_atualiza('igual'); } catch (e1) {}
+                    } else if (p.location && typeof p.location.reload === 'function') {
+                        try { p.location.reload(); } catch (e2) {}
+                    }
+                    if (typeof p.tb_remove === 'function') {
+                        p.tb_remove();
+                        return;
+                    }
+                }
+                if (typeof nm_move === 'function') {
+                    nm_move('sai');
+                }
+            } catch (e) {}
+        })();
+    ");
 }

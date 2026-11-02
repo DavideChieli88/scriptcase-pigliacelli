@@ -7,7 +7,40 @@
  *   AND (subvettore_mezzo_id IS NULL OR subvettore_mezzo_id = 0)
  */
 sc_btn_display('delete', 'off');
+
+// NON fare COMMIT/reset qui all'ingresso: onScriptInit gira ANCHE nel Salva
+// (prima di onValidate) e chiuderebbe la tx di SC → niente onBeforeUpdate.
+// COMMIT solo dopo scad-fill griglia (sotto) e in onBeforeUpdate a fine evento.
+
+sc_lookup(rsWizAc, "SELECT @@autocommit, CONNECTION_ID()", 'pigliacelli');
+$wizAc = isset({rsWizAc[0][0]}) ? (string){rsWizAc[0][0]} : '?';
+$wizCid = isset({rsWizAc[0][1]}) ? (string){rsWizAc[0][1]} : '?';
+
 sc_log_add('WIZARD', 'form_documenti_wizard onScriptInit ENTER');
+sc_log_add('WIZARD', 'DOCS build=20261102g noEntryReset ac=' . $wizAc . ' cid=' . $wizCid);
+
+// Modale *_inline: niente UPDATE di massa qui (lascia tx aperta → Salva fallisce
+// con "There is already an active transaction" PRIMA di onValidate).
+$wizIsInline = false;
+$wizPaths = array(
+    isset($this->Ini->nm_cod_apl) ? (string)$this->Ini->nm_cod_apl : '',
+    (string)__FILE__,
+    isset($_SERVER['PHP_SELF']) ? (string)$_SERVER['PHP_SELF'] : '',
+    isset($_SERVER['SCRIPT_NAME']) ? (string)$_SERVER['SCRIPT_NAME'] : '',
+);
+foreach ($wizPaths as $wp) {
+    $wp = str_replace('\\', '/', strtolower($wp));
+    if ($wp !== '' && (
+        substr($wp, -7) === '_inline'
+        || strpos($wp, '_inline/') !== false
+        || strpos($wp, '_inline.') !== false
+        || strpos($wp, '_inline_') !== false
+    )) {
+        $wizIsInline = true;
+        break;
+    }
+}
+sc_log_add('WIZARD', 'DOCS onScriptInit inline=' . ($wizIsInline ? '1' : '0'));
 
 if (!isset([subvettoreId]) || (int)[subvettoreId] <= 0) {
     $usrLogin = trim((string)[usr_login]);
@@ -52,7 +85,9 @@ if ((int)[subvettoreId] <= 0) {
 
 // Gli slot ANGA/RENTRI li creano onAfterInsert / onAfterUpdate del mezzo.
 // Qui si riempiono le scadenze fisse ancora vuote (ANGA/RENTRI 30/04, Albo 31/01).
-if ((int)[subvettoreId] > 0) {
+// Solo griglia (non inline): gli UPDATE con pconnect lasciano tx aperta e il Salva
+// della modale muore prima di onValidate (nessun log DOCS onValidate).
+if (!$wizIsInline && (int)[subvettoreId] > 0) {
     $yFix = (int)date('Y');
     $scad0430 = sprintf('%04d-04-30', $yFix);
     if (date('Y-m-d') >= $scad0430) {
@@ -93,6 +128,12 @@ if ((int)[subvettoreId] > 0) {
           AND LOWER(TRIM(t.nome)) LIKE '%conto terzi%'
           $whereVuota
     ", 'pigliacelli');
+    try {
+        sc_exec_sql('COMMIT', 'pigliacelli');
+    } catch (Throwable $e) {
+        // ok
+    }
+    sc_log_add('WIZARD', 'DOCS onScriptInit scad-fill+COMMIT sub=' . $subFix);
 }
 
 // Filtro elenco: NON usare sc_where() (non esiste / non espande → Fatal error).

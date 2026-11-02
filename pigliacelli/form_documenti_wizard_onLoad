@@ -9,6 +9,11 @@
  * Toolbar: back_btn_docs, next_step_btn_signs, btn_chiudi_modale_3, Exit.
  */
 
+// Log SUBITO, senza macro {campo}.
+sc_log_add('WIZARD', 'DOCS onLoad ENTER build=20261102g');
+
+// Niente COMMIT/reset qui: puo' girare nel ciclo del Salva e chiudere la tx SC.
+
 $op = '';
 if (isset($this->nmgp_opcao)) {
     $op = strtolower(trim((string)$this->nmgp_opcao));
@@ -43,6 +48,13 @@ foreach ($checks as $p) {
 if (!$isInline && ($op === 'recarga' || $op === 'reload')) {
     $isInline = true;
 }
+
+sc_log_add(
+    'WIZARD',
+    'DOCS onLoad build=20261102g op=[' . $op . ']'
+    . ' inline=' . ($isInline ? '1' : '0')
+    . ' apl=[' . $codApl . ']'
+);
 
 sc_btn_display('send_for_activation', 'off');
 sc_btn_display('exit', 'off');
@@ -130,26 +142,8 @@ if ($isInline) {
         }
         {data_scadenza} = $scadLoad;
         sc_field_readonly({data_scadenza}, 'on');
-        // Datepicker SC: readonly da solo a volte resta cliccabile.
-        // Niente ids[i] nel JS: SC tratta [i] come globale.
-        sc_ajax_javascript("
-            (function () {
-                var el = document.getElementById('id_sc_field_data_scadenza');
-                if (!el) {
-                    el = document.getElementById('data_scadenza');
-                }
-                if (el) {
-                    el.readOnly = true;
-                    el.style.pointerEvents = 'none';
-                    el.style.backgroundColor = '#eee';
-                }
-                var cal = document.getElementById('id_img_data_scadenza');
-                if (cal) {
-                    cal.style.display = 'none';
-                    cal.onclick = function () { return false; };
-                }
-            })();
-        ");
+        // Niente sc_ajax_javascript / pointerEvents: su ANGA/RENTRI/Albo
+        // rompeva il dropzone e apriva l'anteprima PDF al click "Seleziona file".
     }
 }
 

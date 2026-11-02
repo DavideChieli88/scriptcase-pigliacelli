@@ -8,6 +8,15 @@
 
 {required} = 'No';
 
+// Log solo 1x a sessione: altrimenti N righe in griglia intasano Application Log.
+if (empty($_SESSION['wizard_doc_loadrecord_logged'])) {
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        @session_start();
+    }
+    $_SESSION['wizard_doc_loadrecord_logged'] = 1;
+    sc_log_add('WIZARD', 'DOCS onLoadRecord ENTER build=20261102g');
+}
+
 $tipoId = {tipo_documento_id};
 if ($tipoId === '' || $tipoId === null || $tipoId === 'undefined') {
     $tipoId = 0;

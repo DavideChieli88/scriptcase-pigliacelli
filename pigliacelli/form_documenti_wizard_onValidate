@@ -16,6 +16,36 @@
 
 $err = array();
 
+sc_log_add('WIZARD', 'DOCS onValidate ENTER build=20261102f');
+$fKeys = array();
+if (!empty($_FILES) && is_array($_FILES)) {
+    foreach ($_FILES as $k => $up) {
+        $nm = is_array($up) && isset($up['name']) ? $up['name'] : '';
+        if (is_array($nm)) {
+            $nm = (string)reset($nm);
+        }
+        $fKeys[] = $k . '=' . $nm;
+    }
+}
+$vDoc = 0;
+$vFile = '';
+try {
+    $vDoc = (int){id};
+} catch (Throwable $e) {
+    $vDoc = 0;
+}
+try {
+    $vFile = trim((string){file});
+} catch (Throwable $e) {
+    $vFile = '';
+}
+sc_log_add(
+    'WIZARD',
+    'DOCS onValidate detail doc=' . $vDoc
+    . ' file=[' . $vFile . ']'
+    . ' FILES=[' . (empty($fKeys) ? '-' : implode('|', $fKeys)) . ']'
+);
+
 $tipoId = isset({tipo_documento_id}) ? (int){tipo_documento_id} : 0;
 $isMandatory    = 0;
 $isFlagPossesso = 0;
