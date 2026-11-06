@@ -164,7 +164,10 @@ SET CODICE = @NuovoCodice,
     TELEFONO = '08000099001',
     CELLULARE = '33300099001',
     E_MAIL = 'vettore99001@example.com',
-    E_MAIL_CERTIFICATA = 'vettore99001@pec.it'
+    E_MAIL_CERTIFICATA = 'vettore99001@pec.it',
+    /* altrimenti upsert non lo vede: date del modello < sync_date_subvettori */
+    INSERT_DATA_ORA = GETDATE(),
+    UPDATE_DATA_ORA = GETDATE()
 
 SELECT @cols = STUFF((
     SELECT ',' + QUOTENAME(c.name)

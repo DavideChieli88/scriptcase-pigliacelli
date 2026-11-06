@@ -857,6 +857,21 @@ WHERE subvettore_id IS NOT NULL;
 
 DELETE FROM subvettori;
 
+-- Reset AUTO_INCREMENT (i DELETE sopra hanno gia' svuotato).
+-- NON usare TRUNCATE: MySQL/MariaDB ignora FOREIGN_KEY_CHECKS su TRUNCATE
+-- se la tabella e' referenziata da una FK (#1701, es. sam_autisti_fk).
+ALTER TABLE documenti AUTO_INCREMENT = 1;
+ALTER TABLE subvettori_dichiarazioni AUTO_INCREMENT = 1;
+ALTER TABLE subvettori_autisti_mezzi AUTO_INCREMENT = 1;
+ALTER TABLE subvettori_autisti AUTO_INCREMENT = 1;
+ALTER TABLE subvettori_mezzi AUTO_INCREMENT = 1;
+ALTER TABLE contratti_tratte AUTO_INCREMENT = 1;
+ALTER TABLE tratte_localita AUTO_INCREMENT = 1;
+ALTER TABLE subvettori_contratti AUTO_INCREMENT = 1;
+ALTER TABLE contratti AUTO_INCREMENT = 1;
+ALTER TABLE tratte AUTO_INCREMENT = 1;
+ALTER TABLE subvettori AUTO_INCREMENT = 1;
+
 SET FOREIGN_KEY_CHECKS = 1;
 
 DROP TEMPORARY TABLE IF EXISTS tmp_logins_g2;

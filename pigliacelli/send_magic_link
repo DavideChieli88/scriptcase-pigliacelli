@@ -4,6 +4,9 @@
  * Destinatario: subvettori.pec (E_MAIL_CERTIFICATA SGA), NON login_subvettore.
  * Se la PEC manca o non è valida: errore, nessuna mail.
  *
+ * Ammesso solo se stato contratto = 1 o 2 (Da inviare / Inviato al subvettore).
+ * Da Accettato (3) in poi: niente mail/UPDATE, solo sc_redir grid_contratti (btn stale).
+ *
  * Il link in mail punta al gateway (sett_magic_link_url) con ?t=<token>.
  * Il gateway (magic_link_login_subvectors) apre la form con subvettore_contratto_id.
  *
@@ -168,6 +171,25 @@ if ($subvettoreId <= 0) {
 
 if ($contrattoId <= 0 || $subvettoreId <= 0) {
     $ajax_fail('Parametri mancanti: contrattoId e subvettoreId.');
+}
+
+// Solo stati 1–2. Se già Accettato (3+) niente mail/UPDATE: solo refresh griglia (btn stale).
+sc_lookup(rsMlStato, "
+    SELECT c.stato_contratto_id
+    FROM contratti c
+    WHERE c.id = " . (int)$contrattoId . "
+    LIMIT 1
+", "pigliacelli");
+if (!isset({rsMlStato[0][0]})) {
+    $ajax_fail('Contratto non trovato.');
+}
+if ((int){rsMlStato[0][0]} > 2) {
+    sc_log_add(
+        'MAGIC_LINK',
+        'SKIP reinvio stato=' . (int){rsMlStato[0][0]} . ' contratto=' . (int)$contrattoId . ' → refresh grid'
+    );
+    sc_redir('grid_contratti');
+    exit;
 }
 
 $cypherKey = trim($sc_setting('sett_cypher_key', ''));

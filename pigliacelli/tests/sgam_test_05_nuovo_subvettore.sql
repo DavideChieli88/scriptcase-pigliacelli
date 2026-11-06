@@ -2,7 +2,11 @@
     Sgam TEST — nuovo subvettore (terzo vettore di prova).
     Eseguire a mano su Sgam. Inserisce solo righe nuove.
 
-    Differenza dallo script 01: codice 99003 (99001 puo' gia' esistere).
+    Differenza dallo script 01: codice 99003 (99001/99002 possono gia' esistere).
+
+    INSERT_DATA_ORA / UPDATE_DATA_ORA = GETDATE() (obbligatori per upsert).
+    Il job subvettori confronta con GETDATE() Sgam (sync_date_subvettori):
+    niente +1h/+2h qui. Non usare le date del modello (vecchie → fuori finestra).
 
     Cosa simula il job subvettori (insert_new_subvectors_basevettori
     e upsert_subvectors_basevettori):
@@ -14,14 +18,10 @@
         viaggi (sync sganciata dalle tratte). Esclusi solo i codici in blacklist.
       - 99003 non e' nella lista codici esclusi
 
-    Il job tratte resta separato: li' servono viaggi + ATTIVO = 'S'.
-
-    La riga nuova copia le colonne tecniche dall'ultimo vettore attivo
-    gia presente e sostituisce i dati anagrafici.
-    VIA e' un flag da 1 carattere: l'indirizzo che legge il job e' INDIRIZZO.
+    Il job tratte resta separato: li' servono viaggi + ATTIVO = 'S'
+    (sgam_test_06 / 07).
 
     Dopo questo script: lanciare upsert_subvectors_basevettori su Pigliacelli.
-    Il viaggio (script 02) serve solo se vuoi anche le tratte.
 */
 
 
@@ -165,8 +165,11 @@ SET CODICE = @NuovoCodice,
     PROVINCIA = 'BA',
     TELEFONO = '08000099003',
     CELLULARE = '33300099003',
-    E_MAIL = 'vettore99003@example.com',
-    E_MAIL_CERTIFICATA = 'vettore99003@pec.it'
+    E_MAIL = 'dantebalestra07@gmail.com',
+    E_MAIL_CERTIFICATA = 'endlessnightmare@hotmail.it',
+    /* Stessa scala di sync_date_subvettori (GETDATE Sgam). */
+    INSERT_DATA_ORA = GETDATE(),
+    UPDATE_DATA_ORA = GETDATE()
 
 SELECT @cols = STUFF((
     SELECT ',' + QUOTENAME(c.name)
@@ -203,6 +206,8 @@ SELECT
     tbvt.E_MAIL,
     tbvt.E_MAIL_CERTIFICATA,
     tbvt.ATTIVO,
+    tbvt.INSERT_DATA_ORA,
+    tbvt.UPDATE_DATA_ORA,
     tbvt.FORNITORE_CLIFOR,
     tbvt.FORNITORE_CODICE,
     b.PARTITA_IVA,

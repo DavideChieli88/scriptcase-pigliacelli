@@ -2,7 +2,7 @@
     Sgam TEST — nuovo subvettore (quinto vettore di prova).
     Eseguire a mano su Sgam. Inserisce solo righe nuove.
 
-    Codice 99005 — test sync INCREMENTALE dopo T0.
+    Codice 99007 — test sync INCREMENTALE dopo T0.
     INSERT_DATA_ORA / UPDATE_DATA_ORA = GETDATE() (obbligatori per upsert).
 
     Dopo: upsert_subvectors_basevettori su Pigliacelli (niente viaggio obbligatorio).
@@ -17,10 +17,10 @@ SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 
 DECLARE @Societa smallint = 1
-DECLARE @NuovoCodice int = 99005
-DECLARE @Ragione nvarchar(100) = N'TEST PIGLIACELLI VETTORE 99005'
-DECLARE @Piva varchar(11) = '99005000001'
-DECLARE @CodiceFiscale varchar(20) = 'TSTVTR9900500003'
+DECLARE @NuovoCodice int = 99007
+DECLARE @Ragione nvarchar(100) = N'TEST PIGLIACELLI VETTORE 99007'
+DECLARE @Piva varchar(11) = '99007000001'
+DECLARE @CodiceFiscale varchar(20) = 'TSTVTR9900700003'
 DECLARE @TplCodice int
 DECLARE @TplFornitore int
 DECLARE @cols nvarchar(max)
@@ -35,7 +35,7 @@ IF EXISTS (
 )
     BEGIN
         IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION
-        RAISERROR('T2BaseVettori ha gia il codice 99005. Cambia @NuovoCodice in cima allo script.', 16, 1)
+        RAISERROR('T2BaseVettori ha gia il codice 99007. Cambia @NuovoCodice in cima allo script.', 16, 1)
         RETURN
     END
 
@@ -48,7 +48,7 @@ IF EXISTS (
 )
     BEGIN
         IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION
-        RAISERROR('BaCliFor ha gia il fornitore 99005. Cambia @NuovoCodice.', 16, 1)
+        RAISERROR('BaCliFor ha gia il fornitore 99007. Cambia @NuovoCodice.', 16, 1)
         RETURN
     END
 
@@ -59,7 +59,7 @@ IF EXISTS (
 )
     BEGIN
         IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION
-        RAISERROR('Partita IVA 99005000001 gia presente. Cambia @Piva.', 16, 1)
+        RAISERROR('Partita IVA 99007000001 gia presente. Cambia @Piva.', 16, 1)
         RETURN
     END
 
@@ -147,13 +147,13 @@ SET CODICE = @NuovoCodice,
     INDIRIZZO = N'VIA TEST 5',
     LOCALITA = N'BARI',
     PROVINCIA = 'BA',
-    TELEFONO = '08000099005',
-    CELLULARE = '33300099005',
-    E_MAIL = 'vettore99005@example.com',
-    E_MAIL_CERTIFICATA = 'vettore99005@pec.it',
+    TELEFONO = '08000099007',
+    CELLULARE = '33300099007',
+    E_MAIL = 'safib33423@digeros.com',
+    E_MAIL_CERTIFICATA = 'endlessnightmare@hotmail.it',
     /* DEV Sgam e' in UTC (~1h indietro vs PHP): meglio data fissa dopo sync_date, o abbassa sync. */
-    INSERT_DATA_ORA = DATEADD(HOUR, 2, GETDATE()),
-    UPDATE_DATA_ORA = DATEADD(HOUR, 2, GETDATE())
+    INSERT_DATA_ORA = GETDATE(),
+    UPDATE_DATA_ORA = GETDATE()
 
 SELECT @cols = STUFF((
     SELECT ',' + QUOTENAME(c.name)

@@ -4,6 +4,11 @@
 
     Differenza dallo script 01: codice 99002 (99001 puo' gia' esistere).
 
+    INSERT_DATA_ORA / UPDATE_DATA_ORA = GETDATE() (obbligatori per upsert).
+    Il job subvettori confronta con GETDATE() Sgam (sync_date_subvettori):
+    niente +1h/+2h qui — altrimenti la riga resta "nel futuro" e torna
+    a ogni run. Non usare le date del modello (sono vecchie → fuori finestra).
+
     Cosa simula il job subvettori (insert_new_subvectors_basevettori
     e upsert_subvectors_basevettori):
       - anagrafica su T2BaseVettori, SOCIETA = 1
@@ -21,7 +26,6 @@
     VIA e' un flag da 1 carattere: l'indirizzo che legge il job e' INDIRIZZO.
 
     Dopo questo script: lanciare upsert_subvectors_basevettori su Pigliacelli.
-    Il viaggio (script 02) serve solo se vuoi anche le tratte.
 */
 
 
@@ -166,7 +170,10 @@ SET CODICE = @NuovoCodice,
     TELEFONO = '08000099002',
     CELLULARE = '33300099002',
     E_MAIL = 'vettore99002@example.com',
-    E_MAIL_CERTIFICATA = 'vettore99002@pec.it'
+    E_MAIL_CERTIFICATA = 'vettore99002@pec.it',
+    /* Stessa scala di sync_date_subvettori (GETDATE Sgam). */
+    INSERT_DATA_ORA = GETDATE(),
+    UPDATE_DATA_ORA = GETDATE()
 
 SELECT @cols = STUFF((
     SELECT ',' + QUOTENAME(c.name)
@@ -203,6 +210,8 @@ SELECT
     tbvt.E_MAIL,
     tbvt.E_MAIL_CERTIFICATA,
     tbvt.ATTIVO,
+    tbvt.INSERT_DATA_ORA,
+    tbvt.UPDATE_DATA_ORA,
     tbvt.FORNITORE_CLIFOR,
     tbvt.FORNITORE_CODICE,
     b.PARTITA_IVA,

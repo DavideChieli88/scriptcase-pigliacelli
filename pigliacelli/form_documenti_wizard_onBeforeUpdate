@@ -13,6 +13,8 @@
  * Log: tag WIZARD + WIZ_DOCS.
  * COMMIT serve (altrimenti Fatal "active transaction"), ma PRIMA si fa
  * UPDATE documenti file+scadenza: cosi' i dati restano anche se SC non ripete l'UPDATE.
+
+    
  */
 
 $wizDocLog = function ($msg) {

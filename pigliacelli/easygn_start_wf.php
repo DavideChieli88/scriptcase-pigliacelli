@@ -72,6 +72,12 @@ $log = function ($msg) use ($contrattoId, $subvettoreId, $tipoContrattoId) {
 };
 
 $log("start blank");
+// La connessione può arrivare con autocommit=0: workflow_id/signer_ids salvati andrebbero persi
+sc_lookup(rsAcStart, "SELECT @@autocommit, CONNECTION_ID()");
+$log('db autocommit_prima=' . (isset({rsAcStart[0][0]}) ? (string){rsAcStart[0][0]} : '?')
+    . ' conn_id=' . (isset({rsAcStart[0][1]}) ? (string){rsAcStart[0][1]} : '?'));
+sc_exec_sql("COMMIT");
+sc_exec_sql("SET autocommit = 1");
 if ($tipoContrattoIdFromGet > 0 && $tipoContrattoIdFromGet !== $tipoContrattoId) {
     $log("tipoContrattoId corretto: hint/get=$tipoContrattoIdFromGet db=$tipoContrattoId");
 }
@@ -173,6 +179,48 @@ $fail = function ($msg) use ($log) {
     exit;
 };
 
+// Un secondo create sovrascrive easygn_workflow_id/easygn_signer_ids: il webhook non riconosce più
+// le firme fatte dal link della mail precedente. Stesso pulsante send_contract_to_sign:
+// - stato 4 + WF già presente → solo reinvio mail del link salvato (niente create)
+// - stato 5 / Completato → blocco (reinvio committente ha altro pulsante)
+// - force=1 → create nuovo WF (invalida i link precedenti)
+sc_lookup(rsWfGuard, "
+    SELECT COALESCE(c.easygn_workflow_id, ''), COALESCE(st.nome, '')
+    FROM contratti c
+    LEFT JOIN stati_contratti st ON st.id = c.stato_contratto_id
+    WHERE c.id = " . (int)$contrattoId . "
+    LIMIT 1
+");
+$wfEsistente = isset({rsWfGuard[0][0]}) ? trim((string){rsWfGuard[0][0]}) : '';
+$statoNomeAttuale = isset({rsWfGuard[0][1]}) ? trim((string){rsWfGuard[0][1]}) : '';
+$reinviaSoloMailSubvettore = false;
+$forceRestart = false;
+if (isset($_GET['force']) && trim((string)$_GET['force']) === '1') {
+    $forceRestart = true;
+} elseif (isset([force]) && trim((string)[force]) === '1') {
+    $forceRestart = true;
+}
+if ($wfEsistente !== '' && !$forceRestart) {
+    if ($statoNomeAttuale === 'In attesa della firma subvettore') {
+        $reinviaSoloMailSubvettore = true;
+        $log('REUSE workflow ' . $wfEsistente . ': nessun create, solo reinvio mail link subvettore');
+    } elseif (in_array($statoNomeAttuale, array('In attesa della firma committente', 'Completato'), true)) {
+        $log('BLOCCO doppio avvio: workflow ' . $wfEsistente . ' già attivo, stato=' . $statoNomeAttuale);
+        $fail(
+            "La firma di questo contratto è già stata avviata (stato: " . $statoNomeAttuale . ").\n\n"
+            . "Avviarla di nuovo creerebbe un secondo workflow EasyGN e le firme fatte dal link già inviato "
+            . "non verrebbero più registrate.\n\n"
+            . "Per reinviare il link al committente usare il pulsante dedicato.\n"
+            . "Solo in caso eccezionale: richiamare con force=1 (invalida i link precedenti)."
+        );
+    }
+} elseif ($wfEsistente !== '' && $forceRestart) {
+    $log(
+        'FORCE restart: nuovo workflow al posto di ' . $wfEsistente
+        . ' (stato=' . $statoNomeAttuale . ') — i link EasyGN precedenti non saranno più riconosciuti dal webhook'
+    );
+}
+
 $sc_setting = function ($name, $default = '') {
     $val = $default;
     $safeName = str_replace("'", "''", trim((string)$name));
@@ -257,6 +305,141 @@ if (!function_exists('pigliacelli_mail_layout')) {
             . 'Messaggio automatico &mdash; non rispondere.</td></tr>'
             . '</table></td></tr></table></body></html>';
     }
+}
+
+// Stesso pulsante "invia a firma": se WF già attivo in stato 4 → solo mail, niente EasyGN create/PDF.
+if (!empty($reinviaSoloMailSubvettore)) {
+    sc_lookup(rsReuseLnk, "
+        SELECT easygn_sign_link
+        FROM contratti
+        WHERE id = " . (int)$contrattoId . "
+        LIMIT 1
+    ");
+    $metaReuse = array();
+    if (!empty({rsReuseLnk[0][0]})) {
+        $decodedReuse = json_decode((string){rsReuseLnk[0][0]}, true);
+        if (is_array($decodedReuse)) {
+            $metaReuse = $decodedReuse;
+        }
+    }
+    $linkReuse = isset($metaReuse['link_subvettore']) ? trim((string)$metaReuse['link_subvettore']) : '';
+    if ($linkReuse === '' || preg_match('#^https?://#i', $linkReuse) !== 1) {
+        $fail(
+            "Workflow EasyGN già presente, ma manca link_subvettore salvato sul contratto.\n\n"
+            . "Impossibile reinviare la mail. Contattare l'assistenza oppure richiamare con force=1 "
+            . "(crea un nuovo workflow e invalida i link precedenti)."
+        );
+    }
+
+    sc_lookup(rsReuseSub, "
+        SELECT
+            COALESCE(NULLIF(TRIM(s.email_rappresentante), ''), NULLIF(TRIM(sc.email_rappresentante), '')),
+            TRIM(CONCAT(COALESCE(sc.nome_rappresentante, ''), ' ', COALESCE(sc.cognome_rappresentante, '')))
+        FROM subvettori_contratti sc
+        INNER JOIN subvettori s ON s.id = sc.subvettore_id
+        WHERE sc.contratto_id = " . (int)$contrattoId . "
+          AND sc.subvettore_id = " . (int)$subvettoreId . "
+        LIMIT 1
+    ");
+    $toReuse = !empty({rsReuseSub[0][0]}) ? trim((string){rsReuseSub[0][0]}) : '';
+    $nomeReuse = !empty({rsReuseSub[0][1]}) ? trim((string){rsReuseSub[0][1]}) : 'Gentile firmatario';
+    if ($toReuse === '' || filter_var($toReuse, FILTER_VALIDATE_EMAIL) === false) {
+        $fail('Email rappresentante mancante o non valida: impossibile reinviare il link di firma.');
+    }
+
+    sc_lookup(rs_smtp_reuse, "SELECT set_name, set_value FROM sec_settings");
+    if (isset({rs_smtp_reuse[0][0]})) {
+        foreach ({rs_smtp_reuse} as $fReuse) {
+            $_SESSION['sett_' . $fReuse[0]] = $fReuse[1];
+        }
+    }
+    $smtpApiReuse = isset($_SESSION['sett_smtp_api']) ? (string)$_SESSION['sett_smtp_api'] : '';
+    if ($smtpApiReuse === 'custom') {
+        $sett_smtp_reuse = array(
+            'settings' => array(
+                'gateway'       => 'smtp',
+                'smtp_server'   => (string)($_SESSION['sett_smtp_server'] ?? ''),
+                'smtp_protocol' => (string)($_SESSION['sett_smtp_security'] ?? ''),
+                'smtp_port'     => (string)($_SESSION['sett_smtp_port'] ?? ''),
+                'smtp_user'     => (string)($_SESSION['sett_smtp_user'] ?? ''),
+                'smtp_password' => (string)($_SESSION['sett_smtp_pass'] ?? ''),
+                'from_email'    => (string)($_SESSION['sett_smtp_from_email'] ?? ''),
+                'from_name'     => (string)($_SESSION['sett_smtp_from_name'] ?? ''),
+            ),
+        );
+    } else {
+        $sett_smtp_reuse = array('profile' => $smtpApiReuse);
+    }
+
+    $mailSkipReuse = trim($sc_setting('easygn_mail_skip', '0'));
+    if ($mailSkipReuse === '1' || strtolower($mailSkipReuse) === 'true') {
+        $log('REUSE mail SKIP easygn_mail_skip attivo');
+    } elseif (!function_exists('sc_send_mail_api')) {
+        $fail('sc_send_mail_api non disponibile: impossibile reinviare il link di firma.');
+    } else {
+        $subjectTplReuse = trim($sc_setting('easygn_mail_subject', ''));
+        $titoloReuse = ($subjectTplReuse !== '')
+            ? str_replace(['{contrattoId}', '{ruolo}'], [(string)$contrattoId, 'firmatario'], $subjectTplReuse)
+            : 'Firma contratto — link di firma digitale';
+        $messaggioTestoReuse = $nomeReuse . ",\n\n"
+            . "Le chiediamo di firmare il contratto #" . (int)$contrattoId . " tramite firma digitale.\n\n"
+            . "Link di firma:\n" . $linkReuse . "\n\n"
+            . "Messaggio automatico — non rispondere.";
+        $safeUrlReuse = htmlspecialchars($linkReuse, ENT_QUOTES, 'UTF-8');
+        $safeNomeReuse = htmlspecialchars($nomeReuse, ENT_QUOTES, 'UTF-8');
+        $mailLogoReuse = pigliacelli_mail_logo_src($sc_setting, __FILE__);
+        $mailInnerReuse = '<p style="margin:0 0 16px;">' . $safeNomeReuse . ',</p>'
+            . '<p style="margin:0 0 24px;">Le chiediamo di firmare il contratto <strong>#' . (int)$contrattoId
+            . '</strong> tramite il servizio di firma digitale.</p>'
+            . '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;"><tr>'
+            . '<td align="center" bgcolor="#5b2d8e" style="border-radius:8px;background-color:#5b2d8e;">'
+            . '<a href="' . $safeUrlReuse . '" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:bold;'
+            . 'color:#ffffff;text-decoration:none;font-family:Arial,Helvetica,sans-serif;">Apri il link di firma</a>'
+            . '</td></tr></table>'
+            . '<p style="margin:0 0 8px;font-size:13px;color:#718096;">Oppure copi questo indirizzo nel browser:</p>'
+            . '<p style="margin:0;word-break:break-all;font-size:13px;">'
+            . '<a href="' . $safeUrlReuse . '" style="color:#5b2d8e;">' . $safeUrlReuse . '</a></p>';
+        $htmlReuse = pigliacelli_mail_layout($titoloReuse, $mailInnerReuse, $mailLogoReuse);
+        try {
+            sc_send_mail_api(array_merge($sett_smtp_reuse, array(
+                'message' => array(
+                    'html'    => $htmlReuse,
+                    'text'    => $messaggioTestoReuse,
+                    'to'      => $toReuse,
+                    'subject' => $titoloReuse,
+                ),
+            )));
+            $log('REUSE mail inviata to=' . $toReuse . ' workflow=' . $wfEsistente);
+        } catch (Throwable $eReuse) {
+            $log('REUSE mail EXCEPTION: ' . $eReuse->getMessage());
+            $fail("Reinvio mail fallito: " . $eReuse->getMessage());
+        }
+    }
+
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    if ($silent) {
+        if (!headers_sent()) {
+            header('Content-Type: application/json; charset=UTF-8');
+            header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        }
+        echo json_encode(array(
+            'ok' => true,
+            'reused' => true,
+            'contrattoId' => (int)$contrattoId,
+            'subvettoreId' => (int)$subvettoreId,
+        ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+    $log('REUSE redirect grid_contratti');
+    if (function_exists('sc_redir')) {
+        sc_redir('grid_contratti');
+    }
+    if (!headers_sent()) {
+        header('Location: ../grid_contratti/');
+    }
+    exit;
 }
 
 if (!function_exists('curl_init')) {
@@ -1215,7 +1398,11 @@ $extract_easygn_file_signers = function ($data) {
                 break;
             }
             if ($sid !== '') {
-                $ids[] = $sid;
+                $ids[] = [
+                    'id' => $sid,
+                    'email' => strtolower(trim((string)($s['email'] ?? ''))),
+                    'order' => isset($s['order']) ? (int)$s['order'] : 0,
+                ];
             }
         }
         return $ids;
@@ -1234,20 +1421,54 @@ $extract_easygn_file_signers = function ($data) {
     return [$fileId, $signerIds];
 };
 
-// Ordine EasyGN: [0]=firmatario (subvettore), [1]=committente
-$easygn_build_signer_ids_map = function (array $idsArr) {
+// L'ordine dei signers nella risposta EasyGN non è garantito: ruolo per email, poi per order, poi per posizione
+$easygn_build_signer_ids_map = function (array $signers) use ($signerEmail, $committenteEmail, $log) {
     $map = [];
-    if (count($idsArr) === 0) {
+    if (count($signers) === 0) {
         return $map;
     }
-    $firm = trim((string)($idsArr[0] ?? ''));
+    $emailFirm = strtolower(trim((string)$signerEmail));
+    $emailComm = strtolower(trim((string)$committenteEmail));
+    $firm = '';
+    $comm = '';
+    $metodo = 'email';
+    foreach ($signers as $s) {
+        if ($s['email'] === '') {
+            continue;
+        }
+        if ($firm === '' && $s['email'] === $emailFirm) {
+            $firm = $s['id'];
+        } elseif ($comm === '' && $s['email'] === $emailComm) {
+            $comm = $s['id'];
+        }
+    }
+    if ($firm === '' || $comm === '') {
+        $metodo = 'order';
+        foreach ($signers as $s) {
+            if ($firm === '' && $s['order'] === 1 && $s['id'] !== $comm) {
+                $firm = $s['id'];
+            } elseif ($comm === '' && $s['order'] === 2 && $s['id'] !== $firm) {
+                $comm = $s['id'];
+            }
+        }
+    }
+    if ($firm === '' || $comm === '') {
+        $metodo = 'posizione';
+        foreach ($signers as $s) {
+            if ($firm === '' && $s['id'] !== $comm) {
+                $firm = $s['id'];
+            } elseif ($comm === '' && $s['id'] !== $firm) {
+                $comm = $s['id'];
+            }
+        }
+    }
     if ($firm !== '') {
         $map['signer_id_firmatario'] = $firm;
     }
-    $comm = trim((string)($idsArr[1] ?? ''));
     if ($comm !== '') {
         $map['signer_id_committente'] = $comm;
     }
+    $log('signer_ids ruoli assegnati per ' . $metodo . ': ' . json_encode($map, JSON_UNESCAPED_UNICODE));
     return $map;
 };
 

@@ -212,8 +212,17 @@ if (empty({rsGccCtr[0][0]})) {
 }
 
 $stato = (int){rsGccCtr[0][0]};
+// Grid stale: DB già oltre stato 5 ma la riga mostra ancora il btn → refresh lista.
 if ($stato !== 5) {
-    sc_ajax_message('La mail al committente si reinvia solo quando il contratto è in attesa della sua firma.');
+    sc_log_add(
+        'MAIL_COMM',
+        'SKIP reinvio stato_id=' . (int)$stato . ' contratto=' . (int)$contrattoId . ' → refresh grid'
+    );
+    if (function_exists('sc_ajax_javascript')) {
+        sc_ajax_javascript("try{nm_gp_submit('','','',false);}catch(e){location.reload();}");
+    } else {
+        sc_redir('grid_contratti');
+    }
     return;
 }
 

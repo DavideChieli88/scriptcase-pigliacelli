@@ -2,7 +2,8 @@
  * Scriptcase blank: start_contract_firma_after_review
  *
  * Pulsante su grid_contratti (operatori/admin): dopo revisione dati subvettore,
- * genera PDF + avvia EasyGN (easygn_start_wf, flusso admin).
+ * genera PDF + avvia EasyGN (easygn_start_wf, flusso admin)
+ * via finalize_contract_subvector_v2 (variante stabile; l'originale resta per altri flussi).
  *
  * Parametri: [contrattoId], [subvettoreId] (o GET omonimi)
  *
@@ -77,12 +78,24 @@ if ($tipoContrattoId <= 0) {
     $fail('Tipo contratto non riconosciuto per contratto #' . (int)$contrattoId);
 }
 
+// Grid stale: DB già oltre 3/4 (es. stato 5) ma la riga mostra ancora il btn.
+// Come send_magic_link: niente fail bloccante → refresh grid_contratti.
 if (!in_array($statoAttualeId, $statiAmmessiIds, true)) {
-    $fail(
-        'Il contratto non è in uno stato che consente l\'avvio della firma (stato_contratto_id 3 o 4).'
-        . ($statoAttualeNome !== '' ? ' Stato attuale: ' . $statoAttualeNome . ' (id=' . $statoAttualeId . ').' : '')
-        . ' Verificare i dati prima di avviare la firma.'
+    sc_log_add(
+        'START_FIRMA_REVIEW',
+        'SKIP avvio firma stato_id=' . (int)$statoAttualeId
+        . ($statoAttualeNome !== '' ? ' (' . $statoAttualeNome . ')' : '')
+        . ' contratto=' . (int)$contrattoId . ' → refresh grid'
     );
+    if (function_exists('sc_alert')) {
+        sc_alert(
+            'Il contratto non è più in uno stato che consente l\'invio a firma'
+            . ($statoAttualeNome !== '' ? ' (stato attuale: ' . $statoAttualeNome . ')' : '')
+            . '. Aggiornamento lista contratti.'
+        );
+    }
+    sc_redir('grid_contratti');
+    exit;
 }
 
 sc_log_add(
@@ -101,5 +114,5 @@ $redirParams = 'contrattoId=' . (int)$contrattoId
     . '&mode=admin'
     . '&sendMailOnly=1';
 
-sc_redir('finalize_contract_subvector', $redirParams);
+sc_redir('finalize_contract_subvector_v2', $redirParams);
 exit;

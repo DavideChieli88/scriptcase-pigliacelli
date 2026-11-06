@@ -1,16 +1,19 @@
 /*
-    Sgam TEST - viaggio 990003 per subvettore 99003 (base contratto tipo 1).
+    Sgam TEST - viaggio 990004 per subvettore 99003 (base contratto tipo 1).
     Dopo sgam_test_05 + upsert. Opzionale: sgam_test_07_secondo_viaggio_99003.sql
 
-    Chiavi: VETTORE 99003 | NUMERO viaggio/cliente 990003 | anno 2026.
+    Chiavi: VETTORE 99003 | NUMERO viaggio/cliente 990004 | anno 2026.
+
+    Date viaggio: DATEADD(HOUR, 1, GETDATE()) — su UAT GETDATE() SQL Server e ~1h
+    indietro rispetto a PHP/Rome (sync_date del job tratte). Se orologi allineati,
+    togli il DATEADD e lascia GETDATE().
 
     Flusso tipo 1 su Pigliacelli:
       1. anagrafica 99003 gia presente
       2. questo script (+ eventuale 07) crea i viaggi SGA
       3. UPDATE subvettori SET wizard_complete = 1 WHERE codice_sga = '99003'
          (deve avere ZERO tratte)
-      4. check_new_trips_nuovo_contratto_basevettori_v2
-         -> backfill -> N tratte + UN contratto tipo 1
+      4. check_new_trips_fast (o v2): tipo 1 in-run / backfill
 
     Importi: tariffa 180 | extra 25 | tot 205 | tariffa_cliente 250 | BARI-MILANO
 */
@@ -23,8 +26,8 @@ SET QUOTED_IDENTIFIER ON
 DECLARE @Societa smallint = 1
 DECLARE @Anno smallint = 2026
 DECLARE @NuovoCodice int = 99003
-DECLARE @NumeroViaggio int = 990003
-DECLARE @NumeroCliente int = 990003
+DECLARE @NumeroViaggio int = 990004
+DECLARE @NumeroCliente int = 990004
 DECLARE @PivaCliente varchar(11) = '99003000002'
 DECLARE @CfCliente varchar(20) = 'TSTCLI9900300003'
 DECLARE @RagioneCliente nvarchar(100) = N'TEST PIGLIACELLI CLIENTE 99003'
@@ -44,6 +47,7 @@ DECLARE @TplClienteCodice int
 DECLARE @cols nvarchar(max)
 DECLARE @sql nvarchar(max)
 DECLARE @ErrMsg nvarchar(2048)
+DECLARE @SyncNow datetime = DATEADD(HOUR, 1, GETDATE())
 
 IF NOT EXISTS (
     SELECT 1
@@ -79,7 +83,7 @@ IF EXISTS (
 )
     BEGIN
         IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION
-        RAISERROR('T2ViaggiVettori ha gia il numero 990003 nel 2026. Cambia @NumeroViaggio.', 16, 1)
+        RAISERROR('T2ViaggiVettori ha gia il numero 990004 nel 2026. Cambia @NumeroViaggio.', 16, 1)
         RETURN
     END
 
@@ -89,7 +93,7 @@ IF EXISTS (
 )
     BEGIN
         IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION
-        RAISERROR('T2ViaggiClienti ha gia il numero 990003 nel 2026. Cambia @NumeroCliente.', 16, 1)
+        RAISERROR('T2ViaggiClienti ha gia il numero 990004 nel 2026. Cambia @NumeroCliente.', 16, 1)
         RETURN
     END
 
@@ -280,7 +284,7 @@ SET NUMERO = @NumeroCliente,
     CLIENTE = @NuovoCodice,
     CLIENTE_CLIFOR = 'C',
     DESCRIZIONE = N'VIAGGIO TEST PIGLIACELLI',
-    ORDINE_RIFERIMENTO = N'TEST-990003',
+    ORDINE_RIFERIMENTO = N'TEST-990004',
     IMPORTO_UNITARIO = @NoloCliente,
     IMPORTO_LORDO = @NoloCliente,
     IMPORTO_TOTALE = @NoloCliente,
@@ -373,7 +377,7 @@ SELECT @cols = STUFF((
 SET @sql = N'INSERT INTO dbo.T2ViaggiClientiCarichiScarichiMerci (' + @cols + N') SELECT ' + @cols + N' FROM #t06Merci'
 EXEC sys.sp_executesql @sql
 
-/* Viaggio subvettore. UPDATE_DATA_ORA = adesso, cosi entra nella finestra incrementale. */
+/* Viaggio subvettore: date allineate a PHP (sync_date), non GETDATE() nudo. */
 IF OBJECT_ID('tempdb..#t06Vet') IS NOT NULL DROP TABLE #t06Vet
 SELECT *
 INTO #t06Vet
@@ -396,8 +400,8 @@ SET NUMERO = @NumeroViaggio,
     PARTENZA_DATA_ORA = '20261021 08:00:00',
     DATA = '20261021',
     DATA_COMPETENZA = '20261021',
-    INSERT_DATA_ORA = GETDATE(),
-    UPDATE_DATA_ORA = GETDATE(),
+    INSERT_DATA_ORA = @SyncNow,
+    UPDATE_DATA_ORA = @SyncNow,
     VIAGGIO_COLLEGATO_ANNO = NULL,
     VIAGGIO_COLLEGATO_FILIALE = NULL,
     VIAGGIO_COLLEGATO_NUMERO = NULL,

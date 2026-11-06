@@ -3,7 +3,8 @@
 // Query: SOCIETA=1, ATTIVO='S', almeno 1 viaggio T2ViaggiVettori ANNO>=2024,
 // blacklist codici, OR forza 4152/5911/5967. P.IVA/CF da BaCliFor via FORNITORE_*.
 // Come upsert: crea sec_users (group 2) + bootstrap documenti.
-// NON invia e NON accoda mail credenziali (niente coda / batch automatico).
+// mail_credenziali_inviata_at resta NULL (= non ancora inviate).
+// Niente batch automatico: invio solo da grid (btn invia credenziali) → setta NOW().
 // A fine run scrive sync_date_subvettori = GETDATE() Sgam (non ora PHP; evita UTC vs Rome).
 // Sync continua: upsert_subvectors_basevettori (INSERT_DATA_ORA / UPDATE_DATA_ORA).
 
@@ -176,20 +177,6 @@ function insert_sub_bootstrap_documenti_from_preset($subvettore_id, $login)
         );
         return false;
     }
-}
-
-/** Evita che send_credenziali_subvettori_batch li prenda (coda = IS NULL). */
-function insert_sub_segna_no_coda_mail($subvettore_id)
-{
-    $subvettore_id = (int)$subvettore_id;
-    if ($subvettore_id <= 0) {
-        return;
-    }
-    sc_exec_sql("
-        UPDATE subvettori
-        SET mail_credenziali_inviata_at = NOW()
-        WHERE id = " . insert_sub_sql_num($subvettore_id) . "
-    ", 'pigliacelli');
 }
 
 /** Ora Sgam (GETDATE), stessa scala di INSERT/UPDATE_DATA_ORA. Formato Y-m-d H:i:s. */
@@ -445,8 +432,8 @@ while (($row = $stmt->fetch(PDO::FETCH_NUM)) !== false) {
             $utenze_create++;
             insert_sub_aggiorna_login_subvettore($new_sub_id, $email);
         }
-        // Nessuna mail/coda: fuori da send_credenziali_subvettori_batch
-        insert_sub_segna_no_coda_mail($new_sub_id);
+        // mail_credenziali_inviata_at: lasciare NULL (default INSERT).
+        // NON settare NOW(): sembrerebbe "già inviate" e confonde il btn grid.
 
         if (insert_sub_bootstrap_documenti_from_preset($new_sub_id, $email)) {
             $bootstrap_ok++;

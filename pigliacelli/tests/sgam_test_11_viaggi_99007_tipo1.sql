@@ -1,20 +1,19 @@
-/*
-    Sgam TEST — terzo viaggio per subvettore 99005 → contratto tipo 2
-    (appendice nuove tratte).
-
-    Prerequisiti:
-      1. sgam_test_10 + sgam_test_11 gia eseguiti
-      2. su Pigliacelli: wizard_complete = 1 e gia presenti tratte + tipo 1
-         (job tratte dopo lo script 11)
+﻿/*
+    Sgam TEST — due viaggi per subvettore 99007 (base contratto tipo 1).
+    Dopo sgam_test_10 + upsert anagrafica.
 
     Chiavi:
-      VETTORE 99005
-      viaggio/cliente 990025 | GENOVA → VERONA | tariffa 195 | extra 20 | nolo 280
+      VETTORE 99007
+      viaggio/cliente 990007  | BARI → MILANO  | tariffa 180 | extra 25 | nolo 250
+      viaggio/cliente 990017  | NAPOLI → TORINO | tariffa 220 | extra 30 | nolo 300
 
-    Flusso tipo 2 su Pigliacelli:
-      1. questo script su Sgam (UPDATE_DATA_ORA = GETDATE())
-      2. check_new_trips_nuovo_contratto_basevettori_v2
-         -> 1 tratta nuova + UN contratto tipo 2 (solo la tratta nuova)
+    Flusso tipo 1 su Pigliacelli:
+      1. anagrafica 99007 gia presente
+      2. questo script crea i 2 viaggi SGA
+      3. UPDATE subvettori SET wizard_complete = 1 WHERE codice_sga = '99007'
+         (deve avere ZERO tratte)
+      4. check_new_trips_nuovo_contratto_basevettori_v2
+         -> backfill -> 2 tratte + UN contratto tipo 1
 
     Un solo batch, senza punto e virgola: DBeaver "Esegui script".
 */
@@ -26,17 +25,10 @@ SET QUOTED_IDENTIFIER ON
 
 DECLARE @Societa smallint = 1
 DECLARE @Anno smallint = 2026
-DECLARE @NuovoCodice int = 99005
-DECLARE @NumeroViaggio int = 990025
-DECLARE @NumeroCliente int = 990025
-DECLARE @PivaCliente varchar(11) = '99005000002'
-DECLARE @CfCliente varchar(20) = 'TSTCLI9900500003'
-DECLARE @RagioneCliente nvarchar(100) = N'TEST PIGLIACELLI CLIENTE 99005'
-DECLARE @TariffaSubvettore money = 195
-DECLARE @NoloCliente money = 280
-DECLARE @ExtraSubvettore money = 20
-DECLARE @LocC varchar(50) = 'GENOVA'
-DECLARE @LocS varchar(50) = 'VERONA'
+DECLARE @NuovoCodice int = 99007
+DECLARE @PivaCliente varchar(11) = '99007000002'
+DECLARE @CfCliente varchar(20) = 'TSTCLI9900700003'
+DECLARE @RagioneCliente nvarchar(100) = N'TEST PIGLIACELLI CLIENTE 99007'
 
 DECLARE @TplAnno smallint = 2026
 DECLARE @TplFiliale varchar(2) = 'SE'
@@ -50,7 +42,16 @@ DECLARE @TplClienteCodice int
 DECLARE @cols nvarchar(max)
 DECLARE @sql nvarchar(max)
 DECLARE @ErrMsg nvarchar(2048)
-DECLARE @ClienteGiaEsiste bit = 0
+
+DECLARE @NumeroViaggio int
+DECLARE @NumeroCliente int
+DECLARE @TariffaSubvettore money
+DECLARE @NoloCliente money
+DECLARE @ExtraSubvettore money
+DECLARE @LocC varchar(50)
+DECLARE @LocS varchar(50)
+DECLARE @OrdineRif nvarchar(40)
+DECLARE @ClienteCreato bit = 0
 
 IF NOT EXISTS (
     SELECT 1
@@ -63,7 +64,7 @@ IF NOT EXISTS (
 )
     BEGIN
         IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION
-        RAISERROR('Manca il subvettore 99005 attivo. Esegui prima sgam_test_10_nuovo_subvettore.sql.', 16, 1)
+        RAISERROR('Manca il subvettore 99007 attivo. Esegui prima sgam_test_10_nuovo_subvettore.sql.', 16, 1)
         RETURN
     END
 
@@ -76,37 +77,27 @@ IF NOT EXISTS (
 )
     BEGIN
         IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION
-        RAISERROR('Manca il fornitore BaCliFor 99005. Esegui prima lo script 10.', 16, 1)
-        RETURN
-    END
-
-IF NOT EXISTS (
-    SELECT 1 FROM dbo.T2ViaggiVettori
-    WHERE SOCIETA = @Societa AND ANNO = @Anno AND NUMERO IN (990005, 990015)
-)
-    BEGIN
-        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION
-        RAISERROR('Mancano i viaggi tipo 1 (990005/990015). Esegui prima sgam_test_11_viaggi_99005_tipo1.sql.', 16, 1)
+        RAISERROR('Manca il fornitore BaCliFor 99007. Esegui prima lo script 10.', 16, 1)
         RETURN
     END
 
 IF EXISTS (
     SELECT 1 FROM dbo.T2ViaggiVettori
-    WHERE SOCIETA = @Societa AND ANNO = @Anno AND NUMERO = @NumeroViaggio
+    WHERE SOCIETA = @Societa AND ANNO = @Anno AND NUMERO IN (990007, 990017)
 )
     BEGIN
         IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION
-        RAISERROR('T2ViaggiVettori ha gia il numero 990025 nel 2026. Cambia @NumeroViaggio.', 16, 1)
+        RAISERROR('T2ViaggiVettori ha gia 990007 e/o 990017 nel 2026. Cambia i numeri o pulisci.', 16, 1)
         RETURN
     END
 
 IF EXISTS (
     SELECT 1 FROM dbo.T2ViaggiClienti
-    WHERE SOCIETA = @Societa AND ANNO = @Anno AND NUMERO = @NumeroCliente
+    WHERE SOCIETA = @Societa AND ANNO = @Anno AND NUMERO IN (990007, 990017)
 )
     BEGIN
         IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION
-        RAISERROR('T2ViaggiClienti ha gia il numero 990025 nel 2026. Cambia @NumeroCliente.', 16, 1)
+        RAISERROR('T2ViaggiClienti ha gia 990007 e/o 990017 nel 2026. Cambia i numeri o pulisci.', 16, 1)
         RETURN
     END
 
@@ -114,12 +105,16 @@ IF EXISTS (
     SELECT 1 FROM dbo.BaCliFor
     WHERE SOCIETA = @Societa AND CLIENTE_FORNITORE = 'C' AND CODICE = @NuovoCodice
 )
-    SET @ClienteGiaEsiste = 1
-
-IF @ClienteGiaEsiste = 0 AND EXISTS (SELECT 1 FROM dbo.BaCliFor WHERE PARTITA_IVA = @PivaCliente)
     BEGIN
         IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION
-        RAISERROR('Partita IVA cliente 99005000002 gia presente. Cambia @PivaCliente.', 16, 1)
+        RAISERROR('BaCliFor ha gia il cliente 99007. Se e'' di un test precedente, riusalo o cambia codice.', 16, 1)
+        RETURN
+    END
+
+IF EXISTS (SELECT 1 FROM dbo.BaCliFor WHERE PARTITA_IVA = @PivaCliente)
+    BEGIN
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION
+        RAISERROR('Partita IVA cliente 99007000002 gia presente. Cambia @PivaCliente.', 16, 1)
         RETURN
     END
 
@@ -244,60 +239,89 @@ IF NOT EXISTS (
         RETURN
     END
 
+IF OBJECT_ID('tempdb..#t11Trips') IS NOT NULL DROP TABLE #t11Trips
+CREATE TABLE #t11Trips (
+    NumeroViaggio int NOT NULL,
+    NumeroCliente int NOT NULL,
+    TariffaSubvettore money NOT NULL,
+    NoloCliente money NOT NULL,
+    ExtraSubvettore money NOT NULL,
+    LocC varchar(50) NOT NULL,
+    LocS varchar(50) NOT NULL,
+    OrdineRif nvarchar(40) NOT NULL
+)
+
+INSERT INTO #t11Trips (NumeroViaggio, NumeroCliente, TariffaSubvettore, NoloCliente, ExtraSubvettore, LocC, LocS, OrdineRif)
+VALUES
+    (990007, 990007, 180, 250, 25, 'BARI', 'MILANO', N'TEST-990007'),
+    (990017, 990017, 220, 300, 30, 'NAPOLI', 'TORINO', N'TEST-990017')
+
 BEGIN TRY
     BEGIN TRANSACTION
 
-/* Cliente C 99005: riusa quello dello script 11 se presente. */
-IF @ClienteGiaEsiste = 0
+DECLARE trip_cur CURSOR LOCAL FAST_FORWARD FOR
+    SELECT NumeroViaggio, NumeroCliente, TariffaSubvettore, NoloCliente, ExtraSubvettore, LocC, LocS, OrdineRif
+    FROM #t11Trips
+    ORDER BY NumeroViaggio
+
+OPEN trip_cur
+FETCH NEXT FROM trip_cur INTO
+    @NumeroViaggio, @NumeroCliente, @TariffaSubvettore, @NoloCliente, @ExtraSubvettore, @LocC, @LocS, @OrdineRif
+
+WHILE @@FETCH_STATUS = 0
 BEGIN
 
-IF OBJECT_ID('tempdb..#t12CliFor') IS NOT NULL DROP TABLE #t12CliFor
-SELECT *
-INTO #t12CliFor
-FROM dbo.BaCliFor
-WHERE SOCIETA = @Societa
-  AND CLIENTE_FORNITORE = 'C'
-  AND CODICE = @TplClienteCodice
+/* Cliente BaCliFor una sola volta (proprietario merce). */
+IF @ClienteCreato = 0
+BEGIN
+    IF OBJECT_ID('tempdb..#t11CliFor') IS NOT NULL DROP TABLE #t11CliFor
+    SELECT *
+    INTO #t11CliFor
+    FROM dbo.BaCliFor
+    WHERE SOCIETA = @Societa
+      AND CLIENTE_FORNITORE = 'C'
+      AND CODICE = @TplClienteCodice
 
-UPDATE #t12CliFor
-SET CODICE = @NuovoCodice,
-    CLIENTE_FORNITORE = 'C',
-    RAGIONE_SOCIALE = @RagioneCliente,
-    PARTITA_IVA = @PivaCliente,
-    CODICE_FISCALE = @CfCliente,
-    ATTIVO = 'S'
+    UPDATE #t11CliFor
+    SET CODICE = @NuovoCodice,
+        CLIENTE_FORNITORE = 'C',
+        RAGIONE_SOCIALE = @RagioneCliente,
+        PARTITA_IVA = @PivaCliente,
+        CODICE_FISCALE = @CfCliente,
+        ATTIVO = 'S'
 
-SELECT @cols = STUFF((
-    SELECT ',' + QUOTENAME(c.name)
-    FROM sys.columns c
-    WHERE c.object_id = OBJECT_ID(N'dbo.BaCliFor')
-      AND c.is_identity = 0
-      AND c.is_computed = 0
-      AND c.system_type_id <> 189
-    ORDER BY c.column_id
-    FOR XML PATH(''), TYPE
-).value('.', 'nvarchar(max)'), 1, 1, N'')
+    SELECT @cols = STUFF((
+        SELECT ',' + QUOTENAME(c.name)
+        FROM sys.columns c
+        WHERE c.object_id = OBJECT_ID(N'dbo.BaCliFor')
+          AND c.is_identity = 0
+          AND c.is_computed = 0
+          AND c.system_type_id <> 189
+        ORDER BY c.column_id
+        FOR XML PATH(''), TYPE
+    ).value('.', 'nvarchar(max)'), 1, 1, N'')
 
-SET @sql = N'INSERT INTO dbo.BaCliFor (' + @cols + N') SELECT ' + @cols + N' FROM #t12CliFor'
-EXEC sys.sp_executesql @sql
-
+    SET @sql = N'INSERT INTO dbo.BaCliFor (' + @cols + N') SELECT ' + @cols + N' FROM #t11CliFor'
+    EXEC sys.sp_executesql @sql
+    SET @ClienteCreato = 1
 END
 
-IF OBJECT_ID('tempdb..#t12Cli') IS NOT NULL DROP TABLE #t12Cli
+/* Viaggio cliente: IMPORTO_TOTALE = tariffa_cliente. */
+IF OBJECT_ID('tempdb..#t11Cli') IS NOT NULL DROP TABLE #t11Cli
 SELECT *
-INTO #t12Cli
+INTO #t11Cli
 FROM dbo.T2ViaggiClienti
 WHERE SOCIETA = @Societa
   AND ANNO = @Anno
   AND FILIALE = @FilialeCliente
   AND NUMERO = @TplNumeroCliente
 
-UPDATE #t12Cli
+UPDATE #t11Cli
 SET NUMERO = @NumeroCliente,
     CLIENTE = @NuovoCodice,
     CLIENTE_CLIFOR = 'C',
-    DESCRIZIONE = N'VIAGGIO TEST PIGLIACELLI 99005 TIPO2',
-    ORDINE_RIFERIMENTO = N'TEST-990025',
+    DESCRIZIONE = N'VIAGGIO TEST PIGLIACELLI 99007',
+    ORDINE_RIFERIMENTO = @OrdineRif,
     IMPORTO_UNITARIO = @NoloCliente,
     IMPORTO_LORDO = @NoloCliente,
     IMPORTO_TOTALE = @NoloCliente,
@@ -322,25 +346,25 @@ SELECT @cols = STUFF((
     FOR XML PATH(''), TYPE
 ).value('.', 'nvarchar(max)'), 1, 1, N'')
 
-SET @sql = N'INSERT INTO dbo.T2ViaggiClienti (' + @cols + N') SELECT ' + @cols + N' FROM #t12Cli'
+SET @sql = N'INSERT INTO dbo.T2ViaggiClienti (' + @cols + N') SELECT ' + @cols + N' FROM #t11Cli'
 EXEC sys.sp_executesql @sql
 
-IF OBJECT_ID('tempdb..#t12Cs') IS NOT NULL DROP TABLE #t12Cs
+IF OBJECT_ID('tempdb..#t11Cs') IS NOT NULL DROP TABLE #t11Cs
 SELECT *
-INTO #t12Cs
+INTO #t11Cs
 FROM dbo.T2ViaggiClientiCarichiScarichi
 WHERE SOCIETA = @Societa
   AND ANNO = @Anno
   AND FILIALE = @FilialeCliente
   AND NUMERO = @TplNumeroCliente
 
-UPDATE #t12Cs
+UPDATE #t11Cs
 SET NUMERO = @NumeroCliente
 
-UPDATE #t12Cs
-SET CARICO_RAGIONE_SOCIALE = N'TEST CARICATORE PIGLIACELLI 99005',
+UPDATE #t11Cs
+SET CARICO_RAGIONE_SOCIALE = N'TEST CARICATORE PIGLIACELLI 99007',
     CARICO_LOCALITA = @LocC,
-    SCARICO_RAGIONE_SOCIALE = N'TEST DESTINATARIO PIGLIACELLI 99005',
+    SCARICO_RAGIONE_SOCIALE = N'TEST DESTINATARIO PIGLIACELLI 99007',
     SCARICO_LOCALITA = @LocS
 WHERE NUMERO_CARICO_SCARICO = @NumeroCarico
 
@@ -355,24 +379,24 @@ SELECT @cols = STUFF((
     FOR XML PATH(''), TYPE
 ).value('.', 'nvarchar(max)'), 1, 1, N'')
 
-SET @sql = N'INSERT INTO dbo.T2ViaggiClientiCarichiScarichi (' + @cols + N') SELECT ' + @cols + N' FROM #t12Cs'
+SET @sql = N'INSERT INTO dbo.T2ViaggiClientiCarichiScarichi (' + @cols + N') SELECT ' + @cols + N' FROM #t11Cs'
 EXEC sys.sp_executesql @sql
 
-IF OBJECT_ID('tempdb..#t12Merci') IS NOT NULL DROP TABLE #t12Merci
+IF OBJECT_ID('tempdb..#t11Merci') IS NOT NULL DROP TABLE #t11Merci
 SELECT *
-INTO #t12Merci
+INTO #t11Merci
 FROM dbo.T2ViaggiClientiCarichiScarichiMerci
 WHERE SOCIETA = @Societa
   AND ANNO = @Anno
   AND FILIALE = @FilialeCliente
   AND NUMERO = @TplNumeroCliente
 
-UPDATE #t12Merci
+UPDATE #t11Merci
 SET NUMERO = @NumeroCliente
 
-UPDATE #t12Merci
+UPDATE #t11Merci
 SET MERCE_CODICE = 'TEST',
-    MERCE_DESCRIZIONE = N'MERCE TEST PIGLIACELLI 99005 TIPO2'
+    MERCE_DESCRIZIONE = N'MERCE TEST PIGLIACELLI 99007'
 WHERE NUMERO_CARICO_SCARICO = @NumeroCarico
 
 SELECT @cols = STUFF((
@@ -386,30 +410,29 @@ SELECT @cols = STUFF((
     FOR XML PATH(''), TYPE
 ).value('.', 'nvarchar(max)'), 1, 1, N'')
 
-SET @sql = N'INSERT INTO dbo.T2ViaggiClientiCarichiScarichiMerci (' + @cols + N') SELECT ' + @cols + N' FROM #t12Merci'
+SET @sql = N'INSERT INTO dbo.T2ViaggiClientiCarichiScarichiMerci (' + @cols + N') SELECT ' + @cols + N' FROM #t11Merci'
 EXEC sys.sp_executesql @sql
 
-/* UPDATE_DATA_ORA = adesso → entra nella finestra incrementale. */
-IF OBJECT_ID('tempdb..#t12Vet') IS NOT NULL DROP TABLE #t12Vet
+IF OBJECT_ID('tempdb..#t11Vet') IS NOT NULL DROP TABLE #t11Vet
 SELECT *
-INTO #t12Vet
+INTO #t11Vet
 FROM dbo.T2ViaggiVettori
 WHERE SOCIETA = @Societa
   AND ANNO = @TplAnno
   AND FILIALE = @FilialeVettore
   AND NUMERO = @TplNumero
 
-UPDATE #t12Vet
+UPDATE #t11Vet
 SET NUMERO = @NumeroViaggio,
     VETTORE = @NuovoCodice,
     FORNITORE = @NuovoCodice,
     FORNITORE_CLIFOR = 'F',
     TARIFFA = 'G',
-    DESCRIZIONE_TARIFFA = 'TEST PIGLIACELLI 99005 TIPO2',
+    DESCRIZIONE_TARIFFA = 'TEST PIGLIACELLI 99007',
     IMPORTO_UNITARIO = @TariffaSubvettore,
     IMPORTO_TOTALE = @TariffaSubvettore,
     CONTROVALORE_IMPORTO_TOTALE = @TariffaSubvettore,
-    PARTENZA_DATA_ORA = '20261030 10:00:00',
+    PARTENZA_DATA_ORA = '20261030 08:00:00',
     DATA = '20261030',
     DATA_COMPETENZA = '20261030',
     INSERT_DATA_ORA = GETDATE(),
@@ -432,26 +455,26 @@ SELECT @cols = STUFF((
     FOR XML PATH(''), TYPE
 ).value('.', 'nvarchar(max)'), 1, 1, N'')
 
-SET @sql = N'INSERT INTO dbo.T2ViaggiVettori (' + @cols + N') SELECT ' + @cols + N' FROM #t12Vet'
+SET @sql = N'INSERT INTO dbo.T2ViaggiVettori (' + @cols + N') SELECT ' + @cols + N' FROM #t11Vet'
 EXEC sys.sp_executesql @sql
 
-IF OBJECT_ID('tempdb..#t12Op') IS NOT NULL DROP TABLE #t12Op
+IF OBJECT_ID('tempdb..#t11Op') IS NOT NULL DROP TABLE #t11Op
 SELECT *
-INTO #t12Op
+INTO #t11Op
 FROM dbo.T2ViaggiVettoriClienti
 WHERE SOCIETA = @Societa
   AND ANNO = @TplAnno
   AND FILIALE = @FilialeVettore
   AND NUMERO = @TplNumero
 
-UPDATE #t12Op
+UPDATE #t11Op
 SET NUMERO = @NumeroViaggio,
     CLIENTE_ANNO = NULL,
     CLIENTE_FILIALE = NULL,
     CLIENTE_NUMERO = NULL,
     CLIENTE_NUMERO_CARICO_SCARICO = NULL
 
-UPDATE #t12Op
+UPDATE #t11Op
 SET LOCALITA = @LocC,
     CLIENTE_ANNO = @Anno,
     CLIENTE_FILIALE = @FilialeCliente,
@@ -459,7 +482,7 @@ SET LOCALITA = @LocC,
     CLIENTE_NUMERO_CARICO_SCARICO = @NumeroCarico
 WHERE OPERAZIONE = 'C'
 
-UPDATE #t12Op
+UPDATE #t11Op
 SET LOCALITA = @LocS,
     CLIENTE_ANNO = @Anno,
     CLIENTE_FILIALE = @FilialeCliente,
@@ -478,7 +501,7 @@ SELECT @cols = STUFF((
     FOR XML PATH(''), TYPE
 ).value('.', 'nvarchar(max)'), 1, 1, N'')
 
-SET @sql = N'INSERT INTO dbo.T2ViaggiVettoriClienti (' + @cols + N') SELECT ' + @cols + N' FROM #t12Op'
+SET @sql = N'INSERT INTO dbo.T2ViaggiVettoriClienti (' + @cols + N') SELECT ' + @cols + N' FROM #t11Op'
 EXEC sys.sp_executesql @sql
 
 INSERT INTO dbo.T2ViaggiVettoriAddebiti
@@ -486,9 +509,21 @@ INSERT INTO dbo.T2ViaggiVettoriAddebiti
 VALUES
     (@Societa, @Anno, @FilialeVettore, @NumeroViaggio, 1, 'N', @ExtraSubvettore)
 
+FETCH NEXT FROM trip_cur INTO
+    @NumeroViaggio, @NumeroCliente, @TariffaSubvettore, @NoloCliente, @ExtraSubvettore, @LocC, @LocS, @OrdineRif
+END
+
+CLOSE trip_cur
+DEALLOCATE trip_cur
+
     COMMIT TRANSACTION
 END TRY
 BEGIN CATCH
+    IF CURSOR_STATUS('local', 'trip_cur') >= -1
+    BEGIN
+        CLOSE trip_cur
+        DEALLOCATE trip_cur
+    END
     IF @@TRANCOUNT > 0
         ROLLBACK TRANSACTION
     SET @ErrMsg = LEFT(ERROR_MESSAGE(), 2048)
@@ -496,6 +531,7 @@ BEGIN CATCH
     RETURN
 END CATCH
 
+/* Controllo: stessi filtri del job tratte. */
 SELECT
     v.ANNO,
     v.FILIALE,
@@ -503,6 +539,11 @@ SELECT
     v.VETTORE,
     v.TARIFFA,
     v.IMPORTO_UNITARIO AS tariffa_subvettore,
+    (
+        SELECT COALESCE(SUM(a.IMPORTO_TOTALE), 0)
+        FROM dbo.T2ViaggiVettoriAddebiti a
+        WHERE a.SOCIETA = v.SOCIETA AND a.ANNO = v.ANNO AND a.NUMERO = v.NUMERO
+    ) AS extra_subvettore,
     v.UPDATE_DATA_ORA
 FROM dbo.T2ViaggiVettori v
 INNER JOIN dbo.T2BaseVettori t
@@ -511,34 +552,13 @@ INNER JOIN dbo.T2BaseVettori t
    AND t.ATTIVO = 'S'
 WHERE v.SOCIETA = @Societa
   AND v.ANNO = @Anno
-  AND v.NUMERO = @NumeroViaggio
+  AND v.NUMERO IN (990007, 990017)
+ORDER BY v.NUMERO
 
-SELECT OPERAZIONE, LOCALITA, CLIENTE_ANNO, CLIENTE_FILIALE, CLIENTE_NUMERO, CLIENTE_NUMERO_CARICO_SCARICO
+SELECT NUMERO, OPERAZIONE, LOCALITA, CLIENTE_NUMERO
 FROM dbo.T2ViaggiVettoriClienti
 WHERE SOCIETA = @Societa
   AND ANNO = @Anno
-  AND NUMERO = @NumeroViaggio
+  AND NUMERO IN (990007, 990017)
   AND OPERAZIONE IN ('C', 'S')
-ORDER BY OPERAZIONE, PROGRESSIVO
-
-SELECT SUM(vcl.IMPORTO_TOTALE) AS tariffa_cliente
-FROM (
-    SELECT DISTINCT CLIENTE_ANNO, CLIENTE_FILIALE, CLIENTE_NUMERO
-    FROM dbo.T2ViaggiVettoriClienti
-    WHERE SOCIETA = @Societa
-      AND ANNO = @Anno
-      AND NUMERO = @NumeroViaggio
-      AND CLIENTE_NUMERO IS NOT NULL
-      AND CLIENTE_NUMERO <> 0
-) vc
-INNER JOIN dbo.T2ViaggiClienti vcl
-    ON vcl.SOCIETA = @Societa
-   AND vcl.ANNO = vc.CLIENTE_ANNO
-   AND vcl.FILIALE = vc.CLIENTE_FILIALE
-   AND vcl.NUMERO = vc.CLIENTE_NUMERO
-
-SELECT COALESCE(SUM(IMPORTO_TOTALE), 0) AS extra_subvettore
-FROM dbo.T2ViaggiVettoriAddebiti
-WHERE SOCIETA = @Societa
-  AND ANNO = @Anno
-  AND NUMERO = @NumeroViaggio
+ORDER BY NUMERO, OPERAZIONE, PROGRESSIVO

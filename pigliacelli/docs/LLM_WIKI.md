@@ -63,7 +63,7 @@ Tabelle chiave: `subvettori`, `contratti`, `subvettori_contratti`, `tratte`, `co
 
 **Sync SGA:** `insert_new_subvectors_basevettori` (T0, viaggi≥2024) → `upsert_subvectors_basevettori` (incrementale su `sync_date_subvettori`); `insert_new_trips_*`, `check_new_trips_nuovo_contratto_basevettori[_v2|_credenziali]`, `sync_subvettori_pec_da_sga`, `backfill_tratte_allegato_basevettori`
 
-**PDF/firma:** `nuovo_contratto_vettore`, `variazione_contratto`, `finalize_contract_subvector`, `easygn_start_wf[.php|_auto|_docs]`, `web_hook_firma`, `start_contract_sign_after_review`
+**PDF/firma:** `nuovo_contratto_vettore`, `variazione_contratto`, `finalize_contract_subvector[_v2]`, `easygn_start_wf[.php|_auto|_docs]`, `web_hook_firma`, `start_contract_sign_after_review` — codici errore API: `docs/easygn_codici_errore.md`
 
 **Auth:** `send_magic_link[_credenziali]`, `send_credenziali_subvettori_batch`, `form_subvettori_contratti_magic_link_review_*`, `app_menu_onLoad`
 
