@@ -1551,6 +1551,67 @@ if (!acquisisci_lock_check_new_trips()) {
     return;
 }
 
+// Solo sync manuale (menu): disabilita "Sincronizza tratte" nel parent durante il job,
+// poi la riattiva a fine richiesta (anche su return anticipati).
+if ($syncManualeRichiesto === 1) {
+    if (!function_exists('pigliacelli_menu_sync_tratte_busy')) {
+        function pigliacelli_menu_sync_tratte_busy($busy) {
+            $busyJs = $busy ? 'true' : 'false';
+            echo <<<JS
+<script>
+(function () {
+  try {
+    var doc = parent.document;
+    var a = doc.querySelector('a[data-sync-busy="1"]')
+         || doc.querySelector('a[href*="sc_apl_menu=check_new_trips_job"]')
+         || doc.querySelector('a[tab-title="sincronizza tratte"]');
+    if (!a) return;
+    if ({$busyJs}) {
+      if (a.getAttribute('data-sync-busy') === '1') return;
+      if (a.getAttribute('href')) a.setAttribute('data-sync-href', a.getAttribute('href'));
+      var label = a.querySelector('.label');
+      if (label && !a.getAttribute('data-sync-label')) {
+        a.setAttribute('data-sync-label', label.textContent || '');
+      }
+      a.setAttribute('data-sync-busy', '1');
+      a.style.opacity = '0.55';
+      a.style.pointerEvents = 'none';
+      a.setAttribute('aria-disabled', 'true');
+      a.removeAttribute('href');
+      if (label) label.textContent = 'sincronizzazione in corso...';
+    } else {
+      var href = a.getAttribute('data-sync-href');
+      if (href) {
+        a.setAttribute('href', href);
+        a.removeAttribute('data-sync-href');
+      }
+      var label0 = a.querySelector('.label');
+      var oldLabel = a.getAttribute('data-sync-label');
+      if (label0 && oldLabel !== null) {
+        label0.textContent = oldLabel;
+        a.removeAttribute('data-sync-label');
+      }
+      a.removeAttribute('data-sync-busy');
+      a.style.opacity = '';
+      a.style.pointerEvents = '';
+      a.removeAttribute('aria-disabled');
+    }
+  } catch (e) {}
+})();
+</script>
+JS;
+            if (function_exists('flush')) {
+                @ob_flush();
+                @flush();
+            }
+        }
+    }
+    pigliacelli_menu_sync_tratte_busy(true);
+    register_shutdown_function(function () {
+        pigliacelli_menu_sync_tratte_busy(false);
+    });
+}
+
 $set_names = [
     'sync_date',
     'sgam_user',

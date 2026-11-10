@@ -8,6 +8,38 @@ $subvectorData = $this->getSubvectorData($subvector);
 $nome_vettore = isset($subvectorData[0][0]) ? (string)$subvectorData[0][0] : '';
 $piva = isset($subvectorData[0][6]) ? (string)$subvectorData[0][6] : '';
 
+// Quadro tipo 1 + progressivo appendice (count tipo 2/3), non id variazione / tratte.version.
+$contrattoQuadroId = (int)$contrattoId;
+$appendiceNumero = '1';
+$rsQuadro = $this->Db->Execute("
+    SELECT c.id
+    FROM contratti c
+    INNER JOIN subvettori_contratti sc ON sc.contratto_id = c.id
+    WHERE sc.subvettore_id = " . (int)$subvector . "
+      AND c.tipo_contratto_id = 1
+    ORDER BY c.id ASC
+    LIMIT 1
+");
+if ($rsQuadro !== false && !$rsQuadro->EOF) {
+    $contrattoQuadroId = (int)$rsQuadro->fields[0];
+    $rsQuadro->Close();
+}
+$rsAppN = $this->Db->Execute("
+    SELECT COUNT(DISTINCT c.id)
+    FROM contratti c
+    INNER JOIN subvettori_contratti sc ON sc.contratto_id = c.id
+    WHERE sc.subvettore_id = " . (int)$subvector . "
+      AND c.tipo_contratto_id IN (2, 3)
+      AND c.id <= " . (int)$contrattoId . "
+");
+if ($rsAppN !== false && !$rsAppN->EOF) {
+    $nApp = (int)$rsAppN->fields[0];
+    if ($nApp > 0) {
+        $appendiceNumero = (string)$nApp;
+    }
+    $rsAppN->Close();
+}
+
 $sanitizePdfFilenamePart = function ($value) {
     $value = (string)$value;
     $value = str_replace(array('\\', '/', ':', '*', '?', '"', '<', '>', '|', "\0"), '_', $value);
@@ -15,7 +47,9 @@ $sanitizePdfFilenamePart = function ($value) {
     $value = preg_replace('/_+/u', '_', $value);
     return trim($value, '._ ');
 };
-$pdfBaseName = 'contratto_' . (string)$contrattoId . '_' . $sanitizePdfFilenamePart($nome_vettore) . '_' . date('Y-m-d');
+$pdfBaseName = 'appendice_' . $appendiceNumero
+    . '_contratto_' . (string)$contrattoQuadroId
+    . '_' . $sanitizePdfFilenamePart($nome_vettore) . '_' . date('Y-m-d');
 $pdfFileName = $pdfBaseName . '.pdf';
 $pdf->SetTitle($pdfBaseName);
 
@@ -78,7 +112,6 @@ if ($rsTratte !== false && !$rsTratte->EOF) {
     $rsTratte->Close();
 }
 $tratteRows = array();
-$appendiceNumero = '1';
 $formatMoney = function ($value) {
     $value = trim((string)$value);
     if ($value === '') return '';
@@ -91,14 +124,6 @@ $formatMoney = function ($value) {
 
 if (is_array($tratteData) && isset($tratteData[0]) && is_array($tratteData[0])) {
     foreach ($tratteData as $tratta) {
-        $version = isset($tratta[8]) ? (int)$tratta[8] : 0;
-        if ($version > 0) {
-            $appendiceProgressivo = max(1, $version - 1);
-            if ($appendiceProgressivo > (int)$appendiceNumero) {
-                $appendiceNumero = (string)$appendiceProgressivo;
-            }
-        }
-
         $tratteRows[] = array(
             'carico' => isset($tratta[0]) ? (string)$tratta[0] : '',
             'scarico' => isset($tratta[1]) ? (string)$tratta[1] : '',
@@ -174,7 +199,7 @@ $refreshPageH = function () use ($pdf) {
 };
 
 $drawPageTitle = function ($continuation) use (
-    $pdf, $contentX, $marginT, $appendiceNumero, $contrattoId, $nome_vettore
+    $pdf, $contentX, $marginT, $appendiceNumero, $contrattoQuadroId, $nome_vettore
 ) {
     if ($continuation) {
         $pdf->SetFont('Arial', 'B', 11);
@@ -185,7 +210,7 @@ $drawPageTitle = function ($continuation) use (
         $pdf->Cell(
             0,
             5,
-            "Contratto di trasporto n° " . (string)$contrattoId . '/' . date('Y'),
+            "Contratto di trasporto n° " . (string)$contrattoQuadroId . '/' . date('Y'),
             0,
             1,
             'L'
@@ -213,7 +238,7 @@ $drawPageTitle = function ($continuation) use (
     $pdf->Cell(
         0,
         6,
-        (string)$contrattoId . "/" . date('Y') . " del " . date('d/m/Y') . " tra Aut.ti Pigliacelli S.p.A. e " . $nome_vettore,
+        (string)$contrattoQuadroId . "/" . date('Y') . " del " . date('d/m/Y') . " tra Aut.ti Pigliacelli S.p.A. e " . $nome_vettore,
         0,
         1,
         'L'

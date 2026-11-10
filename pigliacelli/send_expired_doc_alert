@@ -2,6 +2,7 @@
  * Scriptcase scheduled blank: send_expired_doc_alert
  *
  * Job giornaliero: documenti con data_scadenza <= oggi (stato caricato / da revisionare) — alert documento scaduto.
+ * Destinatari ops: group_id 1 e 3 (admin/operatori). Escluso group_id 5 (Marcello).
  * - Mail + notifica SC al subvettore
  * - Mail + notifica SC ad admin/operatori/committente (group 1, 3 e 5)
  *
@@ -144,7 +145,7 @@ if (!function_exists('send_expired_doc_load_operatori')) {
               AND TRIM(su.login) <> ''
               AND su.email IS NOT NULL
               AND TRIM(su.email) <> ''
-              AND sug.group_id IN (1, 3, 5)
+              AND sug.group_id IN (1, 3)
         ", 'pigliacelli');
 
         if (!empty({rsExpOps})) {

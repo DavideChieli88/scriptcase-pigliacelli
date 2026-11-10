@@ -341,24 +341,38 @@
           return;
   }
 
+  // Se il PDF è già su disco (es. magic-link review con auto_save), non resettare.
+  sc_lookup(rsFinFileReadyV2, "
+      SELECT COALESCE(file, '')
+      FROM contratti
+      WHERE id = " . (int)$contrattoId . "
+      LIMIT 1
+  ");
+  $fileReadyVal = isset({rsFinFileReadyV2[0][0]}) ? trim((string){rsFinFileReadyV2[0][0]}) : '';
+  $diskMetaNow = finalize_pdf_on_disk($fileReadyVal, $contrattoId);
+  $diskReadyNow = !empty($diskMetaNow['found']);
+
   $genKey = 'finalize_pdf_started_' . (int)$contrattoId;
   $genStartedAt = isset($_SESSION[$genKey]) ? (int)$_SESSION[$genKey] : 0;
   $genInFlight = ($genStartedAt > 0 && (time() - $genStartedAt) < 100);
-  $startNewPdf = !$genInFlight;
 
-  if ($startNewPdf) {
+  if ($diskReadyNow) {
+      unset($_SESSION[$genKey]);
+      sc_log_add('FINALIZE', "contratto=$contrattoId PDF già pronto su disco — skip reset/generazione (v2)");
+      $reportUrl = 'about:blank';
+  } elseif ($genInFlight) {
+      sc_log_add(
+          'FINALIZE',
+          "contratto=$contrattoId skip reset PDF v2 (in corso da " . (time() - $genStartedAt) . "s)"
+      );
+      $reportUrl = 'about:blank';
+  } else {
       sc_exec_sql("UPDATE contratti SET file = '' WHERE id = " . (int)$contrattoId);
       $_SESSION[$genKey] = time();
       sc_log_add('FINALIZE', "contratto=$contrattoId file reset prima generazione PDF (v2)");
       $reportUrl = '../' . $reportApp . '/?subvector=' . (int)$subvettoreId
           . '&contratto=' . (int)$contrattoId
           . '&auto_save_pdf=S';
-  } else {
-      sc_log_add(
-          'FINALIZE',
-          "contratto=$contrattoId skip reset PDF v2 (in corso da " . (time() - $genStartedAt) . "s)"
-      );
-      $reportUrl = 'about:blank';
   }
 
   // Path esplicito all'app v2 (evita ?ajax=status relativo che in SC a volte torna HTML)
@@ -535,17 +549,14 @@
       document.getElementById('msg').textContent = 'La reindirizziamo alla firma digitale del contratto.';
       document.getElementById('hint').textContent =
         'Se il reindirizzamento non dovesse avvenire, troverà lo stesso link nell\'email che le invieremo a breve.';
-      // YouSign (frame-ancestors 'none') non può caricarsi nel tab iframe di Scriptcase.
+      // Una sola navigazione (stessa scheda). Niente window.open → evita 2 tab EasyGN.
       try {
         if (window.top && window.top !== window) {
           window.top.location.assign(signUrl);
           return;
         }
       } catch (e) { /* accesso cross-origin al parent */ }
-      var opened = window.open(signUrl, '_blank', 'noopener,noreferrer');
-      if (!opened) {
-        window.location.assign(signUrl);
-      }
+      window.location.assign(signUrl);
     }
 
     function onError(text) {

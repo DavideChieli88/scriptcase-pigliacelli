@@ -3,8 +3,9 @@
  * Name SC: sign_contract_subvettore
  * Label: Firma contratto
  *
- * sc_redir verso blank_sign_subvettore, target _blank.
- * Controlla stato 4 + link_subvettore prima del redirect (altrimenti tab bianca).
+ * Solo stato 4: riapre blank_sign_subvettore (link EasyGN già salvato).
+ * L'avvio firma tipo 2/3 parte dall'anteprima magic-link (pulsante Firma),
+ * non da questo tasto grid.
  */
 
 $contrattoId = isset({id}) ? (int){id} : 0;

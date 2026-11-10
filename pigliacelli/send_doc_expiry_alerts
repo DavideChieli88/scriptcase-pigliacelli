@@ -12,7 +12,7 @@
  *
  * Destinatari:
  *   dest_scope = sub  → solo subvettore (preavvisi)
- *   dest_scope = both → subvettore + operatori group 1/3 (giorno scadenza)
+ *   dest_scope = both → subvettore + operatori group 1/3 (giorno scadenza; escluso group 5 Marcello)
  *   dest_scope = ops  → solo operatori
  *
  * Nessun documenti_alert_log: 1 run/giorno + match esatto.
@@ -134,7 +134,7 @@ if (!function_exists('dea_load_operatori')) {
             INNER JOIN sec_users_groups sug ON sug.login = su.login
             WHERE su.active = 'Y'
               AND su.login IS NOT NULL AND TRIM(su.login) <> ''
-              AND sug.group_id IN (1, 3, 5)
+              AND sug.group_id IN (1, 3)
         ", 'pigliacelli');
 
         if (!empty({rsDeaOps})) {

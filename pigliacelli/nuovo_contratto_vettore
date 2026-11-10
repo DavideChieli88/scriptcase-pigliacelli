@@ -63,15 +63,42 @@ $loc_reg_imp    = isset($subvectorData[0][8])  ? (string)$subvectorData[0][8]  :
 $rea            = isset($subvectorData[0][9])  ? (string)$subvectorData[0][9]  : '';
 $telefono       = isset($subvectorData[0][10]) ? (string)$subvectorData[0][10] : '';
 
-$subvectorLegalData = $this->getSubvectorLegalData($subvector, $contrattoId);
-
-$num_iscrizione_albo   				= isset($subvectorLegalData[0][0])  ? (string)$subvectorLegalData[0][0]  : '';
-$nome_rappresentante     			= isset($subvectorLegalData[0][1])  ? (string)$subvectorLegalData[0][1]  : '';
-$cognome_rappresentante 				= isset($subvectorLegalData[0][2])  ? (string)$subvectorLegalData[0][2]  : '';
-$luogo_nascita_rappresentante 		= isset($subvectorLegalData[0][3])  ? (string)$subvectorLegalData[0][3]  : '';
-$prov_luogo_nascita_rappresentante  = isset($subvectorLegalData[0][4])  ? (string)$subvectorLegalData[0][4]  : '';
-$data_nascita_rappresentante        = isset($subvectorLegalData[0][5])  ? (string)$subvectorLegalData[0][5]  : '';
-$data_nascita_rappresentante        = $formatDbDate($data_nascita_rappresentante);
+// Stesso lookup dell'anteprima (form review / form_subvettori_contratti_onLoad):
+// COALESCE subvettori_contratti → subvettori (anagrafica), non solo il vecchio lookup SC.
+$num_iscrizione_albo = '';
+$nome_rappresentante = '';
+$cognome_rappresentante = '';
+$luogo_nascita_rappresentante = '';
+$prov_luogo_nascita_rappresentante = '';
+$data_nascita_rappresentante = '';
+$rsLegal = $this->Db->Execute("
+    SELECT
+        COALESCE(NULLIF(TRIM(sc.num_iscrizione_albo), ''), NULLIF(TRIM(s.num_iscrizione_albo), '')),
+        COALESCE(NULLIF(TRIM(sc.nome_rappresentante), ''), NULLIF(TRIM(s.nome_rappresentante), '')),
+        COALESCE(NULLIF(TRIM(sc.cognome_rappresentante), ''), NULLIF(TRIM(s.cognome_rappresentante), '')),
+        COALESCE(NULLIF(TRIM(sc.luogo_nascita_rappresentante), ''), NULLIF(TRIM(s.luogo_nascita_rappresentante), '')),
+        COALESCE(NULLIF(TRIM(sc.prov_luogo_nascita_rappresentante), ''), NULLIF(TRIM(s.prov_luogo_nascita_rappresentante), '')),
+        COALESCE(
+            IF(sc.data_nascita_rappresentante IS NULL OR sc.data_nascita_rappresentante < '1900-01-01', NULL, sc.data_nascita_rappresentante),
+            IF(s.data_nascita_rappresentante IS NULL OR s.data_nascita_rappresentante < '1900-01-01', NULL, s.data_nascita_rappresentante)
+        )
+    FROM subvettori s
+    LEFT JOIN subvettori_contratti sc
+      ON sc.subvettore_id = s.id
+     AND sc.contratto_id = " . (int)$contrattoId . "
+    WHERE s.id = " . (int)$subvector . "
+    LIMIT 1
+");
+if ($rsLegal !== false && !$rsLegal->EOF) {
+    $num_iscrizione_albo = trim((string)$rsLegal->fields[0]);
+    $nome_rappresentante = trim((string)$rsLegal->fields[1]);
+    $cognome_rappresentante = trim((string)$rsLegal->fields[2]);
+    $luogo_nascita_rappresentante = trim((string)$rsLegal->fields[3]);
+    $prov_luogo_nascita_rappresentante = trim((string)$rsLegal->fields[4]);
+    $data_nascita_rappresentante = trim((string)$rsLegal->fields[5]);
+    $rsLegal->Close();
+}
+$data_nascita_rappresentante = $formatDbDate($data_nascita_rappresentante);
  
 
 

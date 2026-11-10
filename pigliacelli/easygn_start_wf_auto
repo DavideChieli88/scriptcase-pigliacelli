@@ -72,6 +72,12 @@ $log = function ($msg) use ($contrattoId, $subvettoreId, $tipoContrattoId) {
 };
 
 $log("start blank");
+// La connessione può arrivare con autocommit=0: workflow_id/signer_ids salvati andrebbero persi
+sc_lookup(rsAcStart, "SELECT @@autocommit, CONNECTION_ID()");
+$log('db autocommit_prima=' . (isset({rsAcStart[0][0]}) ? (string){rsAcStart[0][0]} : '?')
+    . ' conn_id=' . (isset({rsAcStart[0][1]}) ? (string){rsAcStart[0][1]} : '?'));
+sc_exec_sql("COMMIT");
+sc_exec_sql("SET autocommit = 1");
 if ($tipoContrattoIdFromGet > 0 && $tipoContrattoIdFromGet !== $tipoContrattoId) {
     $log("tipoContrattoId corretto: hint/get=$tipoContrattoIdFromGet db=$tipoContrattoId");
 }
@@ -160,6 +166,53 @@ $fail = function ($msg) use ($log) {
 </html>";
     exit;
 };
+
+// Un secondo create sovrascrive easygn_workflow_id/easygn_signer_ids: il webhook non riconosce più
+// le firme fatte dal link della mail precedente (workflow vecchio ancora attivo su EasyGN).
+sc_lookup(rsWfGuard, "
+    SELECT COALESCE(c.easygn_workflow_id, ''), COALESCE(st.nome, ''), COALESCE(c.easygn_sign_link, '')
+    FROM contratti c
+    LEFT JOIN stati_contratti st ON st.id = c.stato_contratto_id
+    WHERE c.id = " . (int)$contrattoId . "
+    LIMIT 1
+");
+$wfEsistente = isset({rsWfGuard[0][0]}) ? trim((string){rsWfGuard[0][0]}) : '';
+$statoNomeAttuale = isset({rsWfGuard[0][1]}) ? trim((string){rsWfGuard[0][1]}) : '';
+$statiFirmaAvviata = array(
+    'In attesa della firma subvettore',
+    'In attesa della firma committente',
+    'Completato',
+);
+if ($wfEsistente !== '' && in_array($statoNomeAttuale, $statiFirmaAvviata, true)) {
+    $log('BLOCCO doppio avvio: workflow ' . $wfEsistente . ' già attivo, stato=' . $statoNomeAttuale);
+    if ($isSubvettoreMode && $statoNomeAttuale === 'In attesa della firma subvettore') {
+        $linkDecoded = json_decode((string){rsWfGuard[0][2]}, true);
+        $linkEsistente = is_array($linkDecoded) && !empty($linkDecoded['link_subvettore'])
+            ? trim((string)$linkDecoded['link_subvettore'])
+            : '';
+        if ($linkEsistente !== '' && preg_match('#^https?://#i', $linkEsistente) === 1) {
+            $log('redirect al link di firma del workflow esistente');
+            while (ob_get_level() > 0) {
+                ob_end_clean();
+            }
+            if (!headers_sent()) {
+                header('Location: ' . $linkEsistente);
+                exit;
+            }
+            echo "<!doctype html><html lang='it'><head><meta charset='utf-8'>"
+                . "<meta http-equiv='refresh' content='0;url=" . htmlspecialchars($linkEsistente, ENT_QUOTES, 'UTF-8') . "'>"
+                . "<title>Reindirizzamento firma</title></head><body>"
+                . "<script>window.location.replace(" . json_encode($linkEsistente) . ");</script>"
+                . "</body></html>";
+            exit;
+        }
+    }
+    $fail(
+        "La firma di questo contratto è già stata avviata (stato: " . $statoNomeAttuale . ").\n\n"
+        . "Avviarla di nuovo creerebbe un secondo workflow EasyGN e le firme fatte dal link già inviato "
+        . "non verrebbero più registrate."
+    );
+}
 
 $sc_setting = function ($name, $default = '') {
     $val = $default;
@@ -943,7 +996,7 @@ $extract_sign_links_paired = function ($data) use ($extract_sign_link_from_signe
 $sett_smtp = [];
 
 // Invio email link firma via sc_send_mail_api (SMTP da sec_settings, come job documenti in scadenza)
-$easygn_send_sign_link_email = function ($to, $recipientName, $signUrl, $roleLabel) use ($log, $sc_setting, $contrattoId, &$sett_smtp) {
+$easygn_send_sign_link_email = function ($to, $recipientName, $signUrl, $roleLabel) use ($log, $sc_setting, $contrattoId, $subvettoreId, $tipoContrattoId, &$sett_smtp) {
     $to = trim((string)$to);
     $signUrl = trim((string)$signUrl);
     if ($to === '' || filter_var($to, FILTER_VALIDATE_EMAIL) === false) {
@@ -964,13 +1017,47 @@ $easygn_send_sign_link_email = function ($to, $recipientName, $signUrl, $roleLab
         $nome = 'Gentile firmatario';
     }
 
+    $docRefTxt = 'il contratto #' . (int)$contrattoId;
+    $docRefHtml = 'il contratto <strong>#' . (int)$contrattoId . '</strong>';
+    $docSubject = 'Firma contratto — link di firma digitale';
+    if ((int)$tipoContrattoId === 2 || (int)$tipoContrattoId === 3) {
+        $quadroMail = (int)$contrattoId;
+        sc_lookup(rsEgQuadro, "
+            SELECT c.id
+            FROM contratti c
+            INNER JOIN subvettori_contratti sc ON sc.contratto_id = c.id
+            WHERE sc.subvettore_id = " . (int)$subvettoreId . "
+              AND c.tipo_contratto_id = 1
+            ORDER BY c.id ASC
+            LIMIT 1
+        ");
+        if (!empty({rsEgQuadro[0][0]})) {
+            $quadroMail = (int){rsEgQuadro[0][0]};
+        }
+        $appNMail = 1;
+        sc_lookup(rsEgAppN, "
+            SELECT COUNT(DISTINCT c.id)
+            FROM contratti c
+            INNER JOIN subvettori_contratti sc ON sc.contratto_id = c.id
+            WHERE sc.subvettore_id = " . (int)$subvettoreId . "
+              AND c.tipo_contratto_id IN (2, 3)
+              AND c.id <= " . (int)$contrattoId . "
+        ");
+        if (!empty({rsEgAppN[0][0]}) && (int){rsEgAppN[0][0]} > 0) {
+            $appNMail = (int){rsEgAppN[0][0]};
+        }
+        $docRefTxt = 'l\'appendice #' . $appNMail . ' al contratto #' . $quadroMail;
+        $docRefHtml = 'l\'appendice <strong>#' . $appNMail . '</strong> al contratto <strong>#' . $quadroMail . '</strong>';
+        $docSubject = 'Firma Appendice #' . $appNMail . ' al contratto #' . $quadroMail . ' — link di firma digitale';
+    }
+
     $subjectTpl = trim($sc_setting('easygn_mail_subject', ''));
     $titolo = ($subjectTpl !== '')
         ? str_replace(['{contrattoId}', '{ruolo}'], [(string)$contrattoId, (string)$roleLabel], $subjectTpl)
-        : 'Firma contratto — link di firma digitale';
+        : $docSubject;
 
     $messaggioTesto = $nome . ",\n\n"
-        . "Le chiediamo di firmare il contratto #" . (int)$contrattoId . " tramite firma digitale.\n\n"
+        . "Le chiediamo di firmare " . $docRefTxt . " tramite firma digitale.\n\n"
         . "Link di firma:\n" . $signUrl . "\n\n"
         . "Messaggio automatico — non rispondere.";
 
@@ -983,8 +1070,8 @@ $easygn_send_sign_link_email = function ($to, $recipientName, $signUrl, $roleLab
         : 'url src=[' . $mailLogoUrl . ']';
     $log('mail_logo ' . $mailLogoLog . ' mail_base_url=[' . $mailBase . ']');
     $mailInner = '<p style="margin:0 0 16px;">' . $safeNome . ',</p>'
-        . '<p style="margin:0 0 24px;">Le chiediamo di firmare il contratto <strong>#' . (int)$contrattoId
-        . '</strong> tramite il servizio di firma digitale.</p>'
+        . '<p style="margin:0 0 24px;">Le chiediamo di firmare ' . $docRefHtml
+        . ' tramite il servizio di firma digitale.</p>'
         . '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;"><tr>'
         . '<td align="center" bgcolor="#5b2d8e" style="border-radius:8px;background-color:#5b2d8e;">'
         . '<a href="' . $safeUrl . '" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:bold;'

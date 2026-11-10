@@ -305,9 +305,6 @@
       $_SESSION = array();
   }
 
-  sc_exec_sql("UPDATE contratti SET file = '' WHERE id = " . (int)$contrattoId);
-  sc_log_add('FINALIZE', "contratto=$contrattoId file reset prima generazione PDF");
-
   $_SESSION['pdf_auto_save'] = 'S';
   $_SESSION['pdf_redirect_after'] = '';
 
@@ -325,9 +322,28 @@
           return;
   }
 
-  $reportUrl = '../' . $reportApp . '/?subvector=' . (int)$subvettoreId
-      . '&contratto=' . (int)$contrattoId
-      . '&auto_save_pdf=S';
+  // Se il PDF è già su disco (es. salvato in magic-link review), non resettare.
+  sc_lookup(rsFinFileReady, "
+      SELECT COALESCE(file, '')
+      FROM contratti
+      WHERE id = " . (int)$contrattoId . "
+      LIMIT 1
+  ");
+  $fileReadyVal = isset({rsFinFileReady[0][0]}) ? trim((string){rsFinFileReady[0][0]}) : '';
+  $diskMetaNow = finalize_pdf_on_disk($fileReadyVal, $contrattoId);
+  $diskReadyNow = !empty($diskMetaNow['found']);
+
+  if ($diskReadyNow) {
+      sc_log_add('FINALIZE', "contratto=$contrattoId PDF già pronto su disco — skip reset/generazione");
+      $reportUrl = 'about:blank';
+  } else {
+      sc_exec_sql("UPDATE contratti SET file = '' WHERE id = " . (int)$contrattoId);
+      sc_log_add('FINALIZE', "contratto=$contrattoId file reset prima generazione PDF");
+      $reportUrl = '../' . $reportApp . '/?subvector=' . (int)$subvettoreId
+          . '&contratto=' . (int)$contrattoId
+          . '&auto_save_pdf=S';
+  }
+
   $statusUrl = '?ajax=status&contrattoId=' . (int)$contrattoId
       . '&subvettoreId=' . (int)$subvettoreId
       . '&tipoContrattoId=' . (int)$tipoContrattoId
@@ -489,17 +505,15 @@
       document.getElementById('msg').textContent = 'La reindirizziamo alla firma digitale del contratto.';
       document.getElementById('hint').textContent =
         'Se il reindirizzamento non dovesse avvenire, troverà lo stesso link nell\'email che le invieremo a breve.';
-      // YouSign (frame-ancestors 'none') non può caricarsi nel tab iframe di Scriptcase.
+      // Una sola navigazione (stessa scheda). Niente window.open → evita 2 tab EasyGN.
+      // YouSign non sta in iframe SC: se siamo in frame, sposta il top.
       try {
         if (window.top && window.top !== window) {
           window.top.location.assign(signUrl);
           return;
         }
       } catch (e) { /* accesso cross-origin al parent */ }
-      var opened = window.open(signUrl, '_blank', 'noopener,noreferrer');
-      if (!opened) {
-        window.location.assign(signUrl);
-      }
+      window.location.assign(signUrl);
     }
 
     function onError(text) {

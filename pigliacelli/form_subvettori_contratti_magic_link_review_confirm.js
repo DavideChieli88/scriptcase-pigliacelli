@@ -4,9 +4,10 @@
  * Incolla TUTTO questo file nel corpo del metodo.
  * onLoad chiama mlReviewConfirmInit con il JSON dell'anteprima.
  *
- * Schermata: istruzioni, Accetta e invia per la firma / Rifiuta, PDF aperto.
- * Accetta: modale nome, cognome, email, telefono (anagrafica), poi salva il form.
- * Rifiuta: chiama il metodo Programming mlReviewRefuseInit.
+ * Schermata: istruzioni + PDF.
+ * Tipo 1: Accetta / Rifiuta (modale rappresentante; rifiuto via mlReviewRefuseInit).
+ * Tipo 2/3: solo Firma → cfg.firmaUrl (finalize mode=subvettore → EasyGN).
+ * Firma/Accetta restano disabilitati finché ajax=status non conferma PDF su disco.
  */
 
 function mlReviewFindForm() {
@@ -36,31 +37,38 @@ function mlReviewSetField(form, name, value) {
     }
 }
 
-function mlReviewEnsureHiddenConfirm(form) {
+function mlReviewEnsureHidden(form, name, value) {
     if (!form) {
         return;
     }
-    var el = form.querySelector('input[name="review_confirm"]');
+    var el = form.querySelector('input[name="' + name + '"]');
     if (!el) {
         el = document.createElement('input');
         el.type = 'hidden';
-        el.name = 'review_confirm';
+        el.name = name;
         form.appendChild(el);
     }
-    el.value = '1';
+    el.value = value;
 }
 
-function mlReviewTriggerSave() {
+function mlReviewEnsureHiddenConfirm(form) {
+    mlReviewEnsureHidden(form, 'review_confirm', '1');
+}
+
+function mlReviewTriggerSave(opts) {
+    opts = opts || {};
+    // closewin=Y fa aprire lo sc_redir in un'altra finestra → EasyGN doppio con goToSign.
+    var useCloseWin = opts.closewin === true;
     window.__mlReviewSaveConfirmed = true;
     var form = mlReviewFindForm();
     mlReviewEnsureHiddenConfirm(form);
     if (form && form.closewin) {
         try {
-            form.closewin.value = 'Y';
+            form.closewin.value = useCloseWin ? 'Y' : 'N';
         } catch (e) {
         }
     }
-    mlReviewSetField(form, 'closewin', 'Y');
+    mlReviewSetField(form, 'closewin', useCloseWin ? 'Y' : 'N');
     setTimeout(function () {
         if (typeof scBtnFn_sys_format_alt === 'function') {
             scBtnFn_sys_format_alt();
@@ -77,19 +85,129 @@ function mlReviewTriggerSave() {
     }, 200);
 }
 
-function mlReviewButtonsHtml() {
+function mlReviewIsDirectSign(cfg) {
+    if (!cfg) {
+        return false;
+    }
+    if (cfg.directSign === 1 || cfg.directSign === true || cfg.directSign === '1') {
+        return true;
+    }
+    var tipo = parseInt(cfg.tipoContrattoId, 10) || 0;
+    return tipo === 2 || tipo === 3;
+}
+
+function mlReviewButtonsHtml(cfg) {
+    var dim = 'opacity:.55;cursor:not-allowed;';
+    if (mlReviewIsDirectSign(cfg)) {
+        return ''
+            + '<button type="button" class="ml-review-firma" disabled aria-disabled="true" style="padding:12px 18px;border:0;border-radius:8px;background:#5b2d8e;color:#fff;font-weight:bold;' + dim + '">'
+            + '<i class="fas fa-pen" style="margin-right:8px;" aria-hidden="true"></i>Firma il contratto</button>';
+    }
     return ''
-        + '<button type="button" class="ml-review-accetta" style="padding:12px 18px;border:0;border-radius:8px;background:#5b2d8e;color:#fff;font-weight:bold;cursor:pointer;"><i class="fas fa-check" style="margin-right:8px;" aria-hidden="true"></i>Accetta e invia per la firma</button>'
+        + '<button type="button" class="ml-review-accetta" disabled aria-disabled="true" style="padding:12px 18px;border:0;border-radius:8px;background:#5b2d8e;color:#fff;font-weight:bold;' + dim + '"><i class="fas fa-check" style="margin-right:8px;" aria-hidden="true"></i>Accetta e invia per la firma</button>'
         + '<button type="button" class="ml-review-rifiuta" style="padding:12px 18px;border:0;border-radius:8px;background:#c62828;color:#fff;font-weight:bold;cursor:pointer;"><i class="fas fa-times" style="margin-right:8px;" aria-hidden="true"></i>Rifiuta</button>';
 }
 
+function mlReviewSetActionButtonsEnabled(root, enabled) {
+    if (!root) {
+        return;
+    }
+    var nodes = root.querySelectorAll('.ml-review-firma, .ml-review-accetta');
+    var i;
+    for (i = 0; i < nodes.length; i++) {
+        nodes[i].disabled = !enabled;
+        nodes[i].setAttribute('aria-disabled', enabled ? 'false' : 'true');
+        nodes[i].style.opacity = enabled ? '1' : '0.55';
+        nodes[i].style.cursor = enabled ? 'pointer' : 'not-allowed';
+    }
+}
+
+function mlReviewSetPdfStatus(text, isError) {
+    var el = document.getElementById('ml-review-pdf-status');
+    if (!el) {
+        return;
+    }
+    el.textContent = text || '';
+    el.style.color = isError ? '#9b2c2c' : '#4a5568';
+}
+
+function mlReviewWaitPdfReady(cfg, root) {
+    if (!cfg || !cfg.statusUrl) {
+        mlReviewSetActionButtonsEnabled(root, true);
+        mlReviewSetPdfStatus('');
+        return;
+    }
+    if (window.__mlReviewPdfPollStarted) {
+        return;
+    }
+    window.__mlReviewPdfPollStarted = true;
+
+    var t0 = Date.now();
+    var timeoutMs = 90000;
+    var intervalMs = 1500;
+    var fetchErrors = 0;
+
+    mlReviewSetActionButtonsEnabled(root, false);
+    mlReviewSetPdfStatus('Preparazione documento in corso…', false);
+
+    var timer = setInterval(function () {
+        if (Date.now() - t0 > timeoutMs) {
+            clearInterval(timer);
+            mlReviewSetPdfStatus(
+                'Documento non pronto in tempo. Ricarichi la pagina o riprovi dal link ricevuto via email.',
+                true
+            );
+            return;
+        }
+
+        fetch(cfg.statusUrl, { cache: 'no-store', credentials: 'same-origin' })
+            .then(function (r) {
+                if (!r.ok) {
+                    throw new Error('http ' + r.status);
+                }
+                return r.json();
+            })
+            .then(function (j) {
+                fetchErrors = 0;
+                if (j && j.ok && j.ready) {
+                    clearInterval(timer);
+                    mlReviewSetActionButtonsEnabled(root, true);
+                    mlReviewSetPdfStatus('Documento pronto. Può procedere.', false);
+                }
+            })
+            .catch(function () {
+                fetchErrors++;
+                if (fetchErrors >= 5) {
+                    clearInterval(timer);
+                    mlReviewSetPdfStatus(
+                        'Impossibile verificare il documento. Ricarichi la pagina.',
+                        true
+                    );
+                }
+            });
+    }, intervalMs);
+}
+
 function mlReviewBindButtons(root, cfg) {
+    var firma = root.querySelectorAll('.ml-review-firma');
     var accetta = root.querySelectorAll('.ml-review-accetta');
     var rifiuta = root.querySelectorAll('.ml-review-rifiuta');
     var i;
+    for (i = 0; i < firma.length; i++) {
+        firma[i].onclick = function () {
+            if (this.disabled) {
+                return;
+            }
+            // Stesso popup dell'Accetta: conferma rappresentante, poi save → EasyGN.
+            mlReviewOpenAccetta(cfg, 'firma');
+        };
+    }
     for (i = 0; i < accetta.length; i++) {
         accetta[i].onclick = function () {
-            mlReviewOpenAccetta(cfg);
+            if (this.disabled) {
+                return;
+            }
+            mlReviewOpenAccetta(cfg, 'accetta');
         };
     }
     for (i = 0; i < rifiuta.length; i++) {
@@ -101,21 +219,30 @@ function mlReviewBindButtons(root, cfg) {
     }
 }
 
-function mlReviewOpenAccetta(cfg) {
+function mlReviewOpenAccetta(cfg, afterAction) {
+    afterAction = afterAction || (mlReviewIsDirectSign(cfg) ? 'firma' : 'accetta');
+    var isFirma = afterAction === 'firma';
     var overlay = document.getElementById('ml-review-accetta-overlay');
     if (overlay) {
+        var goReuse = document.getElementById('ml-rev-go');
+        if (goReuse) {
+            goReuse.textContent = isFirma ? 'Conferma e firma' : 'Conferma e invia';
+        }
+        overlay.setAttribute('data-after', afterAction);
         overlay.style.display = 'flex';
         return;
     }
     overlay = document.createElement('div');
     overlay.id = 'ml-review-accetta-overlay';
+    overlay.setAttribute('data-after', afterAction);
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:100000;'
         + 'display:flex;align-items:center;justify-content:center;padding:16px;';
     overlay.innerHTML = ''
         + '<div style="max-width:480px;width:100%;background:#fff;border-radius:12px;padding:22px 24px;'
         + 'font-family:Arial,Helvetica,sans-serif;color:#2d3748;">'
         + '<h2 style="margin:0 0 8px;font-size:18px;color:#1a3a5c;">Conferma il rappresentante legale</h2>'
-        + '<p style="margin:0 0 16px;font-size:14px;">Controlla i dati prima di inviare il contratto alla firma.</p>'
+        + '<p style="margin:0 0 16px;font-size:14px;">Controlla i dati prima di '
+        + (isFirma ? 'firmare il contratto.' : 'inviare il contratto alla firma.') + '</p>'
         + '<label style="display:block;font-size:13px;margin:0 0 10px;">Nome<br>'
         + '<input id="ml-rev-nome" style="width:100%;padding:8px;margin-top:4px;box-sizing:border-box;"></label>'
         + '<label style="display:block;font-size:13px;margin:0 0 10px;">Cognome<br>'
@@ -129,7 +256,8 @@ function mlReviewOpenAccetta(cfg) {
         + '<p id="ml-rev-err" style="display:none;color:#9b2c2c;font-size:13px;margin:0 0 12px;"></p>'
         + '<div style="display:flex;gap:12px;justify-content:flex-end;">'
         + '<button type="button" id="ml-rev-back" style="padding:10px 16px;border:1px solid #cbd5e0;background:#fff;border-radius:8px;">Indietro</button>'
-        + '<button type="button" id="ml-rev-go" style="padding:10px 16px;border:0;background:#5b2d8e;color:#fff;border-radius:8px;font-weight:bold;">Conferma e invia</button>'
+        + '<button type="button" id="ml-rev-go" style="padding:10px 16px;border:0;background:#5b2d8e;color:#fff;border-radius:8px;font-weight:bold;">'
+        + (isFirma ? 'Conferma e firma' : 'Conferma e invia') + '</button>'
         + '</div></div>';
     document.body.appendChild(overlay);
     document.getElementById('ml-rev-nome').value = cfg.nome || '';
@@ -156,7 +284,8 @@ function mlReviewOpenAccetta(cfg) {
         mlReviewSetField(form, 'email_rappresentante', email);
         mlReviewSetField(form, 'telefono_rappresentante', tel);
         overlay.style.display = 'none';
-        mlReviewTriggerSave();
+        // Firma: niente closewin (evita doppia finestra + doppia EasyGN).
+        mlReviewTriggerSave({ closewin: !isFirma });
     };
 }
 
@@ -201,14 +330,16 @@ function mlReviewBuild(cfg) {
         shell.style.cssText = 'position:fixed;inset:0;z-index:99990;overflow:auto;background:#eef1f4;';
         shell.innerHTML = ''
             + '<div style="max-width:980px;margin:16px auto;padding:0 16px 32px;font-family:Arial,Helvetica,sans-serif;">'
-            + '<div class="ml-review-bar" style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;">' + mlReviewButtonsHtml() + '</div>'
+            + '<div class="ml-review-bar" style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;">' + mlReviewButtonsHtml(cfg) + '</div>'
+            + '<p id="ml-review-pdf-status" style="margin:8px 0 0;font-size:13px;color:#4a5568;text-align:center;">Preparazione documento in corso…</p>'
             + '<iframe class="ml-review-pdf" title="Anteprima contratto" src="' + (cfg.pdf || '') + '" '
-            + 'style="width:100%;height:78vh;border:1px solid #dde1e6;background:#fff;"></iframe>'
-            + '<div class="ml-review-bar" style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:16px;">' + mlReviewButtonsHtml() + '</div>'
+            + 'style="width:100%;height:78vh;border:1px solid #dde1e6;background:#fff;margin-top:12px;"></iframe>'
+            + '<div class="ml-review-bar" style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:16px;">' + mlReviewButtonsHtml(cfg) + '</div>'
             + '</div>';
         document.body.appendChild(shell);
     }
     mlReviewBindButtons(shell, cfg);
+    mlReviewWaitPdfReady(cfg, shell);
 }
 
 function mlReviewStart() {

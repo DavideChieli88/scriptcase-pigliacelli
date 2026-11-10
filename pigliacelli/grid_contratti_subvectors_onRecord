@@ -1,6 +1,10 @@
 /**
  * grid_contratti_subvectors → onRecord
  * Incluso show/hide di sign_contract_subvettore (Firma contratto).
+ *
+ * Stato 2: sempre anteprima/review (form magic link) — tipo 1 Accetta/Rifiuta,
+ * tipo 2/3 solo pulsante Firma nella stessa anteprima PDF.
+ * Stato 4: Firma (riapre link EasyGN già creato).
  */
 
 $stato = {stato_contratto_id};
@@ -13,14 +17,14 @@ switch ($stato) {
         sc_actionbar_hide("sign_contract_subvettore");
         break;
 
-    case 2: // Inviato al subvettore
+    case 2: // Inviato al subvettore — sempre passa dall'anteprima PDF
         sc_actionbar_show("open_template_pdf");
         sc_actionbar_hide("view_contract");
         sc_actionbar_show("show_form_subvettori_contratti_review");
         sc_actionbar_hide("sign_contract_subvettore");
         break;
 
-    case 3: // Compilato dal subvettore — revisione admin + avvio firma
+    case 3: // Accettato dal subvettore (tipo 1); admin avvia firma
         sc_actionbar_show("open_template_pdf");
         sc_actionbar_hide("view_contract");
         sc_actionbar_hide("show_form_subvettori_contratti_review");
