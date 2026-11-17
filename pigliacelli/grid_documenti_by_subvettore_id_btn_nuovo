@@ -1,0 +1,33 @@
+/**
+ * grid_documenti_by_subvettore_id → toolbar, pulsante PHP btn_nuovo
+ *
+ * IDE — griglia:
+ *   Action Bar / toolbar (non pulsante di riga), tipo PHP
+ *   Label: Nuovo
+ *   Parametro app: subvettoreId (Integer) = [subvettoreId] dalla dashboard
+ *   NON usare {id} (è l'id del documento, non del subvettore).
+ *
+ * IDE — form_documenti:
+ *   Globale prefill_subvettore_id (Integer, default 0, non richiedere a startup)
+ *   Incollare form_documenti_onScriptInit aggiornato
+ *
+ * Passa prefill_subvettore_id (non subvettoreId) per non ereditare
+ * un [subvettoreId] di sessione vecchio (wizard / altra dashboard).
+ */
+$subId = 0;
+
+// Prima il globale della grid/dashboard (binding widget), poi URL.
+if (isset([subvettoreId]) && (int)[subvettoreId] > 0) {
+    $subId = (int)[subvettoreId];
+} elseif (isset($_GET['subvettoreId']) && (int)$_GET['subvettoreId'] > 0) {
+    $subId = (int)$_GET['subvettoreId'];
+} elseif (isset($_REQUEST['subvettoreId']) && (int)$_REQUEST['subvettoreId'] > 0) {
+    $subId = (int)$_REQUEST['subvettoreId'];
+}
+
+if ($subId <= 0) {
+    sc_error_message('Subvettore non selezionato. Riaprire il dettaglio subvettore.');
+    return;
+}
+
+sc_redir('form_documenti', prefill_subvettore_id=$subId, 'modal', '', '900', '700');

@@ -7,8 +7,8 @@
 //     nella STESSA run (no skip attesa_import_tipo1).
 //  3) Se ha gia tratte/tipo1: tipo 2 (nuova) / tipo 3 (tariffa) come v2.
 // Resta: filtro wizard_complete=1, sync_date, lock, resoconto HTML.
-// SELECT SGA: solo IMPORTO_UNITARIO > 0 e con almeno un carico + uno scarico
-// (evita round-trip localita/allegato su viaggi a zero / senza localita).
+// SELECT SGA: solo IMPORTO_UNITARIO > 0 (finestra sync_date).
+// Carico+scarico: non in EXISTS (lenti su SGA); stessa condizione nel loop con sga_carica_localita.
 // Non copre il recupero storico se i viaggi erano gia' passati a wizard=0.
 // Non usare in schedulazione produzione al posto del v2 senza accordo esplicito.
 function sql_quote($v) {
@@ -1319,30 +1319,260 @@ function sga_carica_localita($pdo_sga, $societa, $anno, $numero) {
     ";
     $stmt_localita = sga_pdo_query($pdo_sga, $sql);
     if ($stmt_localita === false) {
-        return array('', '');
+        // Esito non determinabile: si comporta come prima (viaggio contato, poi skip senza_localita).
+        return array('', '', true, true);
     }
 
-    $carichi = [];
-    $scarichi = [];
-
+    $acc = sga_localita_vuota();
     while (($row = $stmt_localita->fetch(PDO::FETCH_NUM)) !== false) {
-        $op = trim((string)$row[0]);
-        $loc = trim((string)$row[1]);
-        if ($loc === '') {
-            continue;
-        }
-        if ($op === 'C') {
-            $carichi[] = $loc;
-        } elseif ($op === 'S') {
-            $scarichi[] = $loc;
-        }
+        sga_accumula_localita($acc, $row[0], $row[1]);
     }
     $stmt_localita->closeCursor();
 
+    return sga_localita_finale($acc);
+}
+
+// Accumulatore localita di un viaggio: carichi, scarichi, ha_riga_c, ha_riga_s.
+function sga_localita_vuota() {
+    return array(array(), array(), false, false);
+}
+
+function sga_accumula_localita(&$acc, $operazione, $localita) {
+    $op = trim((string)$operazione);
+    $op_sql = strtoupper($op);
+    // Presenza di almeno una riga C / S, anche con LOCALITA vuota:
+    // e' la stessa condizione dei vecchi EXISTS sulla SELECT base.
+    if ($op_sql === 'C') {
+        $acc[2] = true;
+    } elseif ($op_sql === 'S') {
+        $acc[3] = true;
+    }
+    $loc = trim((string)$localita);
+    if ($loc === '') {
+        return;
+    }
+    if ($op === 'C') {
+        $acc[0][] = $loc;
+    } elseif ($op === 'S') {
+        $acc[1][] = $loc;
+    }
+}
+
+function sga_localita_finale($acc) {
     return array(
-        implode(' + ', $carichi),
-        implode(' + ', $scarichi),
+        implode(' + ', $acc[0]),
+        implode(' + ', $acc[1]),
+        $acc[2],
+        $acc[3],
     );
+}
+
+// ---------------------------------------------------------------------------
+// Letture SGA a gruppi: una query ogni 300 viaggi dello stesso anno
+// al posto di una query per viaggio. Stesse tabelle, stessi filtri, stesso
+// ordine delle righe dentro al viaggio.
+// Ogni funzione a gruppi restituisce una mappa chiave => valore con una voce
+// per OGNI viaggio dei gruppi letti. Se la query di un gruppo fallisce,
+// quei viaggi restano fuori dalla mappa e il chiamante usa la query singola:
+// l'errore resta isolato sul singolo viaggio, come prima.
+// Chiave viaggio: inline (int)SOCIETA + pipe + (int)ANNO + pipe + (int)NUMERO
+// (niente helper dedicato: su SC a volte la function non veniva registrata).
+// function_exists: evita "Cannot redeclare" se SC riesegue l'evento.
+// ---------------------------------------------------------------------------
+
+// $viaggi: lista di array(SOCIETA, ANNO, NUMERO). Restituisce gruppi array(societa, anno, elenco numeri).
+if (!function_exists('sga_gruppi_viaggi')) {
+function sga_gruppi_viaggi($viaggi) {
+    $gruppo_max = 300;
+    $per_anno = array();
+    foreach ($viaggi as $v) {
+        $chiave_anno = (int)$v[0] . '|' . (int)$v[1];
+        if (!isset($per_anno[$chiave_anno])) {
+            $per_anno[$chiave_anno] = array();
+        }
+        $per_anno[$chiave_anno][(int)$v[2]] = true;
+    }
+
+    $gruppi = array();
+    foreach ($per_anno as $chiave_anno => $numeri_set) {
+        $parti = explode('|', $chiave_anno);
+        foreach (array_chunk(array_keys($numeri_set), $gruppo_max) as $numeri) {
+            $gruppi[] = array((int)$parti[0], (int)$parti[1], $numeri);
+        }
+    }
+    return $gruppi;
+}
+}
+
+if (!function_exists('sga_gruppo_fallito')) {
+function sga_gruppo_fallito($cosa, $stmt, $anno, $numeri, $errore) {
+    if (is_object($stmt) && method_exists($stmt, 'closeCursor')) {
+        try {
+            $stmt->closeCursor();
+        } catch (Throwable $eChiudi) {
+        }
+    }
+    log_export_tratte(
+        'SGA_GRUPPO',
+        $cosa . ' non letto a gruppo, uso le query singole | anno=' . (int)$anno .
+        ' viaggi=' . count($numeri) .
+        ' | ' . $errore
+    );
+}
+}
+
+if (!function_exists('sga_carica_localita_gruppi')) {
+function sga_carica_localita_gruppi($pdo_sga, $viaggi) {
+    $mappa = array();
+    foreach (sga_gruppi_viaggi($viaggi) as $gruppo) {
+        $societa = $gruppo[0];
+        $anno = $gruppo[1];
+        $numeri = $gruppo[2];
+
+        $parziale = array();
+        foreach ($numeri as $numero) {
+            $parziale[(int)$societa . '|' . (int)$anno . '|' . (int)$numero] = sga_localita_vuota();
+        }
+
+        $stmt_gruppo = null;
+        try {
+            $stmt_gruppo = sga_pdo_query($pdo_sga, "
+                SELECT NUMERO, OPERAZIONE, LOCALITA
+                FROM T2ViaggiVettoriClienti
+                WHERE SOCIETA = " . sga_sql_int($societa) . "
+                  AND ANNO = " . sga_sql_int($anno) . "
+                  AND NUMERO IN (" . implode(', ', $numeri) . ")
+                  AND OPERAZIONE IN ('C', 'S')
+                ORDER BY NUMERO, OPERAZIONE, PROGRESSIVO
+            ");
+            if ($stmt_gruppo === false) {
+                sga_gruppo_fallito('localita', null, $anno, $numeri, 'query senza risultato');
+                continue;
+            }
+            while (($row = $stmt_gruppo->fetch(PDO::FETCH_NUM)) !== false) {
+                $k = (int)$societa . '|' . (int)$anno . '|' . (int)$row[0];
+                if (isset($parziale[$k])) {
+                    sga_accumula_localita($parziale[$k], $row[1], $row[2]);
+                }
+            }
+            $stmt_gruppo->closeCursor();
+        } catch (Throwable $eGruppo) {
+            sga_gruppo_fallito('localita', $stmt_gruppo, $anno, $numeri, $eGruppo->getMessage());
+            continue;
+        }
+
+        foreach ($parziale as $k => $acc) {
+            $mappa[$k] = sga_localita_finale($acc);
+        }
+    }
+    return $mappa;
+}
+}
+
+if (!function_exists('sga_carica_extra_gruppi')) {
+function sga_carica_extra_gruppi($pdo_sga, $viaggi) {
+    $mappa = array();
+    foreach (sga_gruppi_viaggi($viaggi) as $gruppo) {
+        $societa = $gruppo[0];
+        $anno = $gruppo[1];
+        $numeri = $gruppo[2];
+
+        // Viaggio senza addebiti: 0, come COALESCE(SUM(...), 0) della query singola.
+        $parziale = array();
+        foreach ($numeri as $numero) {
+            $parziale[(int)$societa . '|' . (int)$anno . '|' . (int)$numero] = 0;
+        }
+
+        $stmt_gruppo = null;
+        try {
+            $stmt_gruppo = sga_pdo_query($pdo_sga, "
+                SELECT NUMERO, COALESCE(SUM(IMPORTO_TOTALE), 0)
+                FROM T2ViaggiVettoriAddebiti
+                WHERE SOCIETA = " . sga_sql_int($societa) . "
+                  AND ANNO = " . sga_sql_int($anno) . "
+                  AND NUMERO IN (" . implode(', ', $numeri) . ")
+                GROUP BY NUMERO
+            ");
+            if ($stmt_gruppo === false) {
+                sga_gruppo_fallito('extra', null, $anno, $numeri, 'query senza risultato');
+                continue;
+            }
+            while (($row = $stmt_gruppo->fetch(PDO::FETCH_NUM)) !== false) {
+                $k = (int)$societa . '|' . (int)$anno . '|' . (int)$row[0];
+                if (array_key_exists($k, $parziale)) {
+                    $parziale[$k] = ($row[1] === null || $row[1] === false) ? 0 : $row[1];
+                }
+            }
+            $stmt_gruppo->closeCursor();
+        } catch (Throwable $eGruppo) {
+            sga_gruppo_fallito('extra', $stmt_gruppo, $anno, $numeri, $eGruppo->getMessage());
+            continue;
+        }
+
+        foreach ($parziale as $k => $valore) {
+            $mappa[$k] = $valore;
+        }
+    }
+    return $mappa;
+}
+}
+
+if (!function_exists('sga_carica_tariffa_cliente_gruppi')) {
+function sga_carica_tariffa_cliente_gruppi($pdo_sga, $viaggi) {
+    $mappa = array();
+    foreach (sga_gruppi_viaggi($viaggi) as $gruppo) {
+        $societa = $gruppo[0];
+        $anno = $gruppo[1];
+        $numeri = $gruppo[2];
+
+        // Viaggio senza cliente collegato: null, come la query singola.
+        $parziale = array();
+        foreach ($numeri as $numero) {
+            $parziale[(int)$societa . '|' . (int)$anno . '|' . (int)$numero] = null;
+        }
+
+        $stmt_gruppo = null;
+        try {
+            $stmt_gruppo = sga_pdo_query($pdo_sga, "
+                SELECT vc.NUMERO, SUM(vcl.IMPORTO_TOTALE)
+                FROM (
+                    SELECT DISTINCT NUMERO, CLIENTE_ANNO, CLIENTE_FILIALE, CLIENTE_NUMERO
+                    FROM T2ViaggiVettoriClienti
+                    WHERE SOCIETA = " . sga_sql_int($societa) . "
+                      AND ANNO = " . sga_sql_int($anno) . "
+                      AND NUMERO IN (" . implode(', ', $numeri) . ")
+                      AND CLIENTE_NUMERO IS NOT NULL
+                      AND CLIENTE_NUMERO <> 0
+                ) vc
+                INNER JOIN T2ViaggiClienti vcl
+                    ON vcl.SOCIETA = " . sga_sql_int($societa) . "
+                   AND vcl.ANNO = vc.CLIENTE_ANNO
+                   AND vcl.FILIALE = vc.CLIENTE_FILIALE
+                   AND vcl.NUMERO = vc.CLIENTE_NUMERO
+                GROUP BY vc.NUMERO
+            ");
+            if ($stmt_gruppo === false) {
+                sga_gruppo_fallito('tariffa_cliente', null, $anno, $numeri, 'query senza risultato');
+                continue;
+            }
+            while (($row = $stmt_gruppo->fetch(PDO::FETCH_NUM)) !== false) {
+                $k = (int)$societa . '|' . (int)$anno . '|' . (int)$row[0];
+                if (array_key_exists($k, $parziale)) {
+                    $parziale[$k] = ($row[1] === null || $row[1] === false) ? null : round((float)$row[1], 2);
+                }
+            }
+            $stmt_gruppo->closeCursor();
+        } catch (Throwable $eGruppo) {
+            sga_gruppo_fallito('tariffa_cliente', $stmt_gruppo, $anno, $numeri, $eGruppo->getMessage());
+            continue;
+        }
+
+        foreach ($parziale as $k => $valore) {
+            $mappa[$k] = $valore;
+        }
+    }
+    return $mappa;
+}
 }
 
 function sga_carica_extra($pdo_sga, $societa, $anno, $numero) {
@@ -1444,30 +1674,114 @@ function sga_carica_allegato($pdo_sga, $societa, $anno, $numero) {
         return array(null, null, null);
     }
 
-    $caricatore = null;
-    $proprietario_merce = null;
-    $merce_parts = [];
-
+    $acc = sga_allegato_vuoto();
     while (($row = $stmt_allegato->fetch(PDO::FETCH_NUM)) !== false) {
-        $c = trim((string)$row[0]);
-        if ($caricatore === null && $c !== '') {
-            $caricatore = $c;
-        }
-        $p = trim((string)$row[1]);
-        if ($proprietario_merce === null && $p !== '') {
-            $proprietario_merce = $p;
-        }
-
-        $label = merce_label_da_riga($row[2], $row[3]);
-        if ($label !== '' && !in_array($label, $merce_parts, true)) {
-            $merce_parts[] = $label;
-        }
+        sga_accumula_allegato($acc, $row[0], $row[1], $row[2], $row[3]);
     }
     $stmt_allegato->closeCursor();
 
-    $merce = count($merce_parts) > 0 ? implode('; ', $merce_parts) : null;
+    return sga_allegato_finale($acc);
+}
 
-    return [$caricatore, $proprietario_merce, $merce];
+// Accumulatore allegato di un viaggio: caricatore, proprietario_merce, elenco merci.
+function sga_allegato_vuoto() {
+    return array(null, null, array());
+}
+
+function sga_accumula_allegato(&$acc, $caricatore, $proprietario_merce, $merce_codice, $merce_descrizione) {
+    $c = trim((string)$caricatore);
+    if ($acc[0] === null && $c !== '') {
+        $acc[0] = $c;
+    }
+    $p = trim((string)$proprietario_merce);
+    if ($acc[1] === null && $p !== '') {
+        $acc[1] = $p;
+    }
+
+    $label = merce_label_da_riga($merce_codice, $merce_descrizione);
+    if ($label !== '' && !in_array($label, $acc[2], true)) {
+        $acc[2][] = $label;
+    }
+}
+
+function sga_allegato_finale($acc) {
+    $merce = count($acc[2]) > 0 ? implode('; ', $acc[2]) : null;
+
+    return [$acc[0], $acc[1], $merce];
+}
+
+if (!function_exists('sga_carica_allegato_gruppi')) {
+function sga_carica_allegato_gruppi($pdo_sga, $viaggi) {
+    $mappa = array();
+    foreach (sga_gruppi_viaggi($viaggi) as $gruppo) {
+        $societa = $gruppo[0];
+        $anno = $gruppo[1];
+        $numeri = $gruppo[2];
+
+        $parziale = array();
+        foreach ($numeri as $numero) {
+            $parziale[(int)$societa . '|' . (int)$anno . '|' . (int)$numero] = sga_allegato_vuoto();
+        }
+
+        $stmt_gruppo = null;
+        try {
+            $stmt_gruppo = sga_pdo_query($pdo_sga, "
+                SELECT
+                    vc.NUMERO,
+                    RTRIM(t.CARICO_RAGIONE_SOCIALE) AS caricatore,
+                    RTRIM(b.RAGIONE_SOCIALE) AS proprietario_merce,
+                    RTRIM(m.MERCE_CODICE) AS merce_codice,
+                    RTRIM(m.MERCE_DESCRIZIONE) AS merce_descrizione
+                FROM T2ViaggiVettoriClienti vc
+                INNER JOIN T2ViaggiClientiCarichiScarichi t
+                    ON t.SOCIETA = vc.SOCIETA
+                   AND t.ANNO = vc.CLIENTE_ANNO
+                   AND t.FILIALE = vc.CLIENTE_FILIALE
+                   AND t.NUMERO = vc.CLIENTE_NUMERO
+                   AND t.NUMERO_CARICO_SCARICO = vc.CLIENTE_NUMERO_CARICO_SCARICO
+                LEFT JOIN T2ViaggiClienti vcl
+                    ON vcl.SOCIETA = t.SOCIETA
+                   AND vcl.ANNO = t.ANNO
+                   AND vcl.FILIALE = t.FILIALE
+                   AND vcl.NUMERO = t.NUMERO
+                LEFT JOIN BaCliFor b
+                    ON b.SOCIETA = vcl.SOCIETA
+                   AND b.CLIENTE_FORNITORE = 'C'
+                   AND b.CODICE = vcl.CLIENTE
+                LEFT JOIN T2ViaggiClientiCarichiScarichiMerci m
+                    ON m.SOCIETA = t.SOCIETA
+                   AND m.ANNO = t.ANNO
+                   AND m.FILIALE = t.FILIALE
+                   AND m.NUMERO = t.NUMERO
+                   AND m.NUMERO_CARICO_SCARICO = t.NUMERO_CARICO_SCARICO
+                WHERE vc.SOCIETA = " . sga_sql_int($societa) . "
+                  AND vc.ANNO = " . sga_sql_int($anno) . "
+                  AND vc.NUMERO IN (" . implode(', ', $numeri) . ")
+                  AND vc.OPERAZIONE = 'C'
+                ORDER BY vc.NUMERO, vc.PROGRESSIVO, m.MERCE_CODICE
+            ");
+            if ($stmt_gruppo === false) {
+                sga_gruppo_fallito('allegato', null, $anno, $numeri, 'query senza risultato');
+                continue;
+            }
+            while (($row = $stmt_gruppo->fetch(PDO::FETCH_NUM)) !== false) {
+                $k = (int)$societa . '|' . (int)$anno . '|' . (int)$row[0];
+                if (isset($parziale[$k])) {
+                    sga_accumula_allegato($parziale[$k], $row[1], $row[2], $row[3], $row[4]);
+                }
+            }
+            $stmt_gruppo->closeCursor();
+        } catch (Throwable $eGruppo) {
+            sga_gruppo_fallito('allegato', $stmt_gruppo, $anno, $numeri, $eGruppo->getMessage());
+            continue;
+        }
+
+        foreach ($parziale as $k => $acc) {
+            $mappa[$k] = sga_allegato_finale($acc);
+        }
+    }
+    return $mappa;
+}
 }
 
 function html_resoconto_sync($titolo, $nota, array $voci) {
@@ -1628,8 +1942,7 @@ sc_lookup(settingsRows, "
         'sgam_user',
         'sgam_pswd',
         'sgam_db',
-        'sgam_server',
-        'export_tratte_batch_minutes'
+        'sgam_server'
     )
 ", "pigliacelli");
 
@@ -1653,31 +1966,18 @@ if ($soglia_data_ora === null || trim((string)$soglia_data_ora) === '') {
     $soglia_data_ora = '1900-01-01 00:00:00';
 }
 
-$batch_minutes = array_key_exists('export_tratte_batch_minutes', $settings)
-    ? (int)$settings['export_tratte_batch_minutes']
-    : 60;
-if ($batch_minutes <= 0) {
-    $batch_minutes = 60;
-}
-
-$soglia_ts = strtotime($soglia_data_ora);
-if ($soglia_ts === false) {
+if (strtotime($soglia_data_ora) === false) {
     $soglia_data_ora = '1900-01-01 00:00:00';
-    $soglia_ts = strtotime($soglia_data_ora);
 }
 
-$fine_sync_data_ora = date('Y-m-d H:i:s', strtotime('+' . $batch_minutes . ' minutes', $soglia_ts));
-$now_data_ora = date('Y-m-d H:i:s');
-if ($fine_sync_data_ora > $now_data_ora) {
-    $fine_sync_data_ora = $now_data_ora;
-}
+// La finestra va da sync_date fino ad adesso: una corsa recupera tutto l'arretrato.
+$fine_sync_data_ora = date('Y-m-d H:i:s');
 
 log_export_tratte(
     'START',
     'finestra sync da ' . $soglia_data_ora . ' a ' . $fine_sync_data_ora .
-    ' | batch_minutes=' . $batch_minutes .
     ' | manuale=' . $syncManualeRichiesto .
-    ' | build=fast_no_bf_t1_inrun_v2'
+    ' | build=fast_no_bf_t1_inrun_v3_gruppi_b'
   );
 
 $sgam_user   = $settings['sgam_user'];
@@ -1743,24 +2043,10 @@ $sql_viaggi_base = "
       AND v.IMPORTO_UNITARIO > 0
       AND COALESCE(v.UPDATE_DATA_ORA, v.INSERT_DATA_ORA, '1900-01-01 00:00:00') > :soglia_data_ora
       AND COALESCE(v.UPDATE_DATA_ORA, v.INSERT_DATA_ORA, '1900-01-01 00:00:00') <= :fine_sync_data_ora
-      AND EXISTS (
-            SELECT 1
-            FROM T2ViaggiVettoriClienti vc_c
-            WHERE vc_c.SOCIETA = v.SOCIETA
-              AND vc_c.ANNO = v.ANNO
-              AND vc_c.NUMERO = v.NUMERO
-              AND vc_c.OPERAZIONE = 'C'
-      )
-      AND EXISTS (
-            SELECT 1
-            FROM T2ViaggiVettoriClienti vc_s
-            WHERE vc_s.SOCIETA = v.SOCIETA
-              AND vc_s.ANNO = v.ANNO
-              AND vc_s.NUMERO = v.NUMERO
-              AND vc_s.OPERAZIONE = 'S'
-      )
     ORDER BY COALESCE(v.UPDATE_DATA_ORA, v.INSERT_DATA_ORA, '1900-01-01 00:00:00'), v.ANNO, v.NUMERO
 ";
+// Niente EXISTS C/S nella SELECT base: su SGA sono lenti. La stessa condizione
+// (almeno una riga C e una riga S) e' applicata nel loop con sga_carica_localita.
 
 $sql_localita = "
     SELECT OPERAZIONE, LOCALITA
@@ -1844,6 +2130,17 @@ try {
     $stmt_viaggi_base->closeCursor();
     $stat_viaggi_sga = count($viaggi_base_rows);
 
+    // Localita di tutti i viaggi della finestra: una query a gruppo, non una per viaggio.
+    $chiavi_viaggi = array();
+    foreach ($viaggi_base_rows as $row_sga) {
+        $chiavi_viaggi[] = array($row_sga[0], $row_sga[1], $row_sga[2]);
+    }
+    $localita_gruppi = sga_carica_localita_gruppi($pdo_sga, $chiavi_viaggi);
+    unset($chiavi_viaggi);
+
+    // Primo giro: stessi filtri, contatori e log di prima, nello stesso ordine.
+    // I viaggi che passano aspettano i dettagli (allegato, tariffa cliente, extra).
+    $viaggi_da_completare = array();
     foreach ($viaggi_base_rows as $row_sga) {
         try {
         $societa          = $row_sga[0];
@@ -1865,11 +2162,27 @@ try {
         $partenza_data_ora = $row_sga[16];
         $sync_data_ora    = $row_sga[17];
 
+        // Sostituisce i vecchi EXISTS C/S della SELECT base: un viaggio senza almeno
+        // una riga C e una riga S prima non veniva nemmeno restituito. Qui esce in
+        // silenzio, senza log e senza entrare nei contatori, come se non fosse in lista.
+        // Viaggio fuori mappa = gruppo non letto: query singola, come prima.
+        $k_sga = (int)$societa . '|' . (int)$anno . '|' . (int)$numero;
+        if (isset($localita_gruppi[$k_sga])) {
+            [$carico_str, $scarico_str, $ha_riga_c, $ha_riga_s] = $localita_gruppi[$k_sga];
+        } else {
+            [$carico_str, $scarico_str, $ha_riga_c, $ha_riga_s] = sga_carica_localita($pdo_sga, $societa, $anno, $numero);
+        }
+        if (!$ha_riga_c || !$ha_riga_s) {
+            $stat_viaggi_sga--;
+            continue;
+        }
+
+        // Da qui in poi stesso ordine di prima, sugli stessi viaggi che passavano gli EXISTS.
         if ($sync_data_ora !== null && ($ultima_sync_data_ora === null || $sync_data_ora > $ultima_sync_data_ora)) {
             $ultima_sync_data_ora = $sync_data_ora;
         }
 
-        // Prima del dettaglio SGA: scarta importo non valido (la SELECT gia' filtra > 0;
+        // Scarta importo non valido (la SELECT gia' filtra > 0;
         // resta come rete di sicurezza su formati anomali).
         $importo_raw_sga = $importo_unitario;
         $importo_unitario = importo_unitario_normalizzato($importo_unitario);
@@ -1885,8 +2198,7 @@ try {
             continue;
         }
 
-        [$carico_str, $scarico_str] = sga_carica_localita($pdo_sga, $societa, $anno, $numero);
-        // Mantiene il comportamento dei JOIN della query originale: senza carico o scarico il viaggio non entra.
+        // Righe C e S presenti ma con localita vuote: skip con log, come prima.
         if ($carico_str === '' || $scarico_str === '') {
             $stat_senza_localita++;
             log_sga_skip(
@@ -1899,12 +2211,8 @@ try {
             continue;
         }
 
-        [$caricatore, $proprietario_merce, $merce] = sga_carica_allegato($pdo_sga, $societa, $anno, $numero);
-        $tariffa_cliente = sga_carica_tariffa_cliente($pdo_sga, $societa, $anno, $numero);
-        $extra_totale = sga_carica_extra($pdo_sga, $societa, $anno, $numero);
-        $key = (string)$codice_vettore . '|' . $carico_str . '|' . $scarico_str;
-
-        $viaggio = [
+        // Dettagli SGA riempiti nel secondo giro.
+        $viaggi_da_completare[] = [
             'SOCIETA' => $societa,
             'ANNO' => $anno,
             'NUMERO' => $numero,
@@ -1921,16 +2229,67 @@ try {
             'cod_fiscale' => $cod_fiscale,
             'carico_str' => $carico_str,
             'scarico_str' => $scarico_str,
-            'caricatore' => $caricatore,
-            'proprietario_merce' => $proprietario_merce,
-            'merce' => $merce,
+            'caricatore' => null,
+            'proprietario_merce' => null,
+            'merce' => null,
             'tariffa_sigla' => $tariffa_sigla,
             'importo_unitario' => $importo_unitario,
-            'extra_totale' => $extra_totale,
-            'tariffa_cliente' => $tariffa_cliente,
+            'extra_totale' => 0,
+            'tariffa_cliente' => null,
             'partenza_data_ora' => $partenza_data_ora,
             'sync_data_ora' => $sync_data_ora,
         ];
+        } catch (Throwable $eTrip) {
+            $annoLog = isset($anno) ? $anno : '?';
+            $numLog = isset($numero) ? $numero : '?';
+            log_export_tratte('ERROR', 'viaggio saltato anno=' . $annoLog . ' numero=' . $numLog . ' | ' . $eTrip->getMessage());
+            continue;
+        }
+    }
+    unset($viaggi_base_rows, $localita_gruppi);
+
+    // Dettagli dei soli viaggi rimasti: tre query a gruppo al posto di tre per viaggio.
+    $chiavi_dettaglio = array();
+    foreach ($viaggi_da_completare as $viaggio) {
+        $chiavi_dettaglio[] = array($viaggio['SOCIETA'], $viaggio['ANNO'], $viaggio['NUMERO']);
+    }
+    $allegato_gruppi = sga_carica_allegato_gruppi($pdo_sga, $chiavi_dettaglio);
+    $tariffa_cliente_gruppi = sga_carica_tariffa_cliente_gruppi($pdo_sga, $chiavi_dettaglio);
+    $extra_gruppi = sga_carica_extra_gruppi($pdo_sga, $chiavi_dettaglio);
+    unset($chiavi_dettaglio);
+
+    // Secondo giro, stesso ordine dei viaggi: dettagli e deduplica come prima.
+    foreach ($viaggi_da_completare as $viaggio) {
+        try {
+        $societa = $viaggio['SOCIETA'];
+        $anno    = $viaggio['ANNO'];
+        $numero  = $viaggio['NUMERO'];
+        $k_sga   = (int)$societa . '|' . (int)$anno . '|' . (int)$numero;
+
+        // Viaggio fuori mappa = gruppo non letto: query singola, nello stesso ordine di prima.
+        if (isset($allegato_gruppi[$k_sga])) {
+            [$caricatore, $proprietario_merce, $merce] = $allegato_gruppi[$k_sga];
+        } else {
+            [$caricatore, $proprietario_merce, $merce] = sga_carica_allegato($pdo_sga, $societa, $anno, $numero);
+        }
+        if (array_key_exists($k_sga, $tariffa_cliente_gruppi)) {
+            $tariffa_cliente = $tariffa_cliente_gruppi[$k_sga];
+        } else {
+            $tariffa_cliente = sga_carica_tariffa_cliente($pdo_sga, $societa, $anno, $numero);
+        }
+        if (array_key_exists($k_sga, $extra_gruppi)) {
+            $extra_totale = $extra_gruppi[$k_sga];
+        } else {
+            $extra_totale = sga_carica_extra($pdo_sga, $societa, $anno, $numero);
+        }
+
+        $viaggio['caricatore'] = $caricatore;
+        $viaggio['proprietario_merce'] = $proprietario_merce;
+        $viaggio['merce'] = $merce;
+        $viaggio['tariffa_cliente'] = $tariffa_cliente;
+        $viaggio['extra_totale'] = $extra_totale;
+
+        $key = (string)$viaggio['codice_vettore'] . '|' . $viaggio['carico_str'] . '|' . $viaggio['scarico_str'];
 
         if (!isset($viaggi_unici[$key])) {
             $viaggi_unici[$key] = $viaggio;
@@ -2004,6 +2363,8 @@ $stat_run = array(
 
 $cache_tipo1 = array();
 $cache_ha_tratte = array();
+$cache_sub = array();
+$cache_tipo_tariffa = array();
 
 foreach ($viaggi_unici as $viaggio) {
     $stat_run['elaborati']++;
@@ -2049,21 +2410,34 @@ foreach ($viaggi_unici as $viaggio) {
         log_skip_contratto_viaggio($viaggio, $motivo_skip_contratto);
     }
 
-    sc_lookup(sub, "
-        SELECT id, COALESCE(wizard_complete, 0), COALESCE(login_subvettore, '')
-        FROM subvettori
-        WHERE codice_sga = " . sql_quote($codice_vettore) . "
-        LIMIT 1
-    ", "pigliacelli");
-    if (empty({sub})) {
+    // Stessa query di prima, una volta per codice vettore: il job non modifica subvettori.
+    $chiave_sub = (string)$codice_vettore;
+    if (!array_key_exists($chiave_sub, $cache_sub)) {
+        sc_lookup(sub, "
+            SELECT id, COALESCE(wizard_complete, 0), COALESCE(login_subvettore, '')
+            FROM subvettori
+            WHERE codice_sga = " . sql_quote($codice_vettore) . "
+            LIMIT 1
+        ", "pigliacelli");
+        if (empty({sub})) {
+            $cache_sub[$chiave_sub] = null;
+        } else {
+            $cache_sub[$chiave_sub] = array(
+                (int){sub[0][0]},
+                (int){sub[0][1]},
+                trim((string){sub[0][2]}),
+            );
+        }
+    }
+    if ($cache_sub[$chiave_sub] === null) {
         $stat_run['skip_sub_assente']++;
         log_viaggio_esito($viaggio, 'sub_assente', 'vet=' . trim((string)$codice_vettore));
         continue;
     }
 
-    $subvettore_id = (int){sub[0][0]};
-    $wizardComplete = (int){sub[0][1]};
-    $loginSub = trim((string){sub[0][2]});
+    $subvettore_id = $cache_sub[$chiave_sub][0];
+    $wizardComplete = $cache_sub[$chiave_sub][1];
+    $loginSub = $cache_sub[$chiave_sub][2];
     $intestatario_contratto = $loginSub !== '' ? $loginSub : ('SUBVETTORE_' . $subvettore_id);
     $intestatari_sub[$subvettore_id] = $intestatario_contratto;
     log_viaggio_esito(
@@ -2117,11 +2491,16 @@ foreach ($viaggi_unici as $viaggio) {
     $tipo_tariffa_id = null;
     if ($tariffa_sigla !== null) {
         $tariffa_sigla = strtoupper($tariffa_sigla);
-        $qTipoTar = "SELECT id FROM tipo_tariffe WHERE UPPER(descrizione) = " . sql_quote($tariffa_sigla) . " LIMIT 1";
-        sc_lookup(tipotar, $qTipoTar, "pigliacelli");
-        if (!empty({tipotar})) {
-            $tipo_tariffa_id = {tipotar[0][0]};
+        // Stessa query di prima, una volta per sigla.
+        if (!array_key_exists($tariffa_sigla, $cache_tipo_tariffa)) {
+            $qTipoTar = "SELECT id FROM tipo_tariffe WHERE UPPER(descrizione) = " . sql_quote($tariffa_sigla) . " LIMIT 1";
+            sc_lookup(tipotar, $qTipoTar, "pigliacelli");
+            $cache_tipo_tariffa[$tariffa_sigla] = null;
+            if (!empty({tipotar})) {
+                $cache_tipo_tariffa[$tariffa_sigla] = {tipotar[0][0]};
+            }
         }
+        $tipo_tariffa_id = $cache_tipo_tariffa[$tariffa_sigla];
     }
     $tipo_tariffa_sql = $tipo_tariffa_id === null ? "NULL" : sql_num($tipo_tariffa_id);
 
@@ -2443,7 +2822,7 @@ $stat_tratte_in_contratto_t2 = 0;
 $stat_tratte_in_contratto_t3 = 0;
 
 // FAST: niente backfill globale.
-log_export_tratte('BACKFILL', 'SKIPPED build=fast_no_bf_t1_inrun_v2');
+log_export_tratte('BACKFILL', 'SKIPPED build=fast_no_bf_t1_inrun_v3_gruppi_b');
 
 // Pending tipo 1: primi viaggi della run per sub senza quadro.
 foreach ($pending_tratte_tipo1 as $sub_id => $tratte_map) {

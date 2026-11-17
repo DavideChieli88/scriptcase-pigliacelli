@@ -3,19 +3,20 @@
 Wiki operativa per agenti/LLM. Aggiornare quando cambiano requisiti o naming.
 
 **Gerarchia requisiti (prevale dall’alto):**
-1. `mail_cliente_osservazioni_2026-11-06.md` — Marcello=`group_id` 5 solo firme (no scadenze doc); appendici=tipo 2/3 `variazione_contratto` (firma Marcello+Flavia); bug n. contratto; un solo invio; label Appendice#N; template self-service → martedì
-2. `pigliacelli_briefing_sal_2026-10-30.md` — call Erik: sync anagrafica insert/update vs impianto ~100; pulsanti in basso; scadenze readonly; upload Manuale UI; ottimizzare sync tratte; UAT notifiche; punti 5–6 Flavia → martedì
-3. `mail_flavia_prova_2026-10-29.md` — sync≠tratta, toolbar wizard, scadenze ANGA/RENTRI/Albo readonly, Manuale in firma, campanella fine wizard, Doc/Tratte PGL, preview+invio contratto; note su cosa non torna
-4. `mail_flavia_prova_2026-10-19.md` — PEC, assicurazione mezzo, Albo Gestori e ricevuta ANGA al 30 aprile sono nel codice; restano date passate, scadenze obbligatorie, documenti autista in DOCUMENTAZIONE, tendine PGL
-5. `pigliacelli_briefing_sal_2026-10-21.md` — tariffa cliente da `T2ViaggiClienti.IMPORTO_TOTALE`, prova Sgam 99001, prezzo unitario vs totale viaggio; sola lettura documenti, invio per correzione, niente modifica dopo la firma
-6. `pigliacelli_briefing_sal_2026-10-13.md` — vista contratto, review solo tratte, modale rappresentante, griglia documenti, blocco wizard
-7. `pigliacelli_briefing_sal_2026-09-30.md` — test wizard, sync SGA spezzata, firma contratti solo tratte
-8. `pigliacelli_briefing_sal_2026-09-28.md` — fix wizard; ANGA/RENTRI: flag sul mezzo, file nello step documenti
-9. `chiarimento_anga_rentri_2026-09-17.md` — nomi, cardinalità, scadenze (dove i file si caricano prevale il 28/09)
-10. `pigliacelli_briefing_sal_2026-09-16.md`
-11. `pigliacelli_briefing_sal_2026-07-21.md`
-12. `requisiti_pigliacelli_validazione_2026-07.md`
-13. `docs_elenco_documenti_subvettori.md` · `modello_flag_documenti.md`
+1. `attivita_modulo_2_2026-11-11.md` — backlog Modulo 2: bugfix (rapp. legale in firma, sync tratte SGA, search grid, link auto+sollecito Marcello, grid dettaglio subv, n° contratto appendici, label Appendice, Marcello solo firme) + NEW (template contratto testo/firme pre-invio; sottosezione Documentazione invio doc a subv)
+2. `mail_cliente_osservazioni_2026-11-06.md` — Marcello=`group_id` 5 solo firme (no scadenze doc); appendici=tipo 2/3 `variazione_contratto` (firma Marcello+Flavia); bug n. contratto; un solo invio; label Appendice#N; template self-service → poi reso operativo in attività 11/11
+3. `pigliacelli_briefing_sal_2026-10-30.md` — call Erik: sync anagrafica insert/update vs impianto ~100; pulsanti in basso; scadenze readonly; upload Manuale UI; ottimizzare sync tratte; UAT notifiche; punti 5–6 Flavia → martedì
+4. `mail_flavia_prova_2026-10-29.md` — sync≠tratta, toolbar wizard, scadenze ANGA/RENTRI/Albo readonly, Manuale in firma, campanella fine wizard, Doc/Tratte PGL, preview+invio contratto; note su cosa non torna
+5. `mail_flavia_prova_2026-10-19.md` — PEC, assicurazione mezzo, Albo Gestori e ricevuta ANGA al 30 aprile sono nel codice; restano date passate, scadenze obbligatorie, documenti autista in DOCUMENTAZIONE, tendine PGL
+6. `pigliacelli_briefing_sal_2026-10-21.md` — tariffa cliente da `T2ViaggiClienti.IMPORTO_TOTALE`, prova Sgam 99001, prezzo unitario vs totale viaggio; sola lettura documenti, invio per correzione, niente modifica dopo la firma
+7. `pigliacelli_briefing_sal_2026-10-13.md` — vista contratto, review solo tratte, modale rappresentante, griglia documenti, blocco wizard
+8. `pigliacelli_briefing_sal_2026-09-30.md` — test wizard, sync SGA spezzata, firma contratti solo tratte
+9. `pigliacelli_briefing_sal_2026-09-28.md` — fix wizard; ANGA/RENTRI: flag sul mezzo, file nello step documenti
+10. `chiarimento_anga_rentri_2026-09-17.md` — nomi, cardinalità, scadenze (dove i file si caricano prevale il 28/09)
+11. `pigliacelli_briefing_sal_2026-09-16.md`
+12. `pigliacelli_briefing_sal_2026-07-21.md`
+13. `requisiti_pigliacelli_validazione_2026-07.md`
+14. `docs_elenco_documenti_subvettori.md` · `modello_flag_documenti.md`
 
 ---
 
@@ -84,7 +85,10 @@ check_new_trips_*_basevettori → contratti tipo 1/2/3
   → send_magic_link[_credenziali] (PEC)
   → form magic_link_review → Compilato
   → finalize / start_contract_sign_after_review
-  → PDF + easygn_start_wf → web_hook_firma → Completato
+  → PDF + easygn_start_wf (mail solo subvettore)
+  → web_hook_firma member done subv → Attesa firma committente + mail auto link a Marcello
+  → sollecito opzionale: grid_contratti resend_committente_sign_link
+  → web_hook_firma procedure done → Completato
 ```
 Stati tipici: Da inviare → Inviato → Compilato → Attesa firma sub → Attesa firma committente → Completato | Rifiutato.
 
@@ -148,4 +152,4 @@ Rif. ufficiali: [Events](https://www.scriptcase.net/docs/en_us/v9/manual/06-appl
 
 Quando chiudi un task rilevante: aggiorna la sezione interessata + data in coda. Non duplicare interi briefing: linka il file fonte.
 
-*Ultimo aggiornamento: 2026-11-06. Aggiunta `mail_cliente_osservazioni_2026-11-06.md` (firme/appendici, Marcello, doppio invio, label Appendice#N; template contratto → martedì).*
+*Ultimo aggiornamento: 2026-11-11. Ripristinata mail auto firma al committente in `web_hook_firma` dopo firma subvettore (B4); sollecito resta su grid.*

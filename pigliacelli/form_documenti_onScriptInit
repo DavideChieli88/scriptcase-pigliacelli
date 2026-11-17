@@ -1,3 +1,15 @@
+/**
+ * form_documenti → onScriptInit
+ *
+ * Da grid_documenti_by_subvettore_id → Nuovo: arriva prefill_subvettore_id.
+ * Solo quel parametro precompila/blocca {subvettore_id} in inserimento.
+ * Non usare [subvettoreId] di sessione (può essere wizard / altro dettaglio).
+ *
+ * IDE: globale prefill_subvettore_id (Integer, default 0, non richiedere a startup).
+ * Se apri con Link→Insert: parametro prefill_subvettore_id = [subvettoreId]
+ * (mai {id} della riga documento).
+ */
+
 sc_select(rs, "SELECT group_id FROM sec_users_groups sug INNER JOIN sec_users su ON su.login = sug.login
   WHERE su.login = '[usr_login]'
 ");
@@ -37,6 +49,19 @@ if (isset($this->nmgp_opcao)) {
 
 $idDoc = isset({id}) ? (int){id} : 0;
 $isInsert = in_array($op, array('novo', 'incluir', 'new', 'insert'), true) || $idDoc <= 0;
+
+// Solo prefill esplicito dal pulsante Nuovo (niente fallback su [subvettoreId]).
+$lockSubId = 0;
+if (isset($_GET['prefill_subvettore_id']) && (int)$_GET['prefill_subvettore_id'] > 0) {
+    $lockSubId = (int)$_GET['prefill_subvettore_id'];
+} elseif (isset($_REQUEST['prefill_subvettore_id']) && (int)$_REQUEST['prefill_subvettore_id'] > 0) {
+    $lockSubId = (int)$_REQUEST['prefill_subvettore_id'];
+} elseif (isset([prefill_subvettore_id]) && (int)[prefill_subvettore_id] > 0) {
+    $lockSubId = (int)[prefill_subvettore_id];
+}
+if ($lockSubId > 0) {
+    [prefill_subvettore_id] = $lockSubId;
+}
 
 $docFile = '';
 $docSubId = isset({subvettore_id}) ? (int){subvettore_id} : 0;
@@ -81,7 +106,12 @@ $soloLettura = (!$isInsert && $docFile !== '' && !$isUploader);
 
 if ($isInsert) {
     sc_field_readonly({tipo_documento_id}, 'off');
-    sc_field_readonly({subvettore_id}, 'off');
+    if ($lockSubId > 0) {
+        {subvettore_id} = $lockSubId;
+        sc_field_readonly({subvettore_id}, 'on');
+    } else {
+        sc_field_readonly({subvettore_id}, 'off');
+    }
     sc_btn_display('btn_invia_correzione', 'off');
 } else {
     sc_field_readonly({tipo_documento_id}, 'on');
