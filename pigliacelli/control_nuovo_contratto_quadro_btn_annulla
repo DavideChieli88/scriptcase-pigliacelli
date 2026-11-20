@@ -1,0 +1,8 @@
+/**
+ * control_nuovo_contratto_quadro → toolbar, pulsante PHP btn_annulla
+ *
+ * Label: Annulla
+ * Chiude il flusso "Nuovo contratto" senza creare nulla e torna alla griglia.
+ * Target _parent: la control e aperta in modale da grid_contratti.
+ */
+sc_redir('grid_contratti', '', '_parent');

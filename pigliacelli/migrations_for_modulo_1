@@ -941,3 +941,108 @@ COMMIT;
 
 ALTER TABLE tratte
   ADD COLUMN tariffa_cliente DECIMAL(10,2) NULL DEFAULT NULL;
+
+//editor new task
+ALTER TABLE documenti
+  ADD COLUMN sign_boxes_json LONGTEXT NULL
+    COMMENT 'JSON EGN_SIGN: {"version":1,"visuals":{...}} in mm';
+
+ALTER TABLE contratti
+  ADD COLUMN sign_boxes_json LONGTEXT NULL
+    COMMENT 'JSON EGN_SIGN: {"version":1,"visuals":{...}} in mm';
+
+    CREATE TABLE IF NOT EXISTS `contratti_template` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `nome` VARCHAR(255) NOT NULL,
+  `html_body` LONGTEXT NOT NULL,
+  `attivo` TINYINT(1) NOT NULL DEFAULT 1,
+  `note` TEXT NULL DEFAULT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_contratti_template_attivo` (`attivo`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Seed iniziale (salta se esiste gia' un template con stesso nome)
+INSERT INTO `contratti_template` (`nome`, `html_body`, `attivo`, `note`)
+SELECT
+  'Contratto quadro standard',
+  CONCAT(
+    '<h1 style="text-align:center;">CONTRATTO DI TRASPORTO DI MERCI SU STRADA N. {{contratto_numero}}/{{anno}}</h1>',
+    '<p style="text-align:center;"><strong>Tra</strong></p>',
+    '<p><strong>Il Committente</strong><br>',
+    'Autotrasporti Pigliacelli S.p.A. con sede a Veroli (FR) in via Sant&rsquo;Anna n. 80, ',
+    'Partita Iva, Codice Fiscale e n. di iscrizione al Registro delle Imprese di Frosinone 00169560604, ',
+    'R.E.A. 59333, in persona del Consigliere Delegato sig. Marcello Pigliacelli ',
+    '(di seguito Committente).</p>',
+    '<p><strong>Il Vettore</strong><br>',
+    '{{vettore_ragione_sociale}} con sede a {{vettore_citta}} ({{vettore_provincia}}), ',
+    'Via {{vettore_indirizzo}} n. {{vettore_civico}}, Codice Fiscale {{vettore_cf}}, ',
+    'P. Iva {{vettore_piva}}, R.E.A. {{vettore_rea}}, ',
+    'iscritta all&rsquo;Albo Nazionale degli Autotrasportatori al n. {{vettore_albo}}, ',
+    'in persona del Legale rappresentante sig. {{rapp_nome}} {{rapp_cognome}}, ',
+    'nato a {{rapp_luogo_nascita}} ({{rapp_prov_nascita}}) il {{rapp_data_nascita}} ',
+    '(di seguito Vettore).</p>',
+    '<p>si conviene e stipula quanto segue:</p>',
+    '<p><strong>Art. 1) IDENTIFICAZIONE DELLE PARTI E OGGETTO DEL CONTRATTO</strong><br>',
+    'Il Proprietario Merci: vedi (Allegato A)<br>',
+    'Il Caricatore Delle Merci: vedi (Allegato A)<br>',
+    'Oggetto del presente Contratto sono i servizi di trasporto che il Vettore eseguir&agrave; ',
+    'su ordine del Committente in conformit&agrave; a quanto pattuito nel presente Contratto.</p>',
+    '<p><em>Modificare liberamente questo HTML nel form Template. ',
+    'I placeholder {{...}} verranno sostituiti in generazione PDF.</em></p>',
+    '<p>Data certa: {{data_certa}}</p>'
+  ),
+  1,
+  'Seed N1 — sostituire/ampliare con testo legale completo'
+FROM DUAL
+WHERE NOT EXISTS (
+  SELECT 1 FROM `contratti_template`
+  WHERE `nome` = 'Contratto quadro standard'
+  LIMIT 1
+);
+
+-- Default template (uno "standard" pre-selezionato in UI)
+ALTER TABLE `contratti_template`
+  ADD COLUMN `is_default` TINYINT(1) NOT NULL DEFAULT 0
+    COMMENT '1 = pre-selezionato in nuovo contratto quadro'
+    AFTER `attivo`;
+
+-- Solo un default attivo alla volta (best-effort)
+UPDATE `contratti_template`
+SET `is_default` = 1
+WHERE `nome` = 'Contratto quadro standard'
+  AND `id` = (
+    SELECT id FROM (
+      SELECT MIN(id) AS id FROM `contratti_template`
+      WHERE `nome` = 'Contratto quadro standard'
+    ) t
+  );
+
+ALTER TABLE `contratti`
+  ADD COLUMN `template_id` INT UNSIGNED NULL DEFAULT NULL
+    COMMENT 'FK logica a contratti_template.id'
+    AFTER `tipo_contratto_id`;
+
+ALTER TABLE `contratti`
+  ADD COLUMN `html_body_snapshot` LONGTEXT NULL
+    COMMENT 'Copia HTML del template (editabile pre-invio senza toccare il master)'
+    AFTER `template_id`;
+
+ALTER TABLE `contratti`
+  ADD INDEX `idx_contratti_template_id` (`template_id`);
+
+  ALTER TABLE `documenti`
+  ADD COLUMN `modalita` ENUM('upload','visione','firma') NOT NULL DEFAULT 'upload'
+    AFTER `sign_boxes_json`;
+
+-- Se AFTER sign_boxes_json fallisce (ordine colonne diverso), usa senza AFTER:
+-- ALTER TABLE `documenti`
+--   ADD COLUMN `modalita` ENUM('upload','visione','firma') NOT NULL DEFAULT 'upload'
+--     COMMENT 'upload=flusso storico subv; visione|firma=invio PGL (N2)';
+
+ALTER TABLE `documenti`
+  ADD INDEX `idx_documenti_modalita` (`modalita`);
+
+-- I record esistenti restano modalita='upload' grazie al DEFAULT.
+-- Nessun UPDATE di backfill necessario.

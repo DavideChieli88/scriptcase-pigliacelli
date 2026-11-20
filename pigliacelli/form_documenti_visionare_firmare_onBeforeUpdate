@@ -1,0 +1,39 @@
+/**
+ * form_documenti_visionare_firmare → onBeforeUpdate
+ *
+ * N2: non forzare modalita=upload.
+ * Con PDF → stato 2 (Caricato).
+ */
+
+$mod = strtolower(trim((string){modalita}));
+if ($mod !== 'visione' && $mod !== 'firma') {
+    {modalita} = 'visione';
+}
+
+$file = trim((string){file});
+if ($file !== '') {
+    {stato_documento_id} = 2; // Caricato
+} elseif (trim((string){stato_documento_id}) === '' || (int){stato_documento_id} <= 0) {
+    {stato_documento_id} = 1;
+}
+
+if (trim((string){in_possesso}) === '') {
+    {in_possesso} = 0;
+}
+if (trim((string){is_not_ok}) === '') {
+    {is_not_ok} = 0;
+}
+
+$subId = (int){subvettore_id};
+if ($subId > 0 && trim((string){login}) === '') {
+    sc_lookup(rsVfLs, "
+        SELECT login_subvettore
+        FROM subvettori
+        WHERE id = $subId
+        LIMIT 1
+    ", 'pigliacelli');
+    $ls = isset({rsVfLs[0][0]}) ? trim((string){rsVfLs[0][0]}) : '';
+    if ($ls !== '') {
+        {login} = $ls;
+    }
+}

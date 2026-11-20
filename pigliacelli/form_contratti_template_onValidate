@@ -1,0 +1,29 @@
+/**
+ * form_contratti_template → onValidate
+ * Controlli minimi sul template master HTML (N1).
+ */
+
+$nome = isset({nome}) ? trim((string){nome}) : '';
+$html = isset({html_body}) ? trim((string){html_body}) : '';
+
+if ($nome === '') {
+    sc_error_message('Inserire un nome per il template.');
+    sc_error_exit();
+}
+
+if ($html === '') {
+    sc_error_message('Il corpo HTML del template non puo\' essere vuoto.');
+    sc_error_exit();
+}
+
+// Evita template "solo spazi / tag vuoti"
+$htmlPlain = trim(html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+if ($htmlPlain === '') {
+    sc_error_message('Inserire del testo nel corpo del contratto (HTML Editor).');
+    sc_error_exit();
+}
+
+if (strlen($nome) > 150) {
+    sc_error_message('Il nome del template e\' troppo lungo (max 150).');
+    sc_error_exit();
+}

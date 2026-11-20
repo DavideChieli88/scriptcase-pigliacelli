@@ -1,7 +1,7 @@
 /**
  * control_nuovo_contratto_quadro → onValidate
  *
- * App Control (nessuna tabella). Un campo:
+ * App Control (nessuna tabella). Campi:
  *   subvettore_id  Select
  *   Lookup: solo chi non ha gia un contratto tipo 1
  *   SELECT s.id, CONCAT(COALESCE(s.codice_sga, ''), ' - ', s.ragione_sociale)
@@ -15,12 +15,59 @@
  *   )
  *   ORDER BY s.ragione_sociale
  *
- * Prima del save: wizard_complete deve essere 1, altrimenti non si crea il tipo 1.
- * Il blank nuovo_contratto_quadro crea il tipo 1 e ci mette tutte le tratte a tariffa valida.
+ *   template_id  Select (N1)
+ *   Lookup:
+ *   SELECT id, nome
+ *   FROM contratti_template
+ *   WHERE attivo = 1
+ *   ORDER BY is_default DESC, nome ASC
+ *
+ * Prima del save: wizard_complete deve essere 1.
+ * Il blank nuovo_contratto_quadro crea il tipo 1, collega tratte,
+ * salva template_id e copia html_body → html_body_snapshot.
  */
 $subId = isset({subvettore_id}) ? (int){subvettore_id} : 0;
 if ($subId <= 0) {
     sc_error_message('Selezionare un subvettore.');
+    return;
+}
+
+$templateId = 0;
+if (isset({template_id})) {
+    $templateId = (int){template_id};
+}
+
+// Se non scelto: usa il default attivo
+if ($templateId <= 0) {
+    sc_lookup(rsNcqTplDef, "
+        SELECT id
+        FROM contratti_template
+        WHERE attivo = 1
+        ORDER BY is_default DESC, id ASC
+        LIMIT 1
+    ", 'pigliacelli');
+    if (!empty({rsNcqTplDef[0][0]})) {
+        $templateId = (int){rsNcqTplDef[0][0]};
+    }
+}
+
+if ($templateId <= 0) {
+    sc_error_message(
+        'Nessun template contratto disponibile. '
+        . 'Crearne uno in Template contratti (form_contratti_template) e impostarlo attivo.'
+    );
+    return;
+}
+
+sc_lookup(rsNcqTplOk, "
+    SELECT id
+    FROM contratti_template
+    WHERE id = " . (int)$templateId . "
+      AND attivo = 1
+    LIMIT 1
+", 'pigliacelli');
+if (empty({rsNcqTplOk})) {
+    sc_error_message('Template non valido o non attivo.');
     return;
 }
 
@@ -41,4 +88,24 @@ if ((int){rsNcqWiz[0][0]} !== 1) {
     return;
 }
 
-sc_redir('nuovo_contratto_quadro', subvettoreId=$subId);
+// Pre-check tratte: altrimenti il blank torna alla grid e in modale l'alert spariva
+sc_lookup(rsNcqTrattePre, "
+    SELECT COUNT(*)
+    FROM tratte
+    WHERE subvettore_id = " . (int)$subId . "
+      AND tariffa IS NOT NULL
+      AND tariffa > 0
+", 'pigliacelli');
+$nTrattePre = empty({rsNcqTrattePre[0][0]}) ? 0 : (int){rsNcqTrattePre[0][0]};
+if ($nTrattePre <= 0) {
+    sc_error_message(
+        'Nessuna tratta con tariffa valida per questo subvettore. '
+        . 'Inserire almeno una tratta (tariffa > 0) prima di creare il contratto quadro.'
+    );
+    return;
+}
+
+// Globali SC piu' affidabili dei soli parametri in sc_redir (modale)
+[subvettoreId] = $subId;
+[templateId] = $templateId;
+sc_redir('nuovo_contratto_quadro', subvettoreId=$subId; templateId=$templateId);

@@ -1,0 +1,16 @@
+/**
+ * form_documenti_visionare_firmare → onAfterUpdate
+ *
+ * Redirect editor firme solo se firma + PDF + sign_boxes_json vuoto.
+ */
+
+$docId = (int){id};
+$mod = strtolower(trim((string){modalita}));
+$file = trim((string){file});
+$boxes = trim((string){sign_boxes_json});
+$returnApp = 'grid_documenti_visionare_firmare';
+
+if ($docId > 0 && $mod === 'firma' && $file !== '' && $boxes === '') {
+    sc_commit_trans('pigliacelli');
+    sc_redir('blank_posiziona_firme_pdf', documentoId=$docId; return_app=$returnApp);
+}

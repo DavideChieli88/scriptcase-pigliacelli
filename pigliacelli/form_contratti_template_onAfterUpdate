@@ -1,0 +1,22 @@
+/**
+ * form_contratti_template → onAfterUpdate / onAfterInsert
+ * Se is_default=1, togli il default dagli altri template.
+ */
+
+$id = isset({id}) ? (int){id} : 0;
+$isDefault = 0;
+if (isset({is_default})) {
+    $v = {is_default};
+    if ($v === '1' || $v === 1 || $v === true || $v === 'Y' || $v === 'y') {
+        $isDefault = 1;
+    }
+}
+
+if ($id > 0 && $isDefault === 1) {
+    sc_exec_sql("
+        UPDATE contratti_template
+        SET is_default = 0
+        WHERE id <> " . (int)$id . "
+          AND is_default <> 0
+    ", 'pigliacelli');
+}

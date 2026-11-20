@@ -230,31 +230,44 @@ $pdf->Cell($rectW - 2.0, 3.0, 'Documento unico formato da n. ' . $nbPagesAlias .
 // Riquadro firma committente in frontespizio (pag. 1)
 $easygnSignPush('committente', 1, 160, 12.5, 32.51, 5.01);
 
-// Titolo contratto subito sotto il box
-$vspaceMd();
-$pdf->SetFont('Arial', 'B', 12);
-$pdf->Cell(0, 10, 'CONTRATTO DI TRASPORTO DI MERCI SU STRADA N. ' . $contrattoId . '/' . date('Y') , 0, 1, 'C');
-$vspaceLg();
-
 // --- CORPO DEL CONTRATTO (TESTO) ---
 $pdf->SetFont('Arial', '', 10);
-
-// - blocco "Firma: ______________________"
-// - firme finali (underscores dopo COMMITTENTE/VETTORE)
-
 
 // Interlinea Word-like: 10pt * 1.15 => 11.5pt => ~4.06mm
 $ch = 11.5 * 0.3527777778;
 
-
-$data_certa = date('d/m/Y'); // sostituisce "__/__/202_" (dinamico: data odierna)
+$data_certa = date('d/m/Y'); // placeholder {{data_certa}} / "__/__/202_"
 $firma_committente = '___________________________';
 $firma_vettore = '___________________________';
 $contractHtmlPath = 'c:/Users/dvdch/Downloads/Pigliacelli docs/CONTRATTO/contratto di trasporto.htm';
 $htmlContratto = '';
+$htmlFromSnapshot = false;
 $renderTraCentered = false;
 
-if (is_readable($contractHtmlPath)) {
+// N1: priorita' a html_body_snapshot (copia template al create); fallback template master; poi file Word.
+$rsSnap = $this->Db->Execute("
+    SELECT
+        COALESCE(NULLIF(TRIM(c.html_body_snapshot), ''), ''),
+        COALESCE(NULLIF(TRIM(t.html_body), ''), '')
+    FROM contratti c
+    LEFT JOIN contratti_template t ON t.id = c.template_id
+    WHERE c.id = " . (int)$contrattoId . "
+    LIMIT 1
+");
+if ($rsSnap !== false && !$rsSnap->EOF) {
+    $snapHtml = trim((string)$rsSnap->fields[0]);
+    $tplHtml = trim((string)$rsSnap->fields[1]);
+    $rsSnap->Close();
+    if ($snapHtml !== '') {
+        $htmlContratto = $snapHtml;
+        $htmlFromSnapshot = true;
+    } elseif ($tplHtml !== '') {
+        $htmlContratto = $tplHtml;
+        $htmlFromSnapshot = true;
+    }
+}
+
+if ($htmlContratto === '' && is_readable($contractHtmlPath)) {
     $rawHtml = @file_get_contents($contractHtmlPath);
     if ($rawHtml !== false && $rawHtml !== '') {
         // I file Word/HTML possono avere encoding non UTF-8.
@@ -294,9 +307,62 @@ if (is_readable($contractHtmlPath)) {
     }
 }
 
-// Data certa anche nel template HTML (se presente come placeholder "__/__/202_")
+// Snapshot da HTML Editor: togli wrapper html/body se presente
+if ($htmlFromSnapshot && $htmlContratto !== '') {
+    if (preg_match('/<body[^>]*>(.*)<\/body>/is', $htmlContratto, $mBody)) {
+        $htmlContratto = $mBody[1];
+    }
+}
+
+// Placeholder N1 {{...}} (template / snapshot)
+// IMPORTANTE: in ScriptCase {nome} e' macro campo. NON scrivere '{{chiave}}'
+// letterale nel sorgente: costruisci le chiavi a pezzi.
+$ncqPh = function ($name) {
+    return chr(123) . chr(123) . (string)$name . chr(125) . chr(125);
+};
+$ncqMap = array(
+    'contratto_numero'        => (string)(int)$contrattoId,
+    'anno'                    => date('Y'),
+    'data_certa'              => (string)$data_certa,
+    'vettore_ragione_sociale' => (string)$nome_vettore,
+    'vettore_citta'           => (string)$sede_citta,
+    'vettore_provincia'       => (string)$sede_provincia,
+    'vettore_indirizzo'       => (string)$indirizzo,
+    'vettore_civico'          => (string)$civico,
+    'vettore_cf'              => (string)$cod_fiscale,
+    'vettore_piva'            => (string)$piva,
+    'vettore_rea'             => (string)$rea,
+    'vettore_albo'            => (string)$num_iscrizione_albo,
+    'vettore_reg_imprese_luogo' => (string)$loc_reg_imp,
+    'vettore_reg_imprese_n'   => (string)$num_reg_imp,
+    'rapp_nome'               => (string)$nome_rappresentante,
+    'rapp_cognome'            => (string)$cognome_rappresentante,
+    'rapp_luogo_nascita'      => (string)$luogo_nascita_rappresentante,
+    'rapp_prov_nascita'       => (string)$prov_luogo_nascita_rappresentante,
+    'rapp_data_nascita'       => (string)$data_nascita_rappresentante,
+);
 if ($htmlContratto !== '') {
+    // TinyMCE a volte spezza il token con tag/spazi: {{ nome }} / {{nome}}
+    foreach ($ncqMap as $phName => $phVal) {
+        $htmlContratto = str_replace($ncqPh($phName), $phVal, $htmlContratto);
+        $htmlContratto = preg_replace(
+            '/\{\{\s*' . preg_quote($phName, '/') . '\s*\}\}/u',
+            str_replace(array('\\', '$'), array('\\\\', '\\$'), $phVal),
+            $htmlContratto
+        );
+    }
+    // Data certa anche nel markup Word "__/__/202_"
     $htmlContratto = preg_replace('/__\/__\/202_/u', (string)$data_certa, $htmlContratto);
+}
+
+// Titolo fisso solo se NON usiamo snapshot/template (li' c'e' gia' l'H1 con placeholder)
+if (!$htmlFromSnapshot) {
+    $vspaceMd();
+    $pdf->SetFont('Arial', 'B', 12);
+    $pdf->Cell(0, 10, 'CONTRATTO DI TRASPORTO DI MERCI SU STRADA N. ' . $contrattoId . '/' . date('Y'), 0, 1, 'C');
+    $vspaceLg();
+} else {
+    $vspaceMd();
 }
 
 $testo_contratto = <<<'EOT'
@@ -553,7 +619,7 @@ Veroli, __/__/202_
 EOT;
 
 
-$signatureGapHtml = '<div style="height:14pt"></div>';
+$signatureGapHtml = '<div style="height:6pt"></div>';
 if ($htmlContratto !== '') {
     $htmlContratto = preg_replace(
         '/(Letto,\s*confermato\s*e\s*sottoscritto\.)/u',
@@ -622,50 +688,264 @@ $testo_contratto = str_replace('ISO 9001/2015 e', "ISO 9001/2015 e\n\n", $testo_
 // Una spaziatura tra articoli nel testo plain.
 $testo_contratto = preg_replace('/\n(Art\.\s*\d+\))/u', "\n\n$1", $testo_contratto);
 
+// Anche sul HTML Word (non snapshot): stesse sostituzioni underscore del plain text
+if ($htmlContratto !== '' && !$htmlFromSnapshot) {
+    $htmlContratto = str_replace($patternVettore, $replaceVettore, $htmlContratto);
+    $htmlContratto = str_replace($patternAlbo, $replaceAlbo, $htmlContratto);
+    $htmlContratto = str_replace($patternRappr, $replaceRappr, $htmlContratto);
+}
+
 // Render del corpo:
-// - Preferisce l'HTML originale per mantenere spaziature/paragrafi del documento.
-// - Fallback al testo plain se il file HTML non e' disponibile.
-if ($htmlContratto !== '') {
-    if ($renderTraCentered) {
+// - snapshot/template da form (HTML Editor) → writeHTML (stessa formattazione utenti)
+// - fallback Word / testo plain → MultiCell storico
+$renderContrattoPlain = function ($plain) use ($pdf, $ch, $vspaceSm, $vspaceLg, $firma_committente, $firma_vettore, $data_certa) {
+    $plain = str_replace(array("\r\n", "\r"), "\n", (string)$plain);
+    $plain = trim($plain);
+    $plain = preg_replace("/[ \t]+\n/u", "\n", $plain);
+    $plain = preg_replace("/\n{3,}/u", "\n\n", $plain);
+
+    // Soft-break dopo etichette (come nel PDF di riferimento)
+    $plain = preg_replace('/\b(Il Committente)\s+/u', "$1\n", $plain, 1);
+    $plain = preg_replace('/\b(Il Vettore)\s+/u', "$1\n", $plain, 1);
+
+    // Spaziature storiche
+    $plain = str_replace('ISO 9001/2015 e', "ISO 9001/2015 e\n\n", $plain);
+    $plain = preg_replace('/\n((?:Art\.|ART\.|ARTICOLO)\s*\d+\))/u', "\n\n$1", $plain);
+
+    // Blocchi firma: layout fisso come PDF riferimento (tab + underscore allineati)
+    $sigLineLabels = "            COMMITTENTE \t\t\t\t                                                      VETTORE\t";
+    $sigLineUnders = "\t\t" . $firma_committente . "\t\t\t\t\t                                        " . $firma_vettore;
+    $sig1 = "Letto, confermato e sottoscritto.\n\n\n"
+        . 'Veroli, ' . $data_certa . "\n"
+        . $sigLineLabels . "\n"
+        . $sigLineUnders;
+    $sig2 = "Letto, confermato e sottoscritto.\n\n\n"
+        . 'Veroli, ' . $data_certa . "\n"
+        . $sigLineLabels;
+
+    // Match flessibile (HTML → plain ha \n\n tra i <p>; template collassato "COMMITTENTE VETTORE")
+    $sigBlockRe = '/Letto,\s*confermato\s*e\s*sottoscritto\.\s*Veroli,\s*[^\n]+\s*COMMITTENTE\s+VETTORE\s*(?:[^\nA]*_{3,}[^\n]*)?/u';
+    $plain = preg_replace($sigBlockRe, $sig1, $plain, 1);
+    $plain = preg_replace($sigBlockRe, $sig2, $plain, 1);
+
+    // Fallback: solo "Letto..." senza Veroli/COMMITTENTE (template incompleto)
+    if (!preg_match('/COMMITTENTE[^\n]*VETTORE/u', $plain)) {
+        $nLetto = 0;
+        $plain = preg_replace_callback(
+            '/Letto,\s*confermato\s*e\s*sottoscritto\./u',
+            function ($m) use (&$nLetto, $sig1, $sig2) {
+                $nLetto++;
+                return ($nLetto === 1) ? $sig1 : $sig2;
+            },
+            $plain,
+            2
+        );
+    }
+
+    // Garantisce gap verticale dopo "Letto..." (2 blank lines → MultiCell + vspace)
+    $plain = preg_replace(
+        '/(Letto,\s*confermato\s*e\s*sottoscritto\.)(?!\n\n\n)/u',
+        "$1\n\n\n",
+        $plain,
+        2
+    );
+
+    // Titolo centrato bold (come Cell storico)
+    if (preg_match('/^\s*(CONTRATTO DI TRASPORTO[^\n]*)\n+/iu', $plain, $mTitle)) {
+        $pdf->SetFont('Arial', 'B', 12);
+        $pdf->Cell(0, 10, trim($mTitle[1]), 0, 1, 'C');
+        $vspaceLg();
+        $plain = preg_replace('/^\s*CONTRATTO DI TRASPORTO[^\n]*\n+/iu', '', $plain, 1);
+    }
+
+    // Tra centrato
+    if (preg_match('/^\s*Tra\b/iu', $plain)) {
+        $plain = preg_replace('/^\s*Tra\b\s*/iu', '', $plain, 1);
         $pdf->SetFont('Arial', '', 10);
         $pdf->Cell(0, $ch, 'Tra', 0, 1, 'C');
         $vspaceSm();
     }
 
-    // Stile più arioso e consistente (blocchi, liste, eventuali tabelle Word).
-    $htmlStyle = '<style>
-        body { font-family: Arial, sans-serif; font-size: 10pt; line-height: 1.22; }
-        p { margin: 0 0 9pt 0; text-align: left; }
-        div { margin: 0 0 7pt 0; }
-        h1, h2, h3 { margin: 10pt 0 6pt 0; }
-        ul, ol { margin: 0 0 9pt 16pt; padding: 0; }
-        li { margin: 0 0 4pt 0; }
-        table { margin: 0 0 9pt 0; }
-        td, th { padding: 2.4pt 3.2pt; }
-        .block { margin: 0 0 10pt 0; }
-        .article { margin: 10pt 0 6pt 0; font-weight: bold; }
-    </style>';
-
-    // Normalizza e "spazia" alcuni separatori frequenti senza stravolgere il layout Word.
-    // - comprime <br><br><br> -> <br><br>
-    // - evidenzia gli Articoli come "blocchi" con maggiore separazione
-    $htmlContratto = preg_replace('/(<br\s*\/?>\s*){3,}/i', '<br><br>', $htmlContratto);
-    $htmlContratto = preg_replace('/(<br\s*\/?>\s*)?(Art\.\s*\d+\))/u', '<div class="article">$2</div>', $htmlContratto);
-
-    $pdf->writeHTML($htmlStyle . '<div class="doc">' . $htmlContratto . '</div>', true, false, true, false, '');
-} else {
     $pdf->SetFont('Arial', '', 10);
-    $pdf->Cell(0, $ch, 'Tra', 0, 1, 'C');
-    $vspaceSm();
-
-    $paragraphs = preg_split("/\n\s*\n/", $testo_contratto);
+    $paragraphs = preg_split("/\n\s*\n/", $plain);
     foreach ($paragraphs as $p) {
-        $p = trim((string)$p);
-        if ($p === '') continue;
-        // No giustificato: allineamento a sinistra
+        // Conserva a capo interni per blocchi firma / etichette
+        if (preg_match('/COMMITTENTE/u', $p) || preg_match('/^Il (Committente|Vettore)\b/u', $p)
+            || preg_match('/^Veroli,/u', $p)
+            || preg_match('/^Letto,\s*confermato/u', $p)
+        ) {
+            $p = str_replace("\r", '', $p);
+            $p = preg_replace("/[ \t]+\n/u", "\n", $p);
+            $p = trim($p, "\n");
+            // Etichetta sola: a capo soft verso testo successivo gia' nel plain
+            if (preg_match('/^Il (Committente|Vettore)$/u', $p)) {
+                $pdf->MultiCell(0, $ch, $p, 0, 'L', false, 1);
+                continue;
+            }
+        } else {
+            $p = trim(preg_replace('/\s+/u', ' ', (string)$p));
+        }
+        if ($p === '') {
+            $vspaceSm();
+            $vspaceSm();
+            continue;
+        }
+        // Gap firme: dopo "Letto..." lascia spazio come PDF storico (~2-3 righe)
+        if (preg_match('/^Letto,\s*confermato\s*e\s*sottoscritto\.\s*$/u', $p)) {
+            $pdf->MultiCell(0, $ch, $p, 0, 'L', false, 1);
+            $vspaceLg();
+            $vspaceLg();
+            continue;
+        }
         $pdf->MultiCell(0, $ch, $p, 0, 'L', false, 1);
         $vspaceSm();
     }
+};
+
+if ($htmlContratto !== '' && $htmlFromSnapshot) {
+    // HTML Editor (template / snapshot): render diretto, densita' ~13 pag
+    $htmlRender = (string)$htmlContratto;
+    $htmlRender = preg_replace('/<!--\[if.*?<!\[endif\]-->/is', '', $htmlRender);
+    $htmlRender = preg_replace('/<script\b[^>]*>.*?<\/script>/is', '', $htmlRender);
+    $htmlRender = preg_replace('/page-break-[a-z]+\s*:\s*[^;]+;?/i', '', $htmlRender);
+    $htmlRender = preg_replace('/mso-[a-z-]+:[^;]+;?/i', '', $htmlRender);
+    $htmlRender = str_replace("\xc2\xa0", '&nbsp;', $htmlRender);
+
+    // Compatta densita' (target ~13 pag totali con allegati)
+    $htmlRender = preg_replace('/line-height\s*:\s*[^;]+;?/i', 'line-height:1.0;', $htmlRender);
+    $htmlRender = preg_replace('/margin\s*:\s*[^;]+;?/i', 'margin:0 0 1pt 0;', $htmlRender);
+    $htmlRender = preg_replace('/margin-(top|bottom)\s*:\s*[^;]+;?/i', '', $htmlRender);
+    $htmlRender = preg_replace('/padding\s*:\s*[^;]+;?/i', 'padding:0;', $htmlRender);
+    $htmlRender = preg_replace('/font-size\s*:\s*1[12]pt;?/i', 'font-size:10pt;', $htmlRender);
+    $htmlRender = preg_replace('/<p[^>]*>\s*(?:&nbsp;|\xc2\xa0|\s|<br\s*\/?>)*\s*<\/p>/iu', '', $htmlRender);
+    $htmlRender = preg_replace('/(<br\s*\/?>\s*){2,}/i', '<br />', $htmlRender);
+
+    // Firme: sempre tabella 50/50 + underscore (TinyMCE collassa gli spazi)
+    $fc = htmlspecialchars((string)$firma_committente, ENT_QUOTES, 'UTF-8');
+    $fv = htmlspecialchars((string)$firma_vettore, ENT_QUOTES, 'UTF-8');
+    $firmaTable = ''
+        . '<table cellpadding="4" cellspacing="0" border="0" width="100%">'
+        . '<tr>'
+        . '<td width="50%" align="left">'
+        . '<b>COMMITTENTE</b><br /><br />' . $fc
+        . '</td>'
+        . '<td width="50%" align="left">'
+        . '<b>VETTORE</b><br /><br />' . $fv
+        . '</td>'
+        . '</tr>'
+        . '</table>';
+
+    // 1) Veroli + COMMITTENTE nella STESSA <p> (con <br>) → lascia solo Veroli
+    $htmlRender = preg_replace(
+        '/(<p\b[^>]*>\s*(?:<[^>]+>\s*)*Veroli,\s*\d{1,2}\/\d{1,2}\/\d{2,4})'
+        . '((?:\s|<[^>]+>|<br\s*\/?>)*)'
+        . 'COMMITTENTE(?:\s|&nbsp;|&#160;|<[^>]*>)+VETTORE'
+        . '((?:\s|<[^>]+>|&nbsp;)*<\/p>)/iu',
+        '$1$3',
+        $htmlRender
+    );
+
+    // 2) Dopo Veroli,DATE: togli <p> etichette + underscore attaccati
+    $htmlRender = preg_replace(
+        '/(Veroli,\s*\d{1,2}\/\d{1,2}\/\d{2,4}(?:\s|<[^>]+>)*<\/p>)\s*'
+        . '(?:<(?:p|div)\b[^>]*>\s*(?:<[^>]+>\s*)*COMMITTENTE(?:\s|&nbsp;|&#160;|<[^>]*>)+VETTORE(?:\s|<[^>]+>|&nbsp;)*<\/(?:p|div)>\s*)'
+        . '(?:<(?:p|div)\b[^>]*>[^<]*_{4,}[^<]*<\/(?:p|div)>\s*)?/iu',
+        '$1',
+        $htmlRender
+    );
+
+    // 3) Qualunque residuo "COMMITTENTE … VETTORE" da solo (solo etichette corte)
+    $htmlRender = preg_replace_callback(
+        '/<(?:p|div)\b[^>]*>\s*((?:<[^>]+>\s*)*COMMITTENTE(?:\s|&nbsp;|&#160;|<[^>]*>)+VETTORE(?:\s|<[^>]+>|&nbsp;)*)<\/(?:p|div)>/iu',
+        function ($m) {
+            $plain = preg_replace('/\s+/u', ' ', trim(html_entity_decode(strip_tags($m[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+            if (preg_match('/^COMMITTENTE\s+VETTORE\.?$/iu', $plain)) {
+                return '';
+            }
+            return $m[0];
+        },
+        $htmlRender
+    );
+    $htmlRender = preg_replace(
+        '/<(?:p|div)\b[^>]*>\s*(?:<[^>]+>\s*)*(?:&nbsp;|\s)*_{5,}(?:&nbsp;|\s|_)*<\/(?:p|div)>/iu',
+        '',
+        $htmlRender
+    );
+
+    // 4) Dopo ogni "Veroli, gg/mm/aaaa" inserisci tabella firme (2 blocchi)
+    $htmlRender = preg_replace(
+        '/(<(?:p|div)\b[^>]*>\s*(?:<[^>]+>\s*)*Veroli,\s*\d{1,2}\/\d{1,2}\/\d{2,4}(?:\s|<[^>]+>)*<\/(?:p|div)>)/iu',
+        '$1' . $firmaTable,
+        $htmlRender
+    );
+
+    // Fallback: se non c'e' "Veroli, data", sostituisci blocco firme finale.
+    // MAI inserire <table> dentro un <p> aperto: writeHTML TCPDF rende pagina vuota.
+    if (strpos($htmlRender, '>' . $fc . '<') === false && strpos($htmlRender, $fc . '</td>') === false) {
+        $htmlRender = preg_replace(
+            '/(?:Firma\s*)?(?:<br\s*\/?>\s*)*'
+            . 'COMMITTENTE(?:\s|&nbsp;|&#160;|<[^>]*>){1,80}VETTORE'
+            . '(?:\s|&nbsp;|&#160;|<br\s*\/?>|_)*'
+            . '(?:_{5,}(?:\s|&nbsp;|&#160;|_)*_{5,})?'
+            . '(?:\s|&nbsp;|&#160;|<br\s*\/?>)*/iu',
+            '</p>' . $firmaTable . '<p>',
+            $htmlRender,
+            2
+        );
+        // Ripulisci <p> vuoti residui
+        $htmlRender = preg_replace('/<p[^>]*>\s*(?:&nbsp;|\s|<br\s*\/?>)*\s*<\/p>/iu', '', $htmlRender);
+    }
+
+    // Tieni insieme Letto + Veroli + tabella (evita pagina quasi vuota)
+    $htmlRender = preg_replace(
+        '/(<p\b[^>]*>\s*(?:<[^>]+>\s*)*Letto,\s*confermato\s*e\s*sottoscritto\.(?:\s|<[^>]+>)*<\/p>)'
+        . '(\s*(?:<div[^>]*>\s*<\/div>\s*)*)'
+        . '(<p\b[^>]*>\s*(?:<[^>]+>\s*)*Veroli,(?:(?!<\/p>).)*<\/p>)'
+        . '(\s*<table\b[^>]*>.*?<\/table>)/isu',
+        '<div nobr="true">$1$2$3$4</div>',
+        $htmlRender,
+        2
+    );
+
+    $htmlRender = '<div style="font-family:Arial,Helvetica,sans-serif;font-size:9.5pt;line-height:1.0;text-align:justify;">'
+        . $htmlRender
+        . '</div>';
+
+    $pdf->SetFont('Arial', '', 9.5);
+    if (method_exists($pdf, 'setCellHeightRatio')) {
+        $pdf->setCellHeightRatio(0.96);
+    }
+    if (method_exists($pdf, 'setCellPaddings')) {
+        $pdf->setCellPaddings(0.3, 0.15, 0.3, 0.15);
+    }
+    // Guadagna ~1 riga/pagina sul footer automatico
+    $pdf->SetAutoPageBreak(true, 8);
+    if (method_exists($pdf, 'writeHTML')) {
+        $pdf->writeHTML($htmlRender, true, false, true, false, '');
+    } else {
+        $renderContrattoPlain(html_entity_decode(strip_tags($htmlContratto), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+    }
+    $pdf->SetAutoPageBreak(true, (float)$DEFAULT_MARGIN_B);
+    if (method_exists($pdf, 'setCellHeightRatio')) {
+        $pdf->setCellHeightRatio(1.18);
+    }
+    if (method_exists($pdf, 'setCellPaddings')) {
+        $pdf->setCellPaddings(1.2, 1.0, 1.2, 1.0);
+    }
+} elseif ($htmlContratto !== '') {
+    // HTML Word grezzo: plain MultiCell (writeHTML su MSO → ~21 pag)
+    $plainFromHtml = (string)$htmlContratto;
+    $plainFromHtml = preg_replace('/<!--\[if.*?<!\[endif\]-->/is', '', $plainFromHtml);
+    $plainFromHtml = preg_replace('/<style\b[^>]*>.*?<\/style>/is', '', $plainFromHtml);
+    $plainFromHtml = preg_replace('/page-break-[a-z]+\s*:\s*[^;]+;?/i', '', $plainFromHtml);
+    $plainFromHtml = preg_replace('/<br\s*\/?>/i', ' ', $plainFromHtml);
+    $plainFromHtml = preg_replace('/<\/(p|div|h[1-6]|li|tr)>/i', "\n\n", $plainFromHtml);
+    $plainFromHtml = strip_tags($plainFromHtml);
+    $plainFromHtml = html_entity_decode($plainFromHtml, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $plainFromHtml = str_replace("\xc2\xa0", ' ', $plainFromHtml);
+    $renderContrattoPlain($plainFromHtml);
+} else {
+    $renderContrattoPlain($testo_contratto);
 }
 
 // Coordinate firme corpo contratto (pagine portrait variabili)

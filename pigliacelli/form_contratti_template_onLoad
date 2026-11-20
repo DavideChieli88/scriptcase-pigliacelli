@@ -1,0 +1,33 @@
+/**
+ * form_contratti_template → onLoad / onLoadAll / onLoadAllValue
+ *
+ * Campo virtuale readonly Text Area: help_placeholders
+ *
+ * IMPORTANTE: non scrivere letterali {{nome}} nel PHP di ScriptCase:
+ * SC li tratta come macro {campo} e li svuota. Costruire con chr().
+ */
+
+$ph = function ($name) {
+    return chr(123) . chr(123) . (string)$name . chr(125) . chr(125);
+};
+
+$help = "Placeholder disponibili (sostituiti in generazione PDF)\n"
+    . "Scrivili nel Body HTML come testo, es. " . $ph('vettore_ragione_sociale') . "\n"
+    . "\n"
+    . "Contratto:\n"
+    . "  " . $ph('contratto_numero') . "  " . $ph('anno') . "  " . $ph('data_certa') . "\n"
+    . "\n"
+    . "Vettore:\n"
+    . "  " . $ph('vettore_ragione_sociale') . "  " . $ph('vettore_citta') . "  " . $ph('vettore_provincia') . "\n"
+    . "  " . $ph('vettore_indirizzo') . "  " . $ph('vettore_civico') . "\n"
+    . "  " . $ph('vettore_cf') . "  " . $ph('vettore_piva') . "  " . $ph('vettore_rea') . "  " . $ph('vettore_albo') . "\n"
+    . "  " . $ph('vettore_reg_imprese_luogo') . "  " . $ph('vettore_reg_imprese_n') . "\n"
+    . "\n"
+    . "Rappresentante:\n"
+    . "  " . $ph('rapp_nome') . "  " . $ph('rapp_cognome') . "\n"
+    . "  " . $ph('rapp_luogo_nascita') . "  " . $ph('rapp_prov_nascita') . "  " . $ph('rapp_data_nascita') . "\n"
+    . "\n"
+    . "Nota: questo form modifica il template master.\n"
+    . "I contratti gia creati usano lo snapshot finche non lo aggiorni.";
+
+{help_placeholders} = $help;

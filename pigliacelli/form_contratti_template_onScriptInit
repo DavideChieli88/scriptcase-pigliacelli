@@ -1,0 +1,12 @@
+/**
+ * form_contratti_template → onScriptInit
+ *
+ * Non loggare update/insert: html_body e' troppo lungo per sc_log.description
+ * e fa fallire il save ("Data too long for column 'description'").
+ *
+ * IDE (obbligatorio): Form → Settings → Log → togliere Insert/Update
+ * (o disattivare tutto il Log su questa app).
+ *
+ * Macro sotto: spegne il log a runtime se supportato dalla versione SC.
+ */
+sc_apl_conf('form_contratti_template', 'log', 'off');

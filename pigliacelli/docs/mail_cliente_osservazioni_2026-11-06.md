@@ -47,11 +47,11 @@ Elenco actionable da usare per priorità e risposta. Cross-ref: flusso firma tip
 - Verificare come PDF/report (`variazione_contratto` / allegato) costruisce il “numero contratto” vs `contratti.id` / progressivo / `tratte.version` / APPENDICE N°.
 - Fatto: PDF/mail usano quadro tipo 1 + Appendice #N da count tipo 2/3 (non più id variazione / `tratte.version`).
 
-### 4. Un solo invio Pigliacelli ↔ vettore (niente doppio invio)
+### 4. Un solo invio Pigliacelli ↔ vettore (niente doppio invio) — **RIVISTO 17/11**
 
-- Contratto (tipo 1) e appendici (tipo 2/3): **un** invio al vettore; il vettore **accetta e firma** (magic link → review → firma), senza secondo giro di “invio” ridondante (mail duplicate, resend automatico, doppio EasyGN / doppia tab già vista in test).
-- “Viceversa” = anche il percorso di ritorno (firma / notifica ops / firma committente) non deve generare doppioni di mail o link.
-- Coerente con i fix recent: una sola apertura EasyGN; tipo 2/3 Firma diretta senza blank “dati registrati” come secondo passo inutile.
+- In mail 06/11: contratto/appendici **un** solo invio, niente doppio giro.
+- **Call 17/11 (`pigliacelli_briefing_sal_2026-11-17.md`):** dopo spiegazione di Erik sul controllo del flusso, il cliente **mantiene il doppio invio**. Non eliminarlo.
+- Appendici: la semplificazione “firma diretta” fatta da Davide può restare come ottimizzazione; non è un obbligo di ripristino immediato del doppio passo.
 
 ### 5. Denominazione appendici: Appendice#1, Appendice#2, …
 
@@ -75,7 +75,7 @@ Elenco actionable da usare per priorità e risposta. Cross-ref: flusso firma tip
 | 1 | `group_id=5` (Marcello) fuori scadenze documenti; sì su firme | Fatto (job expiry) |
 | 2 | Firma appendici (tipo 2/3, `variazione_contratto`): Marcello (`group_id=5`) + Flavia | Alta |
 | 3 | Fix numero contratto su appendice (Prova04novembre) | Alta (bug) |
-| 4 | Eliminare doppio invio contratto/appendici | Alta |
+| 4 | Eliminare doppio invio contratto/appendici | **Annullato 17/11 — mantenere doppio invio** |
 | 5 | Label Appendice#N non Contratto#N | Alta |
 | 6 | Template contratto self-service PGL | Call martedì |
 

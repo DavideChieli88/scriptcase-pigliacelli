@@ -1,0 +1,32 @@
+/**
+ * control_nuovo_contratto_quadro → onLoad
+ *
+ * Campi: subvettore_id + template_id (N1).
+ * template_id lookup: contratti_template attivi ORDER BY is_default DESC.
+ *
+ * In modale lo Exit nativo SC finisce sulla pagina viola con solo "Ok".
+ * Spegnere Exit/Sair e usare Annulla (btn_annulla) che torna a grid_contratti.
+ *
+ * IDE:
+ *   - Toolbar: togliere Exit (o lasciarlo: qui viene spento)
+ *   - Buttons → PHP → Name: btn_annulla, Label: Annulla
+ *   - Campo template_id Select (vedi form_contratti_template_SETUP.md §3b)
+ */
+sc_btn_display('exit', 'off');
+sc_btn_display('sair', 'off');
+sc_btn_display('btn_annulla', 'on');
+
+// Preseleziona template default se il campo e' vuoto
+$curTpl = isset({template_id}) ? (int){template_id} : 0;
+if ($curTpl <= 0) {
+    sc_lookup(rsNcqTplLoad, "
+        SELECT id
+        FROM contratti_template
+        WHERE attivo = 1
+        ORDER BY is_default DESC, id ASC
+        LIMIT 1
+    ", 'pigliacelli');
+    if (!empty({rsNcqTplLoad[0][0]})) {
+        {template_id} = (int){rsNcqTplLoad[0][0]};
+    }
+}

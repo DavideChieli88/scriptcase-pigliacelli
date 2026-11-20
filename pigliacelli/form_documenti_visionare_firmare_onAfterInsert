@@ -1,0 +1,15 @@
+/**
+ * form_documenti_visionare_firmare → onAfterInsert
+ *
+ * Commit esplicito sulla connessione pigliacelli, poi redir al blank firme.
+ */
+
+$docId = (int){id};
+$mod = strtolower(trim((string){modalita}));
+$file = trim((string){file});
+$returnApp = 'grid_documenti_visionare_firmare';
+
+if ($docId > 0 && $mod === 'firma' && $file !== '') {
+    sc_commit_trans('pigliacelli');
+    sc_redir('blank_posiziona_firme_pdf', documentoId=$docId; return_app=$returnApp);
+}

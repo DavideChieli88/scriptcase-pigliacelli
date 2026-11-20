@@ -1,0 +1,15 @@
+/**
+ * grid_documenti_visionare_firmare → onRecord
+ *
+ * Nasconde Action Bar posiziona_firme se non è firma+PDF.
+ * Nome tecnico: view_doc .
+ */
+
+$mod = strtolower(trim((string){modalita}));
+$file = trim((string){file});
+
+if ($mod === 'firma' && $file !== '') {
+    sc_actionbar_show('view_doc');
+} else {
+    sc_actionbar_hide('view_doc');
+}

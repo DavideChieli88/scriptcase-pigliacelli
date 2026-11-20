@@ -22,6 +22,9 @@ $wizDocLog = function ($msg) {
     sc_log_add('WIZ_DOCS', $msg);
 };
 
+// N2: wizard onboarding = sempre upload (ENUM modalita)
+{modalita} = 'upload';
+
 $docId = isset({id}) ? (int){id} : 0;
 $fileField = trim((string){file});
 

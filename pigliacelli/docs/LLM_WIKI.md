@@ -3,20 +3,21 @@
 Wiki operativa per agenti/LLM. Aggiornare quando cambiano requisiti o naming.
 
 **Gerarchia requisiti (prevale dall’alto):**
-1. `attivita_modulo_2_2026-11-11.md` — backlog Modulo 2: bugfix (rapp. legale in firma, sync tratte SGA, search grid, link auto+sollecito Marcello, grid dettaglio subv, n° contratto appendici, label Appendice, Marcello solo firme) + NEW (template contratto testo/firme pre-invio; sottosezione Documentazione invio doc a subv)
-2. `mail_cliente_osservazioni_2026-11-06.md` — Marcello=`group_id` 5 solo firme (no scadenze doc); appendici=tipo 2/3 `variazione_contratto` (firma Marcello+Flavia); bug n. contratto; un solo invio; label Appendice#N; template self-service → poi reso operativo in attività 11/11
-3. `pigliacelli_briefing_sal_2026-10-30.md` — call Erik: sync anagrafica insert/update vs impianto ~100; pulsanti in basso; scadenze readonly; upload Manuale UI; ottimizzare sync tratte; UAT notifiche; punti 5–6 Flavia → martedì
-4. `mail_flavia_prova_2026-10-29.md` — sync≠tratta, toolbar wizard, scadenze ANGA/RENTRI/Albo readonly, Manuale in firma, campanella fine wizard, Doc/Tratte PGL, preview+invio contratto; note su cosa non torna
-5. `mail_flavia_prova_2026-10-19.md` — PEC, assicurazione mezzo, Albo Gestori e ricevuta ANGA al 30 aprile sono nel codice; restano date passate, scadenze obbligatorie, documenti autista in DOCUMENTAZIONE, tendine PGL
-6. `pigliacelli_briefing_sal_2026-10-21.md` — tariffa cliente da `T2ViaggiClienti.IMPORTO_TOTALE`, prova Sgam 99001, prezzo unitario vs totale viaggio; sola lettura documenti, invio per correzione, niente modifica dopo la firma
-7. `pigliacelli_briefing_sal_2026-10-13.md` — vista contratto, review solo tratte, modale rappresentante, griglia documenti, blocco wizard
-8. `pigliacelli_briefing_sal_2026-09-30.md` — test wizard, sync SGA spezzata, firma contratti solo tratte
-9. `pigliacelli_briefing_sal_2026-09-28.md` — fix wizard; ANGA/RENTRI: flag sul mezzo, file nello step documenti
-10. `chiarimento_anga_rentri_2026-09-17.md` — nomi, cardinalità, scadenze (dove i file si caricano prevale il 28/09)
-11. `pigliacelli_briefing_sal_2026-09-16.md`
-12. `pigliacelli_briefing_sal_2026-07-21.md`
-13. `requisiti_pigliacelli_validazione_2026-07.md`
-14. `docs_elenco_documenti_subvettori.md` · `modello_flag_documenti.md`
+1. `pigliacelli_briefing_sal_2026-11-17.md` — call 17/11: **mantenere doppio invio**; appendici/label/Marcello/sync già ok; QA griglie (case-insensitive, filtri, no Id); NEW documenti PGL visione/firma + template contratto HTML (`{{campo}}`, edit pre-invio, firme ogni volta); target **metà dicembre**
+2. `attivita_modulo_2_2026-11-11.md` — backlog Modulo 2 (aggiornato post call 17/11)
+3. `mail_cliente_osservazioni_2026-11-06.md` — Marcello=`group_id` 5 solo firme; appendici firma Marcello+Flavia; n° contratto; ~~un solo invio~~ → **rivisto 17/11: doppio invio resta**; Appendice#N; template self-service
+4. `pigliacelli_briefing_sal_2026-10-30.md` — call Erik: sync anagrafica insert/update vs impianto ~100; pulsanti in basso; scadenze readonly; upload Manuale UI; ottimizzare sync tratte; UAT notifiche; punti 5–6 Flavia → martedì
+5. `mail_flavia_prova_2026-10-29.md` — sync≠tratta, toolbar wizard, scadenze ANGA/RENTRI/Albo readonly, Manuale in firma, campanella fine wizard, Doc/Tratte PGL, preview+invio contratto; note su cosa non torna
+6. `mail_flavia_prova_2026-10-19.md` — PEC, assicurazione mezzo, Albo Gestori e ricevuta ANGA al 30 aprile sono nel codice; restano date passate, scadenze obbligatorie, documenti autista in DOCUMENTAZIONE, tendine PGL
+7. `pigliacelli_briefing_sal_2026-10-21.md` — tariffa cliente da `T2ViaggiClienti.IMPORTO_TOTALE`, prova Sgam 99001, prezzo unitario vs totale viaggio; sola lettura documenti, invio per correzione, niente modifica dopo la firma
+8. `pigliacelli_briefing_sal_2026-10-13.md` — vista contratto, review solo tratte, modale rappresentante, griglia documenti, blocco wizard
+9. `pigliacelli_briefing_sal_2026-09-30.md` — test wizard, sync SGA spezzata, firma contratti solo tratte
+10. `pigliacelli_briefing_sal_2026-09-28.md` — fix wizard; ANGA/RENTRI: flag sul mezzo, file nello step documenti
+11. `chiarimento_anga_rentri_2026-09-17.md` — nomi, cardinalità, scadenze (dove i file si caricano prevale il 28/09)
+12. `pigliacelli_briefing_sal_2026-09-16.md`
+13. `pigliacelli_briefing_sal_2026-07-21.md`
+14. `requisiti_pigliacelli_validazione_2026-07.md`
+15. `docs_elenco_documenti_subvettori.md` · `modello_flag_documenti.md`
 
 ---
 
@@ -102,6 +103,7 @@ credenziali → login group 2, wizard_complete=0
 - `tipi_documento`: `is_readonly`, `flag_possesso`, `tipo_collegato_id` (no `tipo_padre_id`)
 - `documenti` (previsti): `in_possesso`, `presa_visione_at`, `documento_padre_id`
 - UI: `is_readonly=0` caricare / `=1` visionare
+- **N1/N2 call 17/11:** `n1_n2_app_inventory_2026-11-17.md` + `migration_n1_n2_call_2026_11_17.sql` (`origine`/`modalita`/`sign_boxes_json`, `contratti_template`)
 
 ### ANGA/RENTRI (call 28/09 — prevale sul “per mezzo” del 16/09)
 - I **radio** cat. 1/4/5 restano sul mezzo. Gli **upload** ANGA e RENTRI no.
@@ -152,4 +154,4 @@ Rif. ufficiali: [Events](https://www.scriptcase.net/docs/en_us/v9/manual/06-appl
 
 Quando chiudi un task rilevante: aggiorna la sezione interessata + data in coda. Non duplicare interi briefing: linka il file fonte.
 
-*Ultimo aggiornamento: 2026-11-11. Ripristinata mail auto firma al committente in `web_hook_firma` dopo firma subvettore (B4); sollecito resta su grid.*
+*Ultimo aggiornamento: 2026-11-17. Call SAL: briefing `pigliacelli_briefing_sal_2026-11-17.md`; doppio invio resta; NEW template HTML + doc PGL visione/firma (target metà dic); backlog Modulo 2 aggiornato.*

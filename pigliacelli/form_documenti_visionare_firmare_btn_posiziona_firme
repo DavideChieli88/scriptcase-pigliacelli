@@ -1,0 +1,43 @@
+/**
+ * form_documenti_visionare_firmare → pulsante PHP "Posiziona / rivedi firme"
+ *
+ * Non fidarsi di {file} nel click del bottone (SC spesso lo lascia vuoto):
+ * rileggi da documenti.
+ */
+
+$docId = (int){id};
+$returnApp = 'form_documenti_visionare_firmare';
+
+if ($docId <= 0) {
+    sc_error_message('Salva prima il documento.');
+    sc_error_exit();
+}
+
+sc_lookup(rsBtnFirme, "
+    SELECT
+        LOWER(TRIM(COALESCE(modalita, ''))),
+        TRIM(COALESCE(file, ''))
+    FROM documenti
+    WHERE id = $docId
+    LIMIT 1
+", 'pigliacelli');
+
+if ({rsBtnFirme} === false || !isset({rsBtnFirme[0][0]})) {
+    sc_error_message('Documento non trovato.');
+    sc_error_exit();
+}
+
+$mod = trim((string){rsBtnFirme[0][0]});
+$file = trim((string){rsBtnFirme[0][1]});
+
+if ($mod !== 'firma') {
+    sc_error_message('Il posizionamento firme vale solo per modalita = firma.');
+    sc_error_exit();
+}
+if ($file === '') {
+    sc_error_message('Carica il PDF prima di posizionare le firme.');
+    sc_error_exit();
+}
+
+sc_commit_trans('pigliacelli');
+sc_redir('blank_posiziona_firme_pdf', documentoId=$docId; return_app=$returnApp);

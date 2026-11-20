@@ -1,17 +1,64 @@
 /**
  * Blank nuovo_contratto_quadro → onExecute
  *
- * Arriva da control_nuovo_contratto_quadro con [subvettoreId].
+ * Arriva da control_nuovo_contratto_quadro con [subvettoreId] e [templateId] (N1).
  * Crea un contratto tipo 1 in "Da inviare al subvettore"
  * e ci collega tutte le tratte gia a DB di quel subvettore.
- * Non crea utenze e non aggancia gli autisti.
- * Se un tipo 1 esiste gia, non ne crea un altro.
+ * Salva template_id e copia html_body del template in html_body_snapshot.
+ *
+ * Nota: sc_alert + sc_redir(_parent) dalla modale non mostra il messaggio.
+ * Usare ncq_exit() (alert JS + redirect parent).
  */
 
-$subId = isset([subvettoreId]) ? (int)[subvettoreId] : 0;
+if (!function_exists('ncq_exit')) {
+    function ncq_exit($msg)
+    {
+        $msg = (string)$msg;
+        $jsMsg = json_encode($msg, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+        if ($jsMsg === false) {
+            $jsMsg = '"' . addslashes($msg) . '"';
+        }
+        echo '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Contratto</title></head><body>';
+        echo '<script>(function(){';
+        if ($msg !== '') {
+            echo 'try{alert(' . $jsMsg . ');}catch(e){}';
+        }
+        echo 'var u="../grid_contratti/";';
+        echo 'try{if(window.parent&&window.parent!==window){window.parent.location.href=u;return;}}catch(e1){}';
+        echo 'window.location.href=u;';
+        echo '})();</script>';
+        echo '<p style="font-family:Arial,sans-serif;padding:16px;">'
+            . htmlspecialchars($msg !== '' ? $msg : 'Reindirizzamento...', ENT_QUOTES, 'UTF-8')
+            . '</p></body></html>';
+        exit;
+    }
+}
+
+$subId = 0;
+if (isset([subvettoreId]) && (int)[subvettoreId] > 0) {
+    $subId = (int)[subvettoreId];
+} elseif (isset($_GET['subvettoreId']) && (int)$_GET['subvettoreId'] > 0) {
+    $subId = (int)$_GET['subvettoreId'];
+} elseif (isset($_REQUEST['subvettoreId']) && (int)$_REQUEST['subvettoreId'] > 0) {
+    $subId = (int)$_REQUEST['subvettoreId'];
+} elseif (isset($_POST['subvettoreId']) && (int)$_POST['subvettoreId'] > 0) {
+    $subId = (int)$_POST['subvettoreId'];
+}
+
+$templateId = 0;
+if (isset([templateId]) && (int)[templateId] > 0) {
+    $templateId = (int)[templateId];
+} elseif (isset($_GET['templateId']) && (int)$_GET['templateId'] > 0) {
+    $templateId = (int)$_GET['templateId'];
+} elseif (isset($_REQUEST['templateId']) && (int)$_REQUEST['templateId'] > 0) {
+    $templateId = (int)$_REQUEST['templateId'];
+}
+
 if ($subId <= 0) {
-    sc_error_message('Subvettore non indicato.');
-    return;
+    ncq_exit(
+        'Parametro subvettore mancante (subvettoreId). '
+        . 'Verificare sc_redir da control_nuovo_contratto_quadro e i parametri del blank.'
+    );
 }
 
 sc_lookup(rsNcqSub, "
@@ -22,13 +69,11 @@ sc_lookup(rsNcqSub, "
 ", 'pigliacelli');
 
 if (empty({rsNcqSub})) {
-    sc_error_message('Subvettore non trovato.');
-    return;
+    ncq_exit('Subvettore #' . $subId . ' non trovato.');
 }
 
 if ((int){rsNcqSub[0][3]} !== 1) {
-    sc_error_message('Questo subvettore non ha completato il wizard. Il contratto quadro non e\' stato creato.');
-    return;
+    ncq_exit('Questo subvettore non ha completato il wizard. Il contratto quadro non e\' stato creato.');
 }
 
 $login = trim((string){rsNcqSub[0][1]});
@@ -47,9 +92,11 @@ sc_lookup(rsNcqAperto, "
 ", 'pigliacelli');
 
 if (!empty({rsNcqAperto})) {
-    sc_alert('Per questo subvettore esiste gia un contratto quadro. Usare quello in contrattistica.');
-    sc_redir('grid_contratti', '', '_parent');
-    return;
+    $existId = (int){rsNcqAperto[0][0]};
+    ncq_exit(
+        'Per questo subvettore esiste gia un contratto quadro (id ' . $existId . '). '
+        . 'Usare quello in contrattistica.'
+    );
 }
 
 sc_lookup(rsNcqTratte, "
@@ -62,24 +109,77 @@ sc_lookup(rsNcqTratte, "
 
 $nTratte = empty({rsNcqTratte[0][0]}) ? 0 : (int){rsNcqTratte[0][0]};
 if ($nTratte <= 0) {
-    sc_alert('Nessuna tratta con tariffa valida per questo subvettore.');
-    sc_redir('grid_contratti', '', '_parent');
-    return;
+    ncq_exit(
+        'Nessuna tratta con tariffa valida per il subvettore #' . $subId . '. '
+        . 'Inserire almeno una tratta (tariffa > 0) prima di creare il contratto quadro.'
+    );
 }
 
+// Template: obbligatorio per N1 (fallback al default)
+$templateIdSql = 'NULL';
+if ($templateId <= 0) {
+    sc_lookup(rsNcqTplDef, "
+        SELECT id
+        FROM contratti_template
+        WHERE attivo = 1
+        ORDER BY is_default DESC, id ASC
+        LIMIT 1
+    ", 'pigliacelli');
+    if (!empty({rsNcqTplDef[0][0]})) {
+        $templateId = (int){rsNcqTplDef[0][0]};
+    }
+}
+
+if ($templateId > 0) {
+    // CHAR_LENGTH via SQL: sc_lookup su LONGTEXT html_body spesso tronca/svuota
+    sc_lookup(rsNcqTpl, "
+        SELECT id, CHAR_LENGTH(COALESCE(html_body, ''))
+        FROM contratti_template
+        WHERE id = " . (int)$templateId . "
+          AND attivo = 1
+        LIMIT 1
+    ", 'pigliacelli');
+    if (empty({rsNcqTpl})) {
+        ncq_exit('Template #' . (int)$templateId . ' non valido o non attivo. Contratto non creato.');
+    }
+    $templateId = (int){rsNcqTpl[0][0]};
+    $htmlLen = (int){rsNcqTpl[0][1]};
+    if ($htmlLen < 200) {
+        ncq_exit(
+            'Template #' . (int)$templateId . ' senza corpo HTML (o troppo corto: '
+            . $htmlLen . ' caratteri). '
+            . 'Aprire form_contratti_template, incollare il testo del contratto e salvare.'
+        );
+    }
+    $templateIdSql = (string)(int)$templateId;
+}
+
+// INSERT senza HTML inline; snapshot copiato dopo con JOIN (affidabile su LONGTEXT)
 sc_exec_sql("
     INSERT INTO contratti
-      (tipo_contratto_id, intestatario, stato_contratto_id)
+      (tipo_contratto_id, template_id, html_body_snapshot, intestatario, stato_contratto_id)
     VALUES
-      (1, " . $intestatarioSql . ",
+      (1, " . $templateIdSql . ", NULL, " . $intestatarioSql . ",
        (SELECT id FROM stati_contratti WHERE nome = 'Da inviare al subvettore' LIMIT 1))
 ", 'pigliacelli');
 
 sc_lookup(rsNcqCtr, 'SELECT LAST_INSERT_ID()', 'pigliacelli');
 $contrattoId = empty({rsNcqCtr[0][0]}) ? 0 : (int){rsNcqCtr[0][0]};
 if ($contrattoId <= 0) {
-    sc_error_message('Contratto non creato.');
-    return;
+    ncq_exit(
+        'Contratto non creato (INSERT fallito). '
+        . 'Verificare migration colonne template_id / html_body_snapshot su contratti.'
+    );
+}
+
+if ($templateId > 0) {
+    sc_exec_sql("
+        UPDATE contratti c
+        INNER JOIN contratti_template t ON t.id = " . (int)$templateId . "
+        SET c.html_body_snapshot = t.html_body,
+            c.template_id = t.id
+        WHERE c.id = " . (int)$contrattoId . "
+    ", 'pigliacelli');
 }
 
 sc_exec_sql("
@@ -123,5 +223,5 @@ sc_exec_sql("
       AND t.tariffa > 0
 ", 'pigliacelli');
 
-sc_alert('Contratto quadro creato. Tratte allegate: ' . $nTratte . '.');
-sc_redir('grid_contratti', '', '_parent');
+$tplMsg = $templateId > 0 ? (' Template #' . $templateId . '.') : '';
+ncq_exit('Contratto quadro creato (id ' . $contrattoId . '). Tratte allegate: ' . $nTratte . '.' . $tplMsg);

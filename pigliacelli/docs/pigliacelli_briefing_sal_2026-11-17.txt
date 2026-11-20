@@ -1,0 +1,985 @@
+nov 17, 2026
+Pigliacelli Workspace | Briefing e allineamento
+Allegati Pigliacelli Workspace | Briefing e allineamento
+Record delle riunioni Trascrizione
+
+Riepilogo
+Revisione delle disposizioni e ottimizzazione dei processi con pianificazione delle scadenzeAnalisi disposizioni e permessiRipristino del doppio invio per preservare il controllo operativo. Assegnazione dei permessi di firma per la gestione dei ruoli.Risoluzione griglie e prestazioniOttimizzazione della sincronizzazione delle tratte completata con successo. Risoluzione dei problemi di ricerca e filtri nelle griglie.Pianificazione nuove attivitàDefinizione della scadenza per la consegna delle nuove funzionalità entro la metà di dicembre.
+
+Decisioni
+Concordato
+Mantenimento del doppio invio nei flussi È stato deciso di mantenere il doppio invio per consentire la gestione e il controllo dell'intero flusso.
+Standard di denominazione delle appendici È stato stabilito che le appendici debbano riportare la denominazione associata al numero del contratto di riferimento.
+Gestione separata dei documenti per visione e firma È stata concordata l'introduzione di una sezione dedicata all'invio di documenti con opzioni distinte per la presa visione o la firma con posizionamento dei riquadri.
+Editor HTML per la personalizzazione dei contratti È stato deciso di utilizzare un editor HTML per permettere la modifica autonoma dei template di contratto standard e la personalizzazione prima dell'invio.
+Scadenza di completamento delle nuove attività È stato stabilito di ultimare lo sviluppo delle nuove funzionalità e dei fix entro la metà di dicembre.
+
+Passaggi successivi
+[Davide Chieli] Controllare Griglie: Verificare il funzionamento di tutte le griglie, includendo la ricerca rapida e i filtri avanzati per assicurare la coerenza dei parametri rispetto al tipo di campo.
+[Davide Chieli] Investigare Case Insensitivity: Indagare le cause tecniche per cui la ricerca rapida non è case insensitive in alcune sezioni come Documentazione.
+[Davide Chieli] Rimuovere ID: Rimuovere il campo ID dalla ricerca avanzata nelle griglie dove non è presente o necessario.
+[Davide Chieli] Implementare Sezione Documenti: Sviluppare la nuova sezione di gestione documenti in cui è possibile caricare PDF e configurare opzioni per presa visione o firma digitale.
+[Davide Chieli] Creare Editor Template: Implementare un editor HTML nella piattaforma per consentire la modifica autonoma dei template contrattuali, permettendo l'inserimento di campi dinamici tramite parentesi graffe.
+[Davide Chieli] Sviluppare modulo contratto: Implementare una sezione nel modulo contratto che permetta di definire template standard, visualizzare un anteprima e modificare il documento prima dell'invio ai subvettori.
+[Davide Chieli] Realizzare Proof of Concept: Effettuare una Proof of Concept per testare l'editor HTML in Script Case o l'opzione di caricamento PDF per la gestione dinamica dei contratti.
+[Davide Chieli] Gestire firme contratto: Configurare la logica per il posizionamento dinamico dei campi di firma su ogni pagina del contratto prima dell'invio finale.
+[Davide Chieli] Testare modello Anthropic: Utilizzare il modello Opus 5 di Anthropic tramite l'integrazione in Script Case per lo sviluppo del nuovo modulo e testarne le performance.
+[Erik Capoccetta] Condividere codice sorgente: Condividere con Davide Chieli il codice di riferimento per la gestione dell'editor dinamico tramite jQuery e AJAX.
+[Davide Chieli] Risolvere bug ricerca: Investigare e risolvere il problema di ricerca nel sistema che impedisce la corretta individuazione dei record in base a maiuscole e minuscole.
+
+Dettagli
+Revisione delle indicazioni di Marcoccia sul doppio invio: Erik Capoccetta e Davide Chieli analizzano il documento riassuntivo delle disposizioni inviate da Marcoccia (00:00:12). Il problema principale riguarda l'eliminazione del doppio invio, originariamente richiesta. Erik Capoccetta spiega che il doppio invio deve essere mantenuto per preservare il controllo sull'intero flusso operativo. Davide Chieli fa notare di averlo rimosso autonomamente solo nelle appendici per semplificare l'operazione di firma o rifiuto, ma accetta di ripristinarlo seguendo le direttive (00:01:28).
+
+Gestione delle notifiche e dei permessi di firma per Flavia e Marcello: Erik Capoccetta solleva la questione relativa all'invio delle notifiche a Marcello e alla necessità che sia Marcello che Flavia dispongano della facoltà di firmare. Davide Chieli evidenzia che il committente è formalmente unico, portando Erik Capoccetta a specificare la richiesta di avere due utenti abilitati alla firma. Il consenso raggiunto prevede che Davide Chieli assegni a Flavia i permessi di ruolo committente (ruolo 1 e C), consentendole di firmare pur mantenendo associato il nome del committente registrato in ADB (00:02:57).
+
+Struttura e denominazione uniforme delle appendici contrattuali: Viene esaminata la richiesta di standardizzare la denominazione dei documenti. Davide Chieli conferma di aver già implementato la modifica per cui i titoli delle appendici non utilizzano un formato incrementale semplice, ma seguono la struttura specifica "Appendice numero X del contratto numero Y" per garantire uniformità nei testi e nelle comunicazioni email (00:04:53). Si stabilisce inoltre che al committente debbano pervenire esclusivamente le notifiche finalizzate alla firma, mantenendo la facoltà di reinviare il link in autonomia (00:07:28).
+
+Verifica e risoluzione dei problemi nelle griglie, ricerche e filtri: Viene affrontata la segnalazione di Francesca riguardante il presunto malfunzionamento di ricerche, filtri e ordinamenti in tutte le griglie della piattaforma (00:08:35). Davide Chieli dimostra che le ricerche funzionano eseguendo test con termini come "10 novembre" o "autotrasporti", ma emerge un problema legato alla sensibilità alle maiuscole (case-insensitive) e alla coerenza dei operatori di filtro predefiniti (come i campi numerici ID o i parametri dei subvettori) (00:09:30) (00:12:36). Erik Capoccetta richiede un controllo approfondito su tutte le griglie, e Davide Chieli si impegna a investigare sull'anomalia del case-insensitive e a rimuovere i campi superflui, come l'ID, dalla ricerca avanzata delle tratte (00:11:39).
+
+Ottimizzazione delle prestazioni di sincronizzazione delle tratte con SGA: Erik Capoccetta segnala che il processo di sincronizzazione delle tratte con SGA risultava eccessivamente lento, arrivando a impiegare 10 minuti. Davide Chieli risponde di aver già risolto il problema incrementando drasticamente la velocità di elaborazione (completando 32 tratte in 2 secondi) e inserendo un blocco operativo sia sull'interfaccia (pulsante disabilitato durante l'esecuzione) sia a livello di database per impedire esecuzioni parallele concorrenti (00:14:38). Erik Capoccetta esprime approvazione per la soluzione adottata (00:15:34).
+
+Introduzione della nuova sezione per la gestione dei documenti dei subvettori: Erik Capoccetta presenta una nuova richiesta consistente nella creazione di una sezione documentale suddivisa in due parti: i documenti caricati direttamente dal subvettore e i documenti inviati da Pigliacelli che il subvettore deve unicamente visionare (presa visione) oppure firmare (00:15:34). Davide Chieli e Erik Capoccetta concordano sul fatto che, qualora sia richiesta la firma, l'amministratore debba poter caricare un file PDF e posizionare visivamente i riquadri di firma tramite un'interfaccia interattiva a coordinate, replicando la modalità già operativa nell'applicazione Collab (00:16:54).
+
+Implementazione dell'editor HTML per la modifica autonoma dei contratti: Viene discussa la richiesta di consentire agli utenti di modificare direttamente il testo dei contratti (di tipo 1 e tipo 2) prima dell'invio al subvettore, garantendo autonomia rispetto al team di sviluppo (00:25:09). Erik Capoccetta propone di integrare un editor HTML avanzato (simile a TinyMCE in Scriptcase) all'interno di una nuova sezione template e nella fase di invio, permettendo modifiche testuali in stile Word e l'utilizzo di tag dinamici racchiusi tra doppie parentesi graffe (00:26:38) (00:31:30). Davide Chieli esprime perplessità in merito alla complessità di gestione dei loghi, della formattazione e del necessario riposizionamento dei riquadri di firma in seguito a modifiche del testo, ma accetta di studiare e prototipare la soluzione (00:29:21) (00:31:30).
+
+Definizione delle tempistiche di completamento delle nuove attività: Erik Capoccetta e Davide Chieli pianificano la scadenza per la consegna delle nuove funzionalità (gestione documenti e modifica dinamica dei contratti), fissando il termine indicativo entro la metà di dicembre (tra il 17 e il 21 dicembre), stimando circa un mese di lavoro effettivo al netto delle festività di inizio dicembre e del periodo natalizio (00:41:39) (00:44:51).
+
+Valutazione di altri documenti aziendali e integrazione dell'intelligenza artificiale: Davide Chieli chiede se la modifica dinamica debba essere estesa ad altri documenti come l'informativa sulla privacy o il modello 231. Erik Capoccetta chiarisce che tale funzionalità è prevista esclusivamente per il contratto, poiché gli altri moduli presentano form strutturate e rigide (00:47:12). Successivamente, la conversazione si sposta sull'utilizzo dei modelli di intelligenza artificiale integrati in Scriptcase, con Erik Capoccetta che raccomanda l'uso del modello Opus (Anthropic Opus 5) per ottimizzare le attività di programmazione (00:48:10).
+
+Ulteriori verifiche sulle griglie e chiusura dell'incontro: In chiusura, Erik Capoccetta verifica rapidamente alcune impostazioni relative ai filtri di ricerca, mentre Davide Chieli conferma che si dedicherà prioritariamente allo sviluppo delle nuove richieste e a un controllo mirato sulle griglie prima di concludere la riunione (00:52:25).
+
+Dovresti rivedere le note di Gemini per assicurarti che siano accurate. Ricevi suggerimenti e scopri come Gemini prende appunti
+Qual è la qualità di queste note specifiche? Rispondi a un breve sondaggio? Facci sapere cosa ne pensi e quanto le note siano state utili per le tue esigenze.
+nov 17, 2026
+Pigliacelli Workspace | Briefing e allineamento - Trascrizione
+00:00:12
+
+Davide Chieli: Ciao Erik.
+Erik Capoccetta: Ciao Davide,
+Davide Chieli: Oh,
+Erik Capoccetta: buongiorno.
+Davide Chieli: ciao ciao.
+Erik Capoccetta: Non ti vedo. Come stai?
+Davide Chieli: Abbastanza bene, ti ringrazio. Aspetta che mi sa che eh devo ricollegarmi.
+Erik Capoccetta: Eccoti qua.
+Davide Chieli: Ciao, buongiorno. Aspetta che non ti sento più bene. Ti sento basto.
+Erik Capoccetta: Passata la febbre.
+Davide Chieli: Ce l'ho. Sto bene. Un po' ancora di strashing, ma la febbre non ce l'ho.
+Erik Capoccetta: Bene, bene, dai. Eh,
+Davide Chieli: È influenza.
+Erik Capoccetta: c hanno preso tutti tanto chi chi più chi meno l'ha
+Davide Chieli: Sì, sì, sì,
+Erik Capoccetta: preso, quindi è proprio periodo.
+Davide Chieli: infatti. Sì.
+Erik Capoccetta: Allora, dai, andiamo dritti dritti al punto così ci mettiamo
+Davide Chieli: Sì,
+Erik Capoccetta: subito a Lollo.
+Davide Chieli: ho letto di alcune cose nuove, ma anche abbastanza importanti.
+Erik Capoccetta: Sì, vogliamo vedere un attimo insieme quel documento, così capiamo che cosa c'è da fare e
+Davide Chieli: Sì,
+Erik Capoccetta: ne discutiamo insieme.
+Davide Chieli: sì.
+Erik Capoccetta: Ah, ok.
+Davide Chieli: Oddio, si è bloccato.
+
+00:01:28
+
+Davide Chieli: Ok. No, allora sì, è questo qui di osservazioni funzionamento portale. Questo qua vuole
+Erik Capoccetta: No, come? Qual è osservazione funzione? No, il documento questo qua modulo.
+Davide Chieli: essere questa è la mail di Marcoccia proprio.
+Erik Capoccetta: Sì, vabbè, la mail di Marcoccia l'ho riassunta io lì
+Davide Chieli: Immagino l'abbi l'abbia riassunta tu nel
+Erik Capoccetta: perché poi di quella mail tante cose non si devono non si devono poi
+Davide Chieli: Ok. Ok.
+Erik Capoccetta: più fare. Eh,
+Davide Chieli: Cioè,
+Erik Capoccetta: di quelle che aveva scritto lui praticamente di mandare di eliminare il doppio invio hanno deciso poi di lasciare così com'è perché gli ho spiegato a che serve.
+Davide Chieli: il doppio invio, eh come mi chiese Marcoccia, io l'ho eliminato solo nelle appendici.
+Erik Capoccetta: No, e loro lo vogliono comunque, cioè era da lasciare perché hanno deciso, poi io gli ho spiegato qual era la logica e per ora hanno detto di che vogliono governare
+Davide Chieli: Vabbè,
+Erik Capoccetta: tutto il flusso, quindi Ok,
+Davide Chieli: va bene, va bene. No, era più comodo effettivamente per le appendici perché loro non, cioè Marcoccia mi ha detto "No, lasciamolo solo per per il flusso di tipo uno, cioè come così com'è per l'appendici era più comodo, diciamo, visto che loro devono solo firmare banalmente, eh, o rifiutare, detto, vabbè, vai direttamente alla firma e alla fine l'ho fatto già."
+
+00:02:57
+
+Erik Capoccetta: vabbè, possiamo pure lasciarlo. così vedere,
+Davide Chieli: Sì, penso che sia solo un'ottimizzazione.
+Erik Capoccetta: cioè lui ma magari per il contratto, però lasciamo lasciamo tutto com'è.
+Davide Chieli: Ok. No, no, al contatto, infatti è rimasto uguale, però vedete parte le mail a Pigliacelli,
+Erik Capoccetta: Ok.
+Davide Chieli: queste cose. Vabbè, poi si vede.
+Erik Capoccetta: Sì. Eh, praticamente poi di questa mail che lui diceva al Marcello non devono arrivare le notifiche, solo quelle della F.
+Davide Chieli: No, gliel'ho levate già, già ho fatto.
+Erik Capoccetta: Eh eh la possibilità delle firme deve essere data sia a Marcello che a Flavia. Vabbè,
+Davide Chieli: Questa non l'ho capita,
+Erik Capoccetta: sì,
+Davide Chieli: onestamente perché dovrebbero già, cioè in realtà la che significa la possibilità di firma?
+Erik Capoccetta: vogliono due utenti che possono firmare.
+Davide Chieli: Eh però il committente è uno.
+Erik Capoccetta: Eh, glielo facciamo scegliere prima di inviare
+Davide Chieli: Ah, ma allora lo possono fare. Io che cosa basta fare? Che do i permessi da, diciamo, di classe di committente di di ruolo committente anche a Flavia, quindi do 1 e C a Flavia.
+
+00:04:00
+
+Davide Chieli: eh o o direttamente cinque uguale praticamente, quindi lei ha anche la possibilità di firmare eh però ovviamente il nome rimane quello che hanno salvato ADB come committente.
+Erik Capoccetta: eh vabbè, certo.
+Davide Chieli: C'hanno la possibilità di cambiarlo,
+Erik Capoccetta: anche il numero anche il numero di telefono,
+Davide Chieli: però insomma Sì, sì,
+Erik Capoccetta: ma questa cosa non sussiste perché poi io gli ho spiegato che loro prima di mandare il
+Davide Chieli: sì.
+Erik Capoccetta: contratto alla firma committente lo preallertano e glielo mandano solo quando ce l'hanno effettivamente là che li può firmare, quindi
+Davide Chieli: Sì, sì, sì, ma poi come come ti ho detto, comunque lo possono già cambiare. Io è una cosa che gli ho aggiunto,
+Erik Capoccetta: sì,
+Davide Chieli: eh,
+Erik Capoccetta: questa cosa comunque non per il momento non è necessaria,
+Davide Chieli: vabbè.
+Erik Capoccetta: quindi perché gli ho gli ho spiegato io come funziona.
+Davide Chieli: Ok,
+Erik Capoccetta: Eh, poi l'appice riporta un numero di contratto
+Davide Chieli: ottimo. Eh, questa Allora, volevo vederla con te perché io l'ho fatta già perché è una cosa che mi hanno chiesto adesso.
+
+00:04:53
+
+Davide Chieli: prima non era non era emessa, diciamo, perché prima era semplicemente il contratto, era la condica, infatti era anche un contratto, mi ha detto, mi ha confermato anche Marcoccia, eh, solo che semplicemente loro volevano non volevano il l'incrementale sul documento, ma volevano appendice numero uno del contratto di tipo uno, praticamente abbinato.
+Erik Capoccetta: Ja. Appendice numero uno del contratto numero uno.
+Davide Chieli: Sì, sì, sì,
+Erik Capoccetta: Appendice numero due del contratto numero uno.
+Davide Chieli: è così gliel'ho fatto. Fatto.
+Erik Capoccetta: Appendice numero 3.
+Davide Chieli: ed è stato fatto.
+Erik Capoccetta: Eh,
+Davide Chieli: Sì, sì, sì.
+Erik Capoccetta: infatti.
+Davide Chieli: Non era un incrementale, semplicemente, però non è stato specificato. Questa cosa è una cosa che ci hanno detto e io l'ho fatto tutto qua.
+Erik Capoccetta: Eh, vabbè. Sì, ma era, diciamo, vabbè, implicito perché è un appendicominazione,
+Davide Chieli: Eh, non è roba di burocratese, diciamo. Non per me, capito? Poteva essere anche un incrementale del contratto, non c'è sta. me lo spiegavano loro. Comunque ho fatto
+Erik Capoccetta: altri punti sono smarcati, questi qua della mail sua.
+
+00:05:51
+
+Davide Chieli: eh la cosa dell'appendice nel contratto è sempre la che cosa è la mail? C'era un altro punto che diceva: "La denominazione delle appendici non può essere contratto numero due, bensì appendice numero uno, appendice numero due."
+Erik Capoccetta: Eh, è quello che abbiamo detto che nell'appendice il titolo è appendice 1 del contratto 1, appendice 2 del contratto 2, appendice
+Davide Chieli: Eh, allora fatto giusto per farti vedere, aspetta, vediamo un attimo insieme sta cosa
+Erik Capoccetta: Allora,
+Davide Chieli: meno mi confermi perché la detto così è aleatorio, quindi non so bene se appunto il titolo o lo contratti. Non so se se sto condividendo.
+Erik Capoccetta: no.
+Davide Chieli: Ok. Eh, dove stanno questa qua?
+Erik Capoccetta: M.
+Davide Chieli: No, allora, eh per facciamo un esempio. Questo qua, questo par è un allegato. È un allegato, sì, è un allegato, giusto? Ok.
+Erik Capoccetta: Eh sì, questa denominazione deve essere uniforme sia nelle mail, sia nei testi, dappertutto.
+Davide Chieli: Sì, è questo. Voglio capire un attimo alla fine. Allora, appendice numero 4 al contratto numero 5 da misionare.
+
+00:07:28
+
+Erik Capoccetta: Eh, ok.
+Davide Chieli: Questa qua è c'è questa che dicevano, capito? Nella mail,
+Erik Capoccetta: Sì,
+Davide Chieli: quindi questa è stata corretta.
+Erik Capoccetta: anche nel testo, però
+Davide Chieli: Eh, qua dentro quello ti voglio fare vedere appendice numero 4 all'allegato A. Questo era quello che dicevano anche qua
+Erik Capoccetta: appendici del contratto numero.
+Davide Chieli: del contratto di trasporto numero 5.
+Erik Capoccetta: Eh,
+Davide Chieli: Così si ritorna.
+Erik Capoccetta: ok, perfetto.
+Davide Chieli: Ok. E questa è già stata fatta. Allora, se era solo questa è già stata fatta. Ok.
+Erik Capoccetta: Ok, quindi questi due punti qua si possono smarcare.
+Davide Chieli: Sì, sì, sì.
+Erik Capoccetta: Al committente. Arrivare solo notifiche per la firma. Ok.
+Davide Chieli: Ok, mi torna anche qui. Perfetto.
+Erik Capoccetta: Oh, allora un'altra richiesta che loro avevano fatto è che una volta che ha firmato
+Davide Chieli: Mh mh. Non ti vedo
+Erik Capoccetta: il il subvettore al committente arrivi in automatico il link per la
+Davide Chieli: com'era prima.
+Erik Capoccetta: firma,
+Davide Chieli: Anche questa è una cosa che mi avete fatto modificare e l'ho rimessa.
+
+00:08:35
+
+Davide Chieli: Mo l'ho rimessa com'era prima.
+Erik Capoccetta: eh, e poi loro però possono sollecitarlo nel caso non abbia
+Davide Chieli: È fatto, già già è così. Cioè loro possono reinviare la mail al committente per la firma.
+Erik Capoccetta: Ok. Ok,
+Davide Chieli: Già infatti.
+Erik Capoccetta: quindi perfetto. Di questa parte bug fix. Mo rimane da vedere la roba delle grid. Non so se l'hai sistemata già.
+Davide Chieli: Allora, in realtà questa cosa mi mi ha un attimo allarmato perché nella mail di Francesca mi ha detto che tutte le viste, tutte le grid non funzionano, né le ricerche né i filtri.
+Erik Capoccetta: Allora, io con loro ho provato documentazione, tratte e là non funziona.
+Davide Chieli: Ma com'è possibile? Guarda qua. Cioè, io l'ho provata, perciò voglio capire un attimo documentazione.
+Erik Capoccetta: Vai su documentazione. Eh,
+Davide Chieli: Questa è attipro.
+Erik Capoccetta: cerca là nella ricerca rapida cerca 9 novembre, eh, 10 novembre, non so quello che è. No, qual era? Prova 10 novembre, mi sembra. Qual è il vettore?
+
+00:09:30
+
+Erik Capoccetta: Come si chiama?
+Davide Chieli: Questa è documentazione
+Erik Capoccetta: Carmine Salerno. Boh, una cosa del genere.
+Davide Chieli: questa.
+Erik Capoccetta: Eh, prova a scriverlo in minuscolo. Eh, vedi che non lo trova.
+Davide Chieli: Non è camel case,
+Erik Capoccetta: Eh,
+Davide Chieli: forse.
+Erik Capoccetta: deve essere crazy insensitive.
+Davide Chieli: Ok, questa però è una cosa che fa va fa script case, non la faccio io, diciamo,
+Erik Capoccetta: Eh ma tu la devi controllare.
+Davide Chieli: guarda.
+Erik Capoccetta: Ho capito che la cioè allora non servi più. Va tutto cas
+Davide Chieli: No, è chiaro. Magari purtroppo non fa niente di quello che dovrebbe fare. Trasporti. Io scrivo autotrasporti. Autotrasporti, però me lo becca qua, sia piccolo che grande.
+Erik Capoccetta: eh però è da controllare perché loro hanno fatto quella prova e non ha funzionato. Poi se tu vai sui filtri,
+Davide Chieli: 10 novembre. Effettivamente non lo so per quale motivo, però però funziona qua,
+Erik Capoccetta: eh, quindi va controllato.
+Davide Chieli: cioè prova 10 novembre 2026. Qua lo trovo. Sì, i filtri.
+
+00:10:44
+
+Erik Capoccetta: Se vai sui filtri, no, i filtri in alto,
+Davide Chieli: Sorting funziona.
+Erik Capoccetta: quelli là, il tasso ricerca.
+Davide Chieli: Sì,
+Erik Capoccetta: Eh eh c'è sto campo ID che non è niente.
+Davide Chieli: vabbè, se vogliono cercare per ID si può fare, insomma. Poi non saprei, cioè cos'è che non andava qua.
+Erik Capoccetta: Poi sul vettore qua, qua prima c'erano però No, questi li hai li hai già modificati,
+Davide Chieli: Questi qua ho toccato qualcosa.
+Erik Capoccetta: eh. E qua non funzionava.
+Davide Chieli: Ma questi qua
+Erik Capoccetta: erano tutti di default, cioera maggiore di minore di, cioè non si capiva niente. Cioè devono essere coerenti col tipo di valore che vai a cercare. Se io cerco il superettore può essere uguale a o diverso a,
+Davide Chieli: sì sì sì sì.
+Erik Capoccetta: tipo documento uguale diverso,
+Davide Chieli: Certo. Ah,
+Erik Capoccetta: cioè
+Davide Chieli: vabbè, questi qua sono stati aggiunti, però sì, non erano nei requisiti poliziali, quindi va bene così.
+Erik Capoccetta: che cosa?
+Davide Chieli: Queste cose qua, diciamo, non erano né né il mocap né, cioè non c'erano dettagliate ste cose qua, quindi vabbè,
+
+00:11:39
+
+Erik Capoccetta: Eh, ok.
+Davide Chieli: ho fatto quello che serviva. È una cosa che abita Sì,
+Erik Capoccetta: Tu tu fai quello che ti dico io poi le queste cose sul mocup,
+Davide Chieli: sì, sì, sì, certo.
+Erik Capoccetta: cioè già te l'ho detto che se parliamo così Davide
+Davide Chieli: No, eh, lo so, però diciamo visto che mi è stato esplicitato da Francesca che alcune cose del Mokup non erano state fatte,
+Erik Capoccetta: Ma scusa Davide Vabbè,
+Davide Chieli: io dico Vabbè,
+Erik Capoccetta: no, non andiamo nella cosa perché sennò in altra sede ne parliamo di queste faccende.
+Davide Chieli: vabbè,
+Erik Capoccetta: Concentriamoci sul sulla cosa strettamente,
+Davide Chieli: vabbè,
+Erik Capoccetta: quindi devi controllare tutte le grid che funzioni sia la ricerca rapida che i filtri non siano quelli di default. Non so se tu l' l'hai già fatto,
+Davide Chieli: sì. No,
+Erik Capoccetta: però
+Davide Chieli: l'ho fatto già dappertutto in etap e quindi ho fatto, cioè ho controllato tutti i campi, diciamo. Però effettivamente questa cosa del camel case e per me è nuova. Prova, funziona anche piccolo. Non lo so mo perché 10
+
+00:12:36
+
+Erik Capoccetta: ci sarà qualcosa, magari vai a vedere e eh ci sarà
+Davide Chieli: qua mi funziona. Non lo so. Eh, solo in documentazione.
+Erik Capoccetta: qualche impostazione sicuramente.
+Davide Chieli: Mh mh.
+Erik Capoccetta: No, quello te la fa la funzione, ma la devi poi impostare tu come la vuoi, non è che
+Davide Chieli: Mh mh. È solo qui in documentazione. Non lo so perché fa così. Vabbè.
+Erik Capoccetta: Vabbè, quindi questo ti devi controllare tutte le grid e tutte le funzionalità di ricerca
+Davide Chieli: Sì,
+Erik Capoccetta: rapida e filtro. Io intendo il filtro quello là, ricerca avanzata.
+Davide Chieli: sì, sì. Ciao. Infatti.
+Erik Capoccetta: Eh, esatto. Quindi importante che siano coerenti i parametri col tipo di
+Davide Chieli: Sì, sì, sì.
+Erik Capoccetta: campo.
+Davide Chieli: Ah, giudici le queste Sì,
+Erik Capoccetta: Eh, esatto. Cioè,
+Davide Chieli: sì, sì.
+Erik Capoccetta: subvettore non può essere compreso tra maggiore di o uguale al massimo
+Davide Chieli: No, no, chiaro, chiaro.
+Erik Capoccetta: diverso, ma io metterei solo uguale.
+Davide Chieli: Sì, sì, sì, infatti ho messo la Selex direttamente.
+
+00:13:33
+
+Erik Capoccetta: Eh eh l'ID io lo toglierei lì perché mi sa che manco c'è nella grid. Come lo vedono?
+Davide Chieli: Ok. Sì, questo qua io lo posso levare.
+Erik Capoccetta: E quindi questa è una cosa da fare. Poi se tu vai nella schermata di dettaglio del subvettore
+Davide Chieli: Allora, do ID. Eh, aspetta che me lo segno dalle tratte eliminare la ricerca avanzata. Poi abbiamo detto quell'altro controllare il camer case. Va bene, dicevi?
+Erik Capoccetta: tu vai nella schermata di dettaglio di un subvettore,
+Davide Chieli: Sì,
+Erik Capoccetta: perché
+Davide Chieli: l'ho aggiunto queste cose qua, però fatto l'ho fatto già.
+Erik Capoccetta: Eh, esatto. Anche, cioè, le grid che mostri là devono avere le stesse funzioni di quell'altre.
+Davide Chieli: Sì, sì, sì, sì, è chiaro.
+Erik Capoccetta: Ok, quindi già l'hai fatto questo.
+Davide Chieli: Sì, sì, sì.
+Erik Capoccetta: Ok,
+Davide Chieli: Ovviamente queste non c'erano MK, però l'ha aggiunto lo stesso.
+Erik Capoccetta: come no.
+Davide Chieli: No,
+Erik Capoccetta: Cioè io mi ricordo che c'è eh vabbè,
+Davide Chieli: su vettori autisti non c'era, mezzi autisti non c'era, l'ho aggiunti io.
+
+00:14:38
+
+Erik Capoccetta: ma MK è stato fatto all'inizio,
+Davide Chieli: Sì, sì, sì, sì,
+Erik Capoccetta: poi dopo la normale
+Davide Chieli: infatti, come ti dicevo. Ok.
+Erik Capoccetta: ehm quindi la ricerca la devi ancora sistemare. Bene o male un po' l'hai sistemato.
+Davide Chieli: No, la ricerca te l'ho detto, ripeto, questa cosa del camel case devo indagare tutto qua questi documenti
+Erik Capoccetta: Ah, ok.
+Davide Chieli: così.
+Erik Capoccetta: Eh, per quanto riguarda la sincronia delle tratte con SGA, non è possibile che ci metta 10 minuti
+Davide Chieli: No, già l'ho corretta anche questa. Eh, probabilmente anche l'altra volta era successa che in tre persone avevano fatto la sync nello stesso momento, quindi comunque era, però adesso l'ho migliorata di parecchio ed è praticamente velocissimo adesso.
+Erik Capoccetta: Eh, e poi deve, cioè, tu non devi badare al job, quello non si sa o no. Io ho sincronizzato il 15 e deve sincronizzare tutto quello dal 15
+Davide Chieli: Sì, sì, sì, fatto. Ho fatto anche questo tutte le tr vedi 32.
+Erik Capoccetta: in poco.
+Davide Chieli: Queste qua le ha fatte in 2 secondi e adesso ho messo anche un blocco
+
+00:15:34
+
+Erik Capoccetta: Eh, ok.
+Davide Chieli: qua che non si può toccare il tasto finché non eh viene sincronizzata, capito?
+Erik Capoccetta: Ok,
+Davide Chieli: Finché finché il job sta partendo c'è un lock tra virgolette al button e anche lato lato sequel per non andare in parallelo,
+Erik Capoccetta: perfetto.
+Davide Chieli: diciamo.
+Erik Capoccetta: Perfetto. Quindi allora gli posso dare come si risolti tutti questi questi bug,
+Davide Chieli: Sì,
+Erik Capoccetta: però poi passiamo a alle novità che hanno che hanno richiesto.
+Davide Chieli: sì, che sono grosse, se ho capito bene.
+Erik Capoccetta: Sì. Beh, sono abbastanza corpose.
+Davide Chieli: M.
+Erik Capoccetta: Allora, quella più semplice forse è questa qua. C'è una nuova sezione dove loro non richiedono i documenti, ma li inviano e il vettore decidono se il vettore deve o solo visionarli e dobbiamo registrare la presa visione oppure deve anche firmarli.
+Davide Chieli: Allora, scusami Dami un secondo, ripetimi questa cosa. Allora, di subvettore
+Erik Capoccetta: vogliono una nuova sezione nel docum, quindi i documenti saranno divisi in due, eh documenti che il vettore che è il vettore a caricare
+Davide Chieli: quindi sono due subsezioni documenti da che da caricare al subvettore.
+
+00:16:54
+
+Erik Capoccetta: e il e documenti che invece il
+Davide Chieli: Ok.
+Erik Capoccetta: vettore deve visionare o firmare che carica però pigliacelli.
+Davide Chieli: Ok. praticamente eh quello che già ci sta praticamente, però no, in realtà non c'è perché eh sta nel wizard e
+Erik Capoccetta: Sta solo nel wizard.
+Davide Chieli: ok, quindi diciamo è questi documenti che dovrebbero visionare e caricare solo li vogliono mettere dinamici, li vogliono
+Erik Capoccetta: Sì, loro caricano un PDF e decidono poi gli danno un titolo e decidono poi se lo
+Davide Chieli: Sì.
+Erik Capoccetta: deve visionare solo, quindi presa visione la dobbiamo registrare oppure se lo deve anche firmare. In quel caso gli dobbiamo far posizionare il quadrato della firma o i
+Davide Chieli: Ah,
+Erik Capoccetta: quadr
+Davide Chieli: questo però eh significa che loro devono caricare un documento e devono anche posizionare i dati, eh cioè come che succedeva sull'altro progetto su ACM là
+Erik Capoccetta: No, no, i dati, solo il quadrato dove va firmato, perché i I dati sono prestampati,
+Davide Chieli: sono uguali.
+Erik Capoccetta: quelli loro caricano un PDF già già pronto.
+Davide Chieli: E dico i dati del vettore, quelli là che noi già popoliamo adesso nel contratto.
+
+00:18:11
+
+Erik Capoccetta: Sì, ma su quel PBDF non ci sono i dati del suvettore o se ci sono già scritti quando loro lo caricano.
+Davide Chieli: Ah, addirittura. Perfetto. Quindi diciamo che dobbiamo fargli mettere i quadrati per le firme.
+Erik Capoccetta: Sì, se selezionano l'opzione firma, sennò se è solo presa visione lo
+Davide Chieli: Quindi abbiamo due documenti, quelli da abbiamo documenti da, diciamo, da caricare e la sezione attuale. Praticamente gli argomenti che deve visionare eh o
+Erik Capoccetta: Sì.
+Davide Chieli: firmare semplicemente è una sezione in cui i documenti avranno vabbè appunto queste due flag, quelle che è eh da visionare o se lo specificano al momento della creazione probabilmente vabbè chi sono gli admin o quello che
+Erik Capoccetta: delimit
+Davide Chieli: è in pratica, quindi ho se la visualizzazione banalmente è solo l'apertura
+Erik Capoccetta: la presa visione. Sì,
+Davide Chieli: Ah, scusami, la visualizzazione. Vis visualizzazione, la presa visione. Vabbè, devono solo aprire il documento e basta,
+Erik Capoccetta: sì.
+Davide Chieli: eh, e la la firma, vabbè, deve essere, quindi se può solo caricare i rettangoli della firma, questa verrà questa però avviene in una sezione a parte, diciamo, il se è un setting un qualcosa che loro fanno in un'altra sezione ancora.
+
+00:19:33
+
+Erik Capoccetta: No,
+Davide Chieli: Ча.
+Erik Capoccetta: loro nuovo documento da da visionare da nuovo documento da da inviare al vettore, ti caricano il PDF, ti plegano se lo deve visionare o firmare. se lo deve anche firmare quando fanno prosegui, cioè caricano il PDF chiaramente. Se lo devono anche firmare quando fanno prosegui gli comparirà una nuova una nuova schermata dove gli dice prima
+Davide Chieli: Ok,
+Erik Capoccetta: di poter inviare alla firma devi posizionare i riquadri, gli fa gli si aprirà l'anteprima del PDF con i riquadri e loro vi vanno a posizionare.
+Davide Chieli: perfetto. E i quadri però devono sceglierli loro quali sono.
+Erik Capoccetta: Eh, lo posso, cioè lo creano ogni volta, cioè lo creano ogni volta il riquadro,
+Davide Chieli: C'hanno qualche cosa che c'è quitano per dirti che dice quattro riquadri gli appaiono quattro quadrati.
+Erik Capoccetta: no? Allora io gli metterei un pulsante dove che è crea riquadro.
+Davide Chieli: Ok,
+Erik Capoccetta: Ogni volta che lo premono crea un riquadro nuovo e lo
+Davide Chieli: il riquadro ovviamente lo possono aggiustare loro.
+Erik Capoccetta: possono aggiustare di dimensione. Esatto.
+
+00:20:33
+
+Davide Chieli: Madonna. Oh, bene.
+Erik Capoccetta: E di posizione.
+Davide Chieli: Ok.
+Erik Capoccetta: Beh, sta cosa sta già fatta su collab, eh. Mh, non so se ci hai fatto caso, se crei un documento di prova e ci metti la firma,
+Davide Chieli: Sì, sì, lo devo studiare un attimo, però. Sì.
+Erik Capoccetta: se se vai su collab crei un documento, poi anche senza che non lo firmi, eh, crei un documento upload PDF, carichi il PDF, Eh, ci metti la firma come altro blocco del flusso oltre alla redazione.
+Davide Chieli: Me lo fai vedere un attimo? Vabbè che il codice, diciamo, non disponibile questo, però. Allora, collaberia,
+Erik Capoccetta: crea un nuovo documento come se vuoi mandare una richiesta feria tipo elementi attivi.
+Davide Chieli: non mi ricordo maielli Sì,
+Erik Capoccetta: Libreria elementi attivi.
+Davide Chieli: nuova. Mh mh.
+Erik Capoccetta: Vai sul tuo fascicolo tanto. Ah, ok. Ma fai nuovo nuovo documento
+Davide Chieli: Ok. Aspetta. Com'erano qua?
+Erik Capoccetta: là in alto. Vabbè. Nome, prova, firma. Metti una cosa del genere, tanto poi lo puoi pure cancellare, dico altro.
+
+00:21:58
+
+Davide Chieli: Questa serve.
+Erik Capoccetta: Sì, vai avanti. Allora, redazione, firma. Ok,
+Davide Chieli: Ah, questi. Ok, non l'ho mai fatto questa qua. Ok.
+Erik Capoccetta: vai avanti. Allora, redazione, metti upload PDF, eh, tanto che stiamo a scrivere,
+Davide Chieli: Mh mh.
+Erik Capoccetta: ci metti te stesso.
+Davide Chieli: Avanti.
+Erik Capoccetta: No, devi aggiungere.
+Davide Chieli: Ah, questo qua. Interno esterno.
+Erik Capoccetta: Sì, metti te stesso. Vai me stesso.
+Davide Chieli: Ok,
+Erik Capoccetta: A posto. Chiudi, poi vai avanti e ti metti pure la firma.
+Davide Chieli: lo metto incaricato.
+Erik Capoccetta: Tipologia firma FEA, metti o Fest, quello che c'è, insomma.
+Davide Chieli: Metto me stesso sempre.
+Erik Capoccetta: Sì, sì, sì. Così fai tutto tu.
+Davide Chieli: Ok.
+Erik Capoccetta: Seleziona la tipologia di firma in alto, metti fest.
+Davide Chieli: Sembra storica semplice.
+Erik Capoccetta: Sì,
+Davide Chieli: Ok.
+Erik Capoccetta: vai. Ok. Tanto poi non la fermiamo. Ok. Mo carica un PDF qualsiasi.
+Davide Chieli: Carica.
+Erik Capoccetta: Sì,
+Davide Chieli: Ok. Ok, mettiamo tipo un contratto, che ne so,
+
+00:23:10
+
+Erik Capoccetta: non è un contratto di Pigliacelli.
+Davide Chieli: se ce l'ho fatto. Ok, questo carica
+Erik Capoccetta: Ah, ok. Vedi che mo ti dice configura adesso.
+Davide Chieli: prova firma.
+Erik Capoccetta: Vedi tu c'hai il pulsantino Davide Chieli se ci clicchi sopra ti crea il box.
+Davide Chieli: Quindi, ok, perfetto. Clicco sul nome per posizionarlo. Ah, ok. Quella che facevo io su OCM, praticamente. Va bene, però io c'avevo già, diciamo, era un po' diverso perché Ho capito, ho capito. Va bene. Quindi qua io se faccio n volte,
+Erik Capoccetta: Però è ancora più semplice perché c'hai un campo
+Davide Chieli: se faccio N volte lo fa. Ok. Ok, perfetto.
+Erik Capoccetta: così deve essere.
+Davide Chieli: Ok. capito? Questa non è fatto script case, immagino. Sicuramente no.
+Erik Capoccetta: Questa no, perché è una cosa esterna.
+Davide Chieli: Sì,
+Erik Capoccetta: Sì.
+Davide Chieli: sì, sì, è chiaro. Quindi vabbè, devo capire solo come l'hanno fatto qua e va bene così.
+Erik Capoccetta: Ah, ti posso mandare il Questo te lo posso mandare.
+
+00:24:15
+
+Erik Capoccetta: Eh,
+Davide Chieli: Ok. E qui è salva alla fine.
+Erik Capoccetta: sì. Poi fai salva e perché non per non sprecare la firma.
+Davide Chieli: No, vabbè. Allora, escon si può cancellare questa?
+Erik Capoccetta: Sì,
+Davide Chieli: Eh,
+Erik Capoccetta: sì,
+Davide Chieli: prova firma. Sì, va bene. Ok, perfetto. Giusto per magari non solo. Va beneare sta roba.
+Erik Capoccetta: no. Ma tanto lo vedi solo tu che lo vuoi rifare per vedere poi come
+Davide Chieli: Sì, sì, sì, sì, sì,
+Erik Capoccetta: funziona,
+Davide Chieli: sì, sì, sì. Vabbè, il flusso l'ho visto adesso.
+Erik Capoccetta: eh. O quindi deve essere fatta una cosa del genere,
+Davide Chieli: Ok, ho capito.
+Erik Capoccetta: eh.
+Davide Chieli: Mh mh mh mh.
+Erik Capoccetta: cosa che poi ti tornerà anche utile per fare quell'altra funzionalità del contratto, perché in quel caso se loro modificano il testo devono riposizionare ogni volta dei film prima di
+Davide Chieli: Eh,
+Erik Capoccetta: mandarlo
+Davide Chieli: questa è un'altra cosa che è importante, perché loro vogliono che il contratto sia di tipo uno che di tipo du
+
+00:25:09
+
+Erik Capoccetta: tutti. Vabbè, di tipo uno è la tabella. Alla fine ci possono aggiungere del testo sopra.
+Davide Chieli: No,
+Erik Capoccetta: Sì.
+Davide Chieli: il tipo uno è il contratto, quello là proprio interno, quindi Ah,
+Erik Capoccetta: Eh no,
+Davide Chieli: possono aggiungere testo.
+Erik Capoccetta: tipo due di eh cioè tipo due,
+Davide Chieli: Tipo due è quella tabella. Sì.
+Erik Capoccetta: sì, io lo vogliono modificare tutto, quindi
+Davide Chieli: Eh, però capito modificare tutto significa anche le spaziature, cioè certe cose. Come le modifichi loro? Come le fanno a modificarle?
+Erik Capoccetta: e gli dobbiamo dare tipo un editor what you se what you get, html che dove modificano il testo e poi glielo renderizza sul PDF.
+Davide Chieli: C'è un esempio di questa cosa?
+Erik Capoccetta: Eh, c'ho un esempio. Sì, c'ho un esempio. Aspetta, ve la faccio vedere qua. Allora, tipo così che si può anche fare, però con script case, eh, però mo che tanto l'editor ce l'ha ce l'ha là.
+Davide Chieli: Eh, questo daglielo No.
+Erik Capoccetta: Tipo, io vedi, c'ho questi template qua.
+
+00:26:38
+
+Erik Capoccetta: Se io faccio modifica, vedi qua c'ho il qua c'ho addirittura header, footer e il corpo. Questo è il codice HTML che poi viene renderizzato sempre usando TCPDF a livello di HTML. Se vedi i campi dinamici sono tra parentesi graff
+Davide Chieli: Ma i campi dinamici, cioè significa che rendere partecipi anche loro di questa cosa poi, capito?
+Erik Capoccetta: Eh, loro vogliono essere partecipi, se lo vogliono modificare loro il contratto.
+Davide Chieli: Mh. Ok.
+Erik Capoccetta: Non vogliono essere dipendenti da noi,
+Davide Chieli: Eh no, ci sta, eh. Per carità.
+Erik Capoccetta: vogliono farne in autonomia,
+Davide Chieli: Ok.
+Erik Capoccetta: quindi il contratto, come anche tutti gli altri documenti,
+Davide Chieli: E quelli sono gli altri documenti.
+Erik Capoccetta: quelli prodotti da loro, no? informativa privacy, manuale del vettore,
+Davide Chieli: Mh mh.
+Erik Capoccetta: tutta quest'altra,
+Davide Chieli: Ok.
+Erik Capoccetta: soprattutto il contratto. Allora, loro mi'hanno esplicitato il contratto, eh, per cui facciamo il contratto e poi altre cose le dovevano
+Davide Chieli: Mh.
+Erik Capoccetta: esplicitare.
+Davide Chieli: Quindi deve essere fatto tipo così.
+Erik Capoccetta: Tipo così che allora c'è una sezione template dove loro modificano il contratto standard che è il template.
+
+00:27:59
+
+Davide Chieli: la se la sezione template,
+Erik Capoccetta: Cioè, va fatta una nuova sezione dentro la piattaforma accessibile all
+Davide Chieli: eh, è chiaro questo dove loro caricano il PDF praticamente.
+Erik Capoccetta: No, no, non caricano il PDL, lo devo gli dobbiamo riportare il contratto in formato HTM in modo che sia modificabile.
+Davide Chieli: formato HTML verificabile. Va bene.
+Erik Capoccetta: E quello è quello standard. Quindi se io poi sarà la base quando io invio un contratto a un subvettore, però loro in aggiunta ancora di più vogliono la possibilità di modificare anche il template prima di mandarlo al subvettore, perché se a un vettore particolare gli vogliono aggiungere una clausola, una cosa in più, gliela vogliono poter aggiungere.
+Davide Chieli: Madonna che lavoro. Questa è una roba grossa, però. modificare il template prima diarlo al vettore. Quindi, praticamente, loro possono aggiungere dei pezzi sotto, sopra, in mezzo dovunque.
+Erik Capoccetta: togliere. Sì.
+Davide Chieli: E come cacchio si fa sta cosa? Ok,
+Erik Capoccetta: E gli fai rivedere sempre l'editor e se lo modifica.
+Davide Chieli: cioè se lo modificano a mano, capito che dico io?
+
+00:29:21
+
+Erik Capoccetta: è a mano. Eh beh, con l'editor.
+Davide Chieli: Cioè, banalmente, che ti devo dire'? Qua se tu vedi condizioni generali di contratto loro prendono, cancellano e mettono un'altra cosa banalmente.
+Erik Capoccetta: Bravo.
+Davide Chieli: Ok, che sei un editor HTML, però se ogni loro aggiungono dei loghi è tutta, che ne so, come ci sono adesso i loghi a tutto schermo, no? Come si dice? full wid non n leader della pagina oppure tutte
+Erik Capoccetta: Ah.
+Presentazione di Erik Capoccetta: Tot
+Davide Chieli: ste cose qua lo possono quello
+Erik Capoccetta: Eh, e poi cioè, cioè noi glielo quando glielo consegniamo gli facciamo un tipo Yeah. loro in modo che il PDF viene fuori bene.
+Presentazione di Erik Capoccetta: Tot
+Erik Capoccetta: Quando poi loro se lo modificano, se lo modificano per conto loro, se gli viene fuori storto e faranno varie prove finché non gli viene fuori dritto e se se lo vogliono modificare da soli.
+Davide Chieli: E proprio i loghi mi mi preoccupano, capito? proprio la gestione dei loghi, ste cose, quell HTML ancora ancora, cioè, quindi io ho dei campi banalmente che devo capire un attimo come iniettarli all'interno del dell'HTML.
+
+00:30:27
+
+Erik Capoccetta: Eh, hai fatto una cosa simile per casa, per coso, come si chiamava quello? No, Casa Italia Euroanza. No.
+Davide Chieli: Eh, quello che ti dicevo, però io Euroanza loro prendevano i campi e li trascinavano e poi li diciamo facevano il bordino rettangolare e maniera era più complicato perché
+Erik Capoccetta: Ah, ok. Mentre qua no.
+Davide Chieli: cioè lì prendevano il campo, lo mettevano nel PDF dove serviva e poi dopo lo compilavano in altre persone. Non mi ricordo se era così. Comunque c'era era fatto apposta che loro si generavano il diciamo i campi dove volevano, eh, e poi un'altra persona li compilava.
+Erik Capoccetta: Mh, qua no, è diverso perché loro modificano proprio tutto il testo, non caricano un PDF.
+Davide Chieli: Porco miseriaccia. Va bene. Ok, quindi footer corpo e c'è sopra un header,
+Erik Capoccetta: Eder.
+Davide Chieli: immagino.
+Erik Capoccetta: Sì.
+Davide Chieli: Va bene.
+Erik Capoccetta: Beh, qua è buono.
+Davide Chieli: Questa vale per ogni pagina.
+Erik Capoccetta: No, no, il corpo è intero. Cioè, Eder e Futer sono fissi per tutte le pagine.
+
+00:31:30
+
+Erik Capoccetta: Il corpo è intero e qua poi è tutto il contratto.
+Davide Chieli: Cioè il corpo è tutto il contratto praticamente.
+Erik Capoccetta: In base a quanto scrivi. Tante pagine ti fa.
+Davide Chieli: Eh, però il problema è che alcune pagine hanno e footer personalizzati solitamente.
+Erik Capoccetta: A questo punto io gli farei un non gli farei fare refuter, ma gli farei corpo unico e per
+Davide Chieli: Ok. Per tutto
+Erik Capoccetta: tutto. Qua c'è pure il coso per inserire l'interruzione di P. Vabbè, tanto lì nell'editor è Tiny MSA, quindi c'ha il page break, c'ha tutto, quindi se lo vedono.
+Davide Chieli: eh, ma questa roba la devo riprodurre, capito? Cioè, questa è la cosa che mi preoccupa è come lo riproduco una cosa del genere.
+Erik Capoccetta: Allora, usando la libreria, allora questo è facile da riprodurre perché Scriptase nel form c'ha i campi editor HTML.
+Davide Chieli: Quale sarebbero? Fammi vedere un attimo. Aspetta.
+Erik Capoccetta: Come campo quando metti testo multig oppure c'ha proprio l'impostazione sua. Dove sta? Aspetta. Horm
+Davide Chieli: Allora, forma hai detto.
+
+00:32:42
+
+Davide Chieli: Vediamo una a caso. Tu dici il type.
+Erik Capoccetta: si chiama il Si chiama il campo si chiama editor HTML proprio tipo di dati.
+Davide Chieli: No, però
+Erik Capoccetta: Sta sotto, sta dentro a speciale.
+Davide Chieli: Eh, speciale qua HTML image,
+Erik Capoccetta: Eh,
+Davide Chieli: però no. Editor.
+Erik Capoccetta: HTML Editor M.
+Davide Chieli: Ok.
+Erik Capoccetta: Seleziona. Vedi, ti fa proprio un editor HTML.
+Davide Chieli: Ah, questa è il la Ah, che f*** sta cosa.
+Erik Capoccetta: Eh, metti avanzato, però che c'ha molti più controlli full.
+Davide Chieli: Eh, full.
+Erik Capoccetta: Eh,
+Davide Chieli: Ah,
+Erik Capoccetta: cioè,
+Davide Chieli: però quindi qui io creo un campo con l'editor HTML.
+Erik Capoccetta: eh, ovviamente il suo codice te lo dovrai salvare sul database, così glielo carichi quello dei template e poi ogni contratto c'avrà il suo codice.
+Davide Chieli: Io mi carico tutto il codice che cioè loro scrivono dove lo scrivono? Per esempio qui, no? Ehm, egreggio, che ne so, signor Cicci.
+Erik Capoccetta: Quello che c'è adesso, tu oggi come lo crei il contratto?
+Davide Chieli: Mh mh.
+
+00:34:07
+
+Erik Capoccetta: Uguale. Lo devi fa qua.
+Davide Chieli: Eh, però capito? Io sono, ho capito, nella m come lo creo io lo creo a lato codice. Loro devono farlo qua. Va bene? Ehm, ci sta. Lo devono scrivere tutto a mano praticamente.
+Erik Capoccetta: Eh vabbè, partono dalla base che gli diamo noi.
+Davide Chieli: Cioè, il problema è questo, capito? Come fargli mettere, cioè,
+Erik Capoccetta: Eh, glielo dobbiamo dire, glielo dobbiamo dire, capito?
+Davide Chieli: per esempio,
+Erik Capoccetta: Dobbiamo eh
+Davide Chieli: questa cosa qua e poi devo capire se script, cioè se script case riconosce questo tassi.
+Erik Capoccetta: beh, quella gliela fai riconoscere tu quando vai a fare le sostituzioni, no? prima di passarlo a TCPDF questo HTML
+Davide Chieli: Eh, praticamente tutti i campi che c'hanno le doppie graffe, per esempio, sono associati a un campo di DB.
+Erik Capoccetta: che deve avere le lo stesso nome esatto.
+Davide Chieli: Lo stesso nome. Esatto.
+Erik Capoccetta: E questa è un'istruzione che poi gli dobbiamo dare a loro quando vanno a modificare se se
+Davide Chieli: Va bene, va bene.
+
+00:35:06
+
+Erik Capoccetta: lo cambiano. Eh,
+Davide Chieli: Sì, va bene. Ok.
+Erik Capoccetta: quindi questo glielo dai sia in una sezione template dove si fanno quello standard, poi prima di inviare il contratto al subvettore gli dobbiamo dare la possibilità di modificarlo, quindi gli caricherà il template standard già tutto riempito e loro se lo vanno a modificare dove gli serve.
+Davide Chieli: Scusami. Ripeti un attimo, eh, Eric, non ho capito l'ultima cosa. Mi perso.
+Erik Capoccetta: G gli facciamo una sezione sul menù template contratto dove dove loro impostano il contratto
+Davide Chieli: Sì, sì.
+Erik Capoccetta: standard. Questo contratto standard si carica ogni volta che devono inviare un contratto a un subvettore, però prima di inviare il contratto loro vedono l'anteprima e la possono modificare, no? Se vogliono inserire qualche altra clausola, qualche altro campo, lo possono lo devono poter fare.
+Davide Chieli: Però questo riporta porta modifiche all'anteprima, porta modifiche alla firma, porta modifiche a tutto,
+Erik Capoccetta: Eh sì,
+Davide Chieli: cioè no,
+Erik Capoccetta: vabbè, infatti lo sanno che è un lavoro,
+Davide Chieli: lo sanno che lavoro Corona pure questo.
+
+00:36:17
+
+Erik Capoccetta: eh. lo sanno.
+Davide Chieli: Vabbè,
+Erik Capoccetta: Sì, sì,
+Davide Chieli: vedono l'anteprima e la possono modificare in base al template che hanno scelto,
+Erik Capoccetta: ecco.
+Davide Chieli: perché loro praticamente vedono di default lo standard
+Erik Capoccetta: Sì, se posso Ecco, là si possono fare più pure più template che vanno a caricare ogni volta,
+Davide Chieli: e no,
+Erik Capoccetta: no?
+Davide Chieli: questo dico io c'ho una sezione template loro baralmente quando io c'ho contratto di tipo uno loro vedono l'anteprima PDF, vedono la prima di quella template. Però diciamo immagino che ci sia una select per poter scegliere i tipi di template
+Erik Capoccetta: Eh sì,
+Davide Chieli: poi.
+Erik Capoccetta: prima di inviare il contratto gli facciamo scegliere quale templetto vogliono usare.
+Davide Chieli: Eh, però la modifica del template fine è direttamente nella formma.
+Erik Capoccetta: Sì, perché la modifica è specifica per quell'invio, il template non lo toccano,
+Davide Chieli: Il template non lo toccano. Ok, quindi
+Erik Capoccetta: cioè lo modificano solo per inviare il contratto a me, ma se poi un domani devono inviare il contratto a Davide,
+Davide Chieli: Sì, sì, sì, sì,
+
+00:37:20
+
+Erik Capoccetta: ricarica il template sta a meno che non si fanno un altro template
+Davide Chieli: sì. Eh, questo dico io, cioè se hanno tanti template eh già pronti, ok,
+Erik Capoccetta: e vabbè, ma quello sta sta a loro farseli,
+Davide Chieli: eh però il fatto che la possono modificare anche,
+Erik Capoccetta: No,
+Davide Chieli: diciamo, on the run, così, on the fly, eh, questa è la cosa che va bene. Cioè, loro chiedono anche questo,
+Erik Capoccetta: eh sì,
+Davide Chieli: se ho capito bene.
+Erik Capoccetta: sì.
+Davide Chieli: Ok, è stesso dall'editor HTML, quindi si apre l'editor e loro modificano. E quindi la la domanda che mi faccio io è il contratto che sta adesso sul che è report PDF che fine fa?
+Erik Capoccetta: Eh no, quello credo che non si possa utilizzare
+Davide Chieli: Se va dismesso tutto, anche la variazione,
+Erik Capoccetta: quello. Credo che vada dis No, la variazione che gli devono modificare là è una tabella.
+Davide Chieli: eh. No,
+Erik Capoccetta: Eh,
+Davide Chieli: ok, però il cioè la la invece il contratto che è quello più grosso va rifatto da zero.
+
+00:38:19
+
+Erik Capoccetta: loro hanno chiesto il contratto. Eh sì, il contratto quello sì non credo si possa usare. Poi prova anche a vedere. Adesso come agente abbiamo messo Cloud invece di Gemini dovrebbe essere più performante. Magari prova.
+Davide Chieli: Sì, sì, provo.
+Erik Capoccetta: È integrato direttamente dentro script case, eh.
+Davide Chieli: Sì, sì, sì, sì, lo so, lo so. Ho visto Gemini fino adesso, in effetti, però ne ha fatto più guai che altri, ne ha spesso comunque, cioè alcune cose utili, cose piccole è utile, cose più importanti fai guai.
+Erik Capoccetta: Eh Cloud dovrebbe essere meglio, anzi è sicuramente meglio. Sì,
+Davide Chieli: Va bene.
+Erik Capoccetta: quindi, quindi lo puoi utilizzare,
+Davide Chieli: Sì, sicuro. Sicuro lo usi, cioè lo userò sicuramente.
+Erik Capoccetta: eh, così acceleriamo anche i tempi, le cose.
+Davide Chieli: Sì, sì, ma te l'ho detto non vediamo che cosa riesce a fare prima di di agreggia. Signor Cicci,
+Erik Capoccetta: Ah,
+Davide Chieli: questo qui devo capire un attimo,
+Erik Capoccetta: certo.
+Davide Chieli: quindi vabbè.
+Erik Capoccetta: Quindi possono modificare il col template, vedono l'anteprima e chiaramente sempre prima di inviarlo devono posizionare i quadrati di firma perché se io modifico poi si spostano.
+
+00:39:34
+
+Davide Chieli: Se io modifico Ah! Eh cacchio. Quindi i quadrati di film vanno messi dopo, giustamente.
+Erik Capoccetta: I quadrati di firma vanno messi ogni volta. Io glieli li farei mettere ogni volta che inviano a prescindere.
+Davide Chieli: Addirittura hanno un template già salvato.
+Erik Capoccetta: Eh sì.
+Davide Chieli: I quadrati non li impostano prima.
+Erik Capoccetta: Eh, a meno che sì, non vuoi fare questa finezza in più di associare a un template anche posizionamenti di però per essere sicuro sicuro io glieli li faccirei posizionare ogni volta che devono inviare un contratto perché tu metti il campo variabile,
+Davide Chieli: M.
+Erik Capoccetta: che ne so il nome della società, no? Metti che è un attimo più lungo del solito, invece di 50 e 120 ti scala la riga, ti scala la pagina.
+Davide Chieli: Ok.
+Erik Capoccetta: Cioè per essersi
+Davide Chieli: No, quindi quindi la firma va fatta per forza alla fine, cioè la i quadrati vanno fatti per forza alla fine.
+Erik Capoccetta: li devono mettere loro prima di inviare.
+Davide Chieli: Sì, è l'ultimazione che fanno, diciamo,
+Erik Capoccetta: Esatto.
+Davide Chieli: dopo la
+
+00:40:34
+
+Erik Capoccetta: Permane comunque la specifica di ogni la firma su ogni pagina comeo
+Davide Chieli: pura.
+Erik Capoccetta: quella.
+Davide Chieli: Vabbè, questo lo fanno loro, tanto alla fine mettono i ri quadri li mettono loro.
+Erik Capoccetta: Sì, vabbè. No, io lì quella gliela metterei standard, tanto è su ogni pagina, non è che ti cambiano.
+Davide Chieli: La firma la mettono su ogni pagina. Ok.
+Erik Capoccetta: E in più noi gli facciamo posizionare i quad solo quelli variabili dove vanno al centro del documento,
+Davide Chieli: Eh, ma poi con le firme di design come si fa?
+Erik Capoccetta: cioè
+Davide Chieli: Cioè io le firme per design devo specificare vabbè le posizioni dei quadrati che hanno messo.
+Erik Capoccetta: eh dopo te le ricavi da là, eh.
+Davide Chieli: Eh praticamente sì, però eh vabbè, devo ricavarmi sia il numero delle firme che hanno aggiunto che le posizioni,
+Erik Capoccetta: Eh,
+Davide Chieli: vabbè, ogni volta dinamicamente
+Erik Capoccetta: esatto. Vabbè, come fa quella cosa lì di collab?
+Davide Chieli: capito. Va bene. Eh, mica mica pizze f****. Vabbè.
+Erik Capoccetta: No, vabbè, è un lavoro.
+
+00:41:39
+
+Davide Chieli: Allora, va bene.
+Erik Capoccetta: Allora, io stimerei di concludere comunque questa attività entro la fine dell'anno.
+Davide Chieli: Eh, questa è questa attività, diciamo, di di parte, diciamo, di questa Ok.
+Erik Capoccetta: Queste due cose nuove, queste due cose nuove.
+Davide Chieli: Quanto rimane? Oggi è 17 novembre. Eh, ok.
+Erik Capoccetta: Beh, sì, dai,
+Davide Chieli: Sì, sì, sì,
+Erik Capoccetta: in un mesetto in un mesetto si fa tanto non
+Davide Chieli: ce la possiamo? Penso di sì.
+Erik Capoccetta: i fix li hai fatti tutti, quindi resta solo da lavorare su quello.
+Davide Chieli: Ok. C'è qualche altra cosa che devono che però avevano chiesto anche un'altra cosa.
+Erik Capoccetta: No, non mi pare.
+Davide Chieli: C'era un argomento che tratteremo abbiamoare il contratto essendo soggetto a continua modifica. Questa qui è pregrato,
+Erik Capoccetta: Era questo,
+Davide Chieli: modificato e ho caricato exnovo.
+Erik Capoccetta: è questo.
+Davide Chieli: Eh, va bene. Ok, caricato Xnovo.
+Erik Capoccetta: E vabbè che cancellano tutto e lo riscrivono.
+Davide Chieli: Capito? Era più semplice se loro mettevano il PDF, ehm, quello che avevo pensato caricassero direttamente il PDF dei template, anche nuovi template.
+
+00:42:54
+
+Erik Capoccetta: Eh, ma poi come fanno a modificarlo che una virgola eh c' avevo
+Davide Chieli: Hai ragione, comunque non possono modificarlo, purtroppo. Cioè,
+Erik Capoccetta: pensato pure io per accettar e però
+Davide Chieli: dovrebbero modificare il PDF loro che forse è più semplice, pure è più semplice per loro, probabilmente modificare il PDF.
+Erik Capoccetta: potremmo fare che ogni volta gli facciamo caricare il PDF.
+Davide Chieli: No, è è un'ipotesi, però eh diciamo se loro per loro è più semplice, perché poi rispetto a scrivere eh i campi,
+Erik Capoccetta: Beh, però in quel caso gli devi fare devono posizionare ogni volta i
+Davide Chieli: hai ragione e eh questo sarebbe sì,
+Erik Capoccetta: campi,
+Davide Chieli: dovrebbero posizionare i campi ogni volta.
+Erik Capoccetta: tutti i campi. Metti che se ne scordano uno.
+Davide Chieli: È come succedeva su Euroanza o su ACM, non mi ricordo quale di progettieri.
+Erik Capoccetta: Ero.
+Davide Chieli: Anza.
+Erik Capoccetta: Eh, possiamo provare anche questi poi, cioè che loro caricano, c'hanno il template standard che possono comunque modificare da sempre dalla sezione template, però caricando il PDF e posizionando i capi.
+Davide Chieli: Mh,
+
+00:43:54
+
+Erik Capoccetta: Forse può essere più agevole che fare la modifica in HTML. Io gli volevo dare una cosa interattiva tipo Word, che se devono cambiare una par
+Davide Chieli: guarda, io provo, me la studio un attimo e vedo come si può realizzare sta cosa. Cioè, questo l'editor effettivamente è la prima volta che lo vedo. Mo vedo un attimo che potenzialità c'ha l'editor script case.
+Erik Capoccetta: eh
+Davide Chieli: Eh, perché comunque l'idea era simpatica, in effetti che loro possono
+Erik Capoccetta: eh, tipo Word, capito? Perché in quel caso sennò devono trascinare i campi. Metti che li trascinano.
+Davide Chieli: Ah, vabbè,
+Erik Capoccetta: Controlli fatti capire.
+Davide Chieli: posso anche fare una POC.
+Erik Capoccetta: Guarda oggi Ok.
+Davide Chieli: C'è un po' di casino, scusami Eric, non ti sento bene. Ok, una POC.
+Erik Capoccetta: No, vabbè volevo sentire.
+Davide Chieli: Eh, vedo fare, cioè provo a fare provo a vedere come viene una delle due o entrambe le
+Erik Capoccetta: Ma come no? Sì,
+Davide Chieli: opzioni,
+Erik Capoccetta: sì.
+Davide Chieli: non lo so.
+Erik Capoccetta: rispondi. Vediamo.
+
+00:44:51
+
+Erik Capoccetta: Fai una Sì, esatto. Fai una cosa così vediamo come vengono fuori. Io usarei più per l'opzione quella interattivi in linea,
+Davide Chieli: La prima.
+Erik Capoccetta: così modificano là come fosse Word.
+Davide Chieli: Ok, va bene. Ok. E ci sono altre richieste nuove che hanno fatto?
+Erik Capoccetta: No,
+Davide Chieli: Ok,
+Erik Capoccetta: queste qua.
+Davide Chieli: perfetto.
+Erik Capoccetta: Quindi sono eh cerchiamo di concludere. Sì, io stimerei unetto di cioè prima di di Natale, dai, così gli do anche la tempistica a loro entro il 17 dic,
+Davide Chieli: Allora,
+Erik Capoccetta: cioè
+Davide Chieli: primo 17 considera che sono 1 2 3 sono cinque fa c l'otto che l'otto è festa, se non sbaglio, mi ricordo.
+Erik Capoccetta: Sì,
+Davide Chieli: Sì, quindi sono 1 2 3 4 5 Sì, dai, sa che sia fattibili.
+Erik Capoccetta: 3 8
+Davide Chieli: 24 e 25.
+Erik Capoccetta: 13 No,
+Davide Chieli: Vabbè, non sono lavorativi,
+Erik Capoccetta: vabbè, entro il 18 lo dobbiamo chiudere,
+Davide Chieli: però eh allora di meno
+Erik Capoccetta: ma cioè al massimo proprio 21,
+Davide Chieli: un mesetto scarso.
+
+00:46:00
+
+Erik Capoccetta: eh, però però entro il 18, io direi entro il 181 12.
+Davide Chieli: Mh Vabbè.
+Erik Capoccetta: Comunque sono 3 giorni a partire da domani, poi c'hai tutta una settimana e sono 8 e 513 dal 30 al 4, poi 4 giorni dal 7 all'11 e abbiamo detto che sono 17. E beh sì, dai,
+Davide Chieli: È un mesetto proprio praticamente.
+Erik Capoccetta: un mese lavorativo. Eh sì,
+Davide Chieli: Sì, sì, vabbè, ci dovrei fa'.
+Erik Capoccetta: 22 giorni. Sì. Eh,
+Davide Chieli: Ok. Eh, solo uno, quindi se ne parla dopo.
+Erik Capoccetta: modulo uno. Sì. Eh beh, se hanno fatto queste richieste, chiaramente, cioè la priorità nostra è consegnargli quello che poi possono usare, perché se mo ci mettiamo a perdere tempo sul modulo uno,
+Davide Chieli: Ok.
+Erik Capoccetta: loro sostengono che non lo possono usare finché non ci sono queste cose. Quindi
+Davide Chieli: Ah, a proposito, allora ci devo dare anche Ah, quindi effettivamente mo i template che ci dovevano dare non ce li danno più perché dobbiamo faare sta cosa.
+Erik Capoccetta: Sì.
+Davide Chieli: Cioè, ti ricordi modulo privacy?
+
+00:47:12
+
+Davide Chieli: È 231 là qu
+Erik Capoccetta: Eh no, vabbè, però quello Allora, loro no, io qua separerei le cose perché per per esempio quei template, tipo quel questionario lunghissimo,
+Davide Chieli: Sì, la dichiarazione.
+Erik Capoccetta: lì c'è collegata una lì c'è collegata una form,
+Davide Chieli: Eh sì,
+Erik Capoccetta: non è che loro possono modificare,
+Davide Chieli: chiaro.
+Erik Capoccetta: togliere un campo poi No, quelli no. Solo il contratto è questo, solo per il contratto.
+Davide Chieli: Eh, ok. Eh, il contratto e io mi aspetto che ce lo chiederanno per altri documenti.
+Erik Capoccetta: Eh, poi se ce lo chiederanno cerchiamo di valutarlo, però eh questo è per il contratto
+Davide Chieli: Ok. il contratto di tipo 1.
+Erik Capoccetta: di tipo uno. Sì,
+Davide Chieli: Ok. Bella.
+Erik Capoccetta: e per gli altri è un po' più delicata come cosa perché se ci sono colleg Allora, se l'informativa privacy e non c'ha formate, Ma io immagino che c'avrà dei flag, delle firme da fare,
+Davide Chieli: sicuro.
+Erik Capoccetta: quindi e e quindi non lo possono modificare come i parì.
+Davide Chieli: Ok.
+
+00:48:10
+
+Davide Chieli: Cioè, potenzialmente si può fare tutto, capito? Dinamico,
+Erik Capoccetta: Eh vabbè.
+Davide Chieli: però richiede sicuramente il fatto che loro ogni domanda devono mettere
+Erik Capoccetta: Eh,
+Davide Chieli: tipo di flag, sì, no? Oppure domanda multipla. è quello che abbiamo fatto sempre su Euroza,
+Erik Capoccetta: euro anz.
+Davide Chieli: eh, dove ci avevano le domande dinamiche che è stato un casino per farlo che la volimo.
+Erik Capoccetta: Eh no, difatti no, adesso facciamo solo il contratto come hanno chiesto, poi vediamo. Eh eh allora no,
+Davide Chieli: Eh,
+Erik Capoccetta: della cosa del Cloud te l'ho detto, ti devo mandare quelle cose là di collabo.
+Davide Chieli: le vi cloud già sono messe.
+Erik Capoccetta: Sì.
+Davide Chieli: Ok.
+Erik Capoccetta: E niente, ti devo mandare quelle cose là di collab per
+Davide Chieli: Ah, sì. Ah, che cosa curiosità? Che clod?
+Erik Capoccetta: eh il il modello che è stato messo è il mi pare quale? Opus, credo.
+Davide Chieli: Quale dei tanti?
+Erik Capoccetta: Opus 5.
+Davide Chieli: Ah, vabbè, non va male.
+Erik Capoccetta: Sì,
+Davide Chieli: Ok.
+
+00:49:12
+
+Davide Chieli: Ah,
+Erik Capoccetta: che per il codic
+Davide Chieli: io posso mettergli anche Vabbè, ci sta, ci sta. Molto carino, molto carino.
+Erik Capoccetta: No, che per il coding è il migliore Opus.
+Davide Chieli: Sì, sì, è uno dei migliori come Fable. Sì,
+Erik Capoccetta: Ah.
+Davide Chieli: va bene, a posto. Aspetta, userà AI da qualche parte, mi ricordo. Eccolo qua. Sì. Eh, curo in chat c'ho dei limiti di token, delle
+Erik Capoccetta: Sì, ci sono dei dei crediti caricati, però sono un bel po', quindi prima di consumarli credo
+Davide Chieli: c'è anche Fable 5 che è molto figo, secondo me. Ok, c'è Sonnet che è un po' più scarsino, eh. Non c'è un un Jeff, qualcosa che orchestra, però vabbè, ci può sta. Va bene così.
+Erik Capoccetta: Eh sì,
+Davide Chieli: Va bene. Entropic.
+Erik Capoccetta: perché ora sfrutta sfruttano il motore di Antropic.
+Davide Chieli: Sì, sì. No, sì, sì, sì, certo. Va bene. Io Dimmi tu se tu mi chiedi, cioè 5 o Fable 5, posso usarli quelli che voglio.
+
+00:50:09
+
+Erik Capoccetta: Sì. Allora, io ti direi prova con Opus che è quello raccomandato da loro per il coding,
+Davide Chieli: Mh. Ok,
+Erik Capoccetta: cioè io lo sto usando e mi ci trovo bene, per cui prova così,
+Davide Chieli: ok,
+Erik Capoccetta: chiaramente poi si può si può
+Davide Chieli: va bene.
+Erik Capoccetta: cambi' tanto questo è integrato bene dentro
+Davide Chieli: Ok, ok, ok, perfetto. Grazie.
+Erik Capoccetta: il la piattaforma, per
+Davide Chieli: Ci sono altre specifiche che ci hanno chiesto? Niente di preciso, solo sempre su questa parte nuova.
+Erik Capoccetta: Eh,
+Davide Chieli: Ho condiviso qualche file, qualche screen.
+Erik Capoccetta: su quale? sul modulo 1.
+Davide Chieli: Questa è una nuova. No, no, no. Sulla parte nuova.
+Erik Capoccetta: No, no, è questo. Eh vabbè,
+Davide Chieli: Ok.
+Erik Capoccetta: il file, il contratto, quello ce l'abbiamo.
+Davide Chieli: Ah.
+Erik Capoccetta: ha ricreato quello.
+Davide Chieli: Quindi, banalmente, io come primo step direi di ricreare il contratto che c'è adesso,
+Erik Capoccetta: Eh sì, certo.
+Davide Chieli: ok? che cioè uso come standard e poi dopo vediamo il resto e modificare tutto quello che è associato
+
+00:51:12
+
+Erik Capoccetta: E poi
+Davide Chieli: poi a quel contratto, cioè quindi la le sign, le firme, tutte queste cose qua associate vicino, l'anteprima,
+Erik Capoccetta: Sì.
+Davide Chieli: tutte ste cose qua. Vabbè, eh lavoracci po buono.
+Erik Capoccetta: Io poi al più presto ti condivido quel quel tanto quello è fatto con mi sembra
+Davide Chieli: Cioè il è il codice di
+Erik Capoccetta: con con Jay Query quel è fatto Ajax,
+Davide Chieli: Eja. Ok, ok, ok, perfetto.
+Erik Capoccetta: cioè semplici.
+Davide Chieli: È è tranquillamente usabile su su script case.
+Erik Capoccetta: Sì, sì, ma tanto se se lo chiedi a Lei te lo rifà pure meglio, secondo me. Eh eh detto
+Davide Chieli: Guarda, spesso va slop, ci sono delle cioè spesso si vede che è fatta con le hig, diciamo. Vabbè,
+Erik Capoccetta: me
+Davide Chieli: quando fai fare di default a Code o a per esempio quello che è eh spesso Grock quello che è molte cose sono standard, non so se hai mai visto lo stile.
+Erik Capoccetta: sì, vabbè, ovviamente gli devi dare indicazioni,
+Davide Chieli: Sì, sì, sì, infatti perciò dico, magari inst era possibile installarci delle skill su Obus, su Cloud, veniva veniva ancora meglio, però mi sa che non è fattibile succes.
+
+00:52:25
+
+Erik Capoccetta: No, qua no,
+Davide Chieli: Ok, va bene. Grazie mille Erick.
+Erik Capoccetta: no.
+Davide Chieli: Abbiamo penso terminato.
+Erik Capoccetta: Sì,
+Davide Chieli: E
+Erik Capoccetta: va bene. Cioè, inizia subito a lavorare su ste cose nuove. Tanto quella cosa della dei filtri e della ricerca rapida penso che la sistemi in
+Davide Chieli: devo No, quella in realtà, guarda, è una cosa abbastanza subdola quella là perché, come ti dicevo, io l'ho testato dappertutto e non riesco a capire, cioè grid, grid, filtri e sorting, eh li ho testati dappertutto e mi funzionavano. fare una ricerca così semplice, diciamo, semplicemente cercando queste documentazione come non detto,
+Erik Capoccetta: ricercare.
+Davide Chieli: no?
+Erik Capoccetta: Impostazioni.
+Davide Chieli: Come?
+Erik Capoccetta: Eh no, sto vedendo io dentro le impostazioni. Definisci i campi tutti i campi e contiene una qualsiasi delle parole. Nessuna delle parole inizia con pari a diverso, maggiore meno di boh. Sì, in effetti non c'è un'impostazione che ti dice case insensitive.
+Davide Chieli: No, però ho capito, funziona già. È una cosa,
+Erik Capoccetta: Mh.
+Davide Chieli: cioè se io scrivo supino grande o supino piccolo, supino tutto maiuscolo, non funziona qua.
+Erik Capoccetta: E allora ci sarà quel prova 10 novembre che ti dà fastidio numero e lettere,
+Davide Chieli: È solo quel o è scritto con qualche carattere
+Erik Capoccetta: che ne so.
+Davide Chieli: speciale che non riesco a cioè questa Non lo so.
+Erik Capoccetta: M.
+Davide Chieli: Eh, dove sta? Lo so attista questa cosa com'era documentazione o contrattistica? Non mi ricordo che cosa l'ho cercato. Documentazione sarà sicuramente.
+Erik Capoccetta: l'uno e l'altro.
+Davide Chieli: Eh, strano proprio sta cosa. Qua funziona col tutto maiuscolo.
+Erik Capoccetta: Vabbè, da dacci un'occhiata, vedi, insomma, quello che si può fare.
+Davide Chieli: Vuol farli pure prova questa missione. Va bene, allora inizio prima da questa qua e va
+Erik Capoccetta: Va bene,
+Davide Chieli: bene.
+Erik Capoccetta: ci aggiorniamo dopo. Ciao,
+Davide Chieli: Ciao, buon lavoro.
+Erik Capoccetta: buon la
+Davide Chieli: Ciao.
+
+Trascrizione terminata dopo 00:54:46
+
+Questa trascrizione modificabile è stata generata dal computer e potrebbe contenere errori. È possibile anche modificare manualmente il testo dopo la creazione.

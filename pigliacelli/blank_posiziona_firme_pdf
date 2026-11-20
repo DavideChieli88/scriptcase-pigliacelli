@@ -1,0 +1,1040 @@
+﻿/**
+ * ScriptCase blank: blank_posiziona_firme_pdf → onExecute
+ *
+ * Editor riquadri firma su PDF (UX tipo Collab).
+ * Salva sign_boxes_json su documenti o contratti (schema EGN_SIGN / mm).
+ *
+ * Parametri:
+ *   documentoId / contrattoId  = id riga (globali SC o GET)
+ *   target (solo GET interno)  = documenti | contratti (default documenti)
+ *   return_app                 = app SC per Esci (opzionale)
+ *   mode                       = ui | pdf | save
+ *
+ * Setup: docs/blank_posiziona_firme_pdf_SETUP.md
+ * Nota SC: usare closure ($bpf_*), non function nominate (in metodo di classe non si registrano).
+ */
+
+$bpf_h = function ($s) {
+    return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
+};
+
+$bpf_fail = function ($msg) use (&$bpf_h) {
+    header('Content-Type: text/html; charset=UTF-8');
+    echo '<!DOCTYPE html><html lang="it"><body style="font-family:Arial,Helvetica,sans-serif;padding:24px;color:#1a3a5c;background:#ffffff;">'
+        . '<h1 style="margin:0 0 12px;font-size:20px;">Configurazione firme</h1>'
+        . '<p style="margin:0;color:#4a5568;">' . $bpf_h($msg) . '</p></body></html>';
+    exit;
+};
+
+$bpf_json_out = function ($arr, $code = 200) {
+    http_response_code((int)$code);
+    header('Content-Type: application/json; charset=UTF-8');
+    header('Cache-Control: no-store');
+    echo json_encode($arr, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+};
+
+$bpf_param = function ($names, $default = '') {
+    if (!is_array($names)) {
+        $names = array($names);
+    }
+    foreach ($names as $n) {
+        if (isset($_POST[$n]) && (string)$_POST[$n] !== '') {
+            return trim((string)$_POST[$n]);
+        }
+        if (isset($_GET[$n]) && (string)$_GET[$n] !== '') {
+            return trim((string)$_GET[$n]);
+        }
+        if (isset($_REQUEST[$n]) && (string)$_REQUEST[$n] !== '') {
+            return trim((string)$_REQUEST[$n]);
+        }
+    }
+    return $default;
+};
+
+$bpfExtraRoots = array();
+if (isset($this->Ini->root) && trim((string)$this->Ini->root) !== '') {
+    $bpfAppRoot = rtrim((string)$this->Ini->root, '/\\');
+    $bpfExtraRoots[] = $bpfAppRoot;
+    $bpfWs = @realpath($bpfAppRoot . '/..');
+    if ($bpfWs !== false) {
+        $bpfExtraRoots[] = $bpfWs;
+    }
+}
+if (isset($this->Ini->path_doc) && trim((string)$this->Ini->path_doc) !== '') {
+    $bpfPd = rtrim(trim((string)$this->Ini->path_doc), '/\\');
+    $bpfExtraRoots[] = $bpfPd;
+    $bpfExtraRoots[] = dirname($bpfPd);
+}
+
+$mode = strtolower($bpf_param(array('mode', 'bpf_mode'), 'ui'));
+if ($mode === '') {
+    $mode = 'ui';
+}
+
+// target solo da GET (pdf/save interni) — niente globale SC [target]
+$target = strtolower($bpf_param(array('target'), 'documenti'));
+if ($target !== 'contratti' && $target !== 'documenti') {
+    $target = 'documenti';
+}
+
+$docIdIn = (int)$bpf_param(array('documentoId', 'documento_id'), '0');
+$ctrIdIn = (int)$bpf_param(array('contrattoId', 'contratto_id'), '0');
+// Form Execute SC: globali [documentoId] / [contrattoId]
+if ($docIdIn <= 0 && isset([documentoId]) && (int)[documentoId] > 0) {
+    $docIdIn = (int)[documentoId];
+}
+if ($ctrIdIn <= 0 && isset([contrattoId]) && (int)[contrattoId] > 0) {
+    $ctrIdIn = (int)[contrattoId];
+}
+// GET interno mode=pdf|save usa target_id in query string (non globale SC)
+$targetId = (int)$bpf_param(array('target_id'), '0');
+if ($target === 'documenti' && $ctrIdIn > 0 && $docIdIn <= 0) {
+    $target = 'contratti';
+}
+if ($targetId <= 0) {
+    $targetId = ($target === 'contratti') ? $ctrIdIn : $docIdIn;
+}
+if ($target === 'contratti' && $targetId <= 0) {
+    $targetId = $ctrIdIn;
+}
+if ($target === 'documenti' && $targetId <= 0) {
+    $targetId = $docIdIn;
+}
+
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    @session_start();
+}
+$usrLogin = '';
+if (!empty($_SESSION['usr_login'])) {
+    $usrLogin = trim((string)$_SESSION['usr_login']);
+}
+$reqLogin = $bpf_param(array('usr_login'), '');
+if ($reqLogin !== '' && strcasecmp($reqLogin, 'Guest') !== 0) {
+    $usrLogin = $reqLogin;
+    $_SESSION['usr_login'] = $usrLogin;
+}
+if ($usrLogin === '' || strcasecmp($usrLogin, 'Guest') === 0) {
+    if ($targetId > 0) {
+        $usrLogin = 'sc-exec';
+    } else {
+        sc_redir('app_Login');
+    }
+}
+
+$returnApp = $bpf_param(array('return_app', 'returnApp'), '');
+// sc_redir passa i param come globali SC — non solo GET
+if ($returnApp === '' && isset([return_app]) && trim((string)[return_app]) !== '') {
+    $returnApp = trim((string)[return_app]);
+}
+if ($returnApp === '' && isset([returnApp]) && trim((string)[returnApp]) !== '') {
+    $returnApp = trim((string)[returnApp]);
+}
+$titleDoc = '';
+$fileRel = '';
+$existingJson = '';
+$easygnFileId = '';
+
+if ($targetId <= 0 && $mode !== 'ui') {
+    if ($mode === 'save') {
+        $bpf_json_out(array('ok' => false, 'error' => 'Manca documentoId/contrattoId'), 400);
+    }
+    $bpf_fail('Manca documentoId o contrattoId.');
+}
+
+if ($targetId > 0) {
+    if ($target === 'documenti') {
+        // Solo colonne sicure: easygn_file_id opzionale (se manca la SELECT fallisce → "non trovato")
+        sc_lookup(rsBpfDoc, "
+            SELECT id, COALESCE(file, '') AS f
+            FROM documenti
+            WHERE id = " . (int)$targetId . "
+            LIMIT 1
+        ", 'pigliacelli');
+        // In SC: nessun record → {rs} === false (non usare empty({rs}))
+        if ({rsBpfDoc} === false || !isset({rsBpfDoc[0][0]}) || (int){rsBpfDoc[0][0]} <= 0) {
+            if ($mode === 'save') {
+                $bpf_json_out(array('ok' => false, 'error' => 'Documento non trovato'), 404);
+            }
+            $bpf_fail('Documento #' . $targetId . ' non trovato.');
+        }
+        $fileRel = trim((string){rsBpfDoc[0][1]});
+        $easygnFileId = '';
+        sc_lookup(rsBpfDocEg, "
+            SELECT COALESCE(easygn_file_id, '')
+            FROM documenti
+            WHERE id = " . (int)$targetId . "
+            LIMIT 1
+        ", 'pigliacelli');
+        if ({rsBpfDocEg} !== false && isset({rsBpfDocEg[0][0]})) {
+            $easygnFileId = trim((string){rsBpfDocEg[0][0]});
+            if (strcasecmp($easygnFileId, 'null') === 0) {
+                $easygnFileId = '';
+            }
+        }
+        $titleDoc = 'Documento #' . (int)$targetId;
+        sc_lookup(rsBpfDocMeta, "
+            SELECT COALESCE(sign_boxes_json, '') AS j
+            FROM documenti
+            WHERE id = " . (int)$targetId . "
+            LIMIT 1
+        ", 'pigliacelli');
+        if ({rsBpfDocMeta} !== false && isset({rsBpfDocMeta[0][0]})) {
+            $existingJson = trim((string){rsBpfDocMeta[0][0]});
+        }
+    } else {
+        sc_lookup(rsBpfCtr, "
+            SELECT id, COALESCE(file, '') AS f
+            FROM contratti
+            WHERE id = " . (int)$targetId . "
+            LIMIT 1
+        ", 'pigliacelli');
+        if ({rsBpfCtr} === false || !isset({rsBpfCtr[0][0]}) || (int){rsBpfCtr[0][0]} <= 0) {
+            if ($mode === 'save') {
+                $bpf_json_out(array('ok' => false, 'error' => 'Contratto non trovato'), 404);
+            }
+            $bpf_fail('Contratto #' . $targetId . ' non trovato.');
+        }
+        // contratti.file = nome file (es. contratto_1_....pdf), non il binario PDF
+        $fileRel = trim((string){rsBpfCtr[0][1]});
+        $easygnFileId = '';
+        sc_lookup(rsBpfCtrEg, "
+            SELECT COALESCE(easygn_file_id, '')
+            FROM contratti
+            WHERE id = " . (int)$targetId . "
+            LIMIT 1
+        ", 'pigliacelli');
+        if ({rsBpfCtrEg} !== false && isset({rsBpfCtrEg[0][0]})) {
+            $easygnFileId = trim((string){rsBpfCtrEg[0][0]});
+            if (strcasecmp($easygnFileId, 'null') === 0) {
+                $easygnFileId = '';
+            }
+        }
+        $titleDoc = 'Contratto #' . (int)$targetId;
+        sc_lookup(rsBpfCtrMeta, "
+            SELECT COALESCE(sign_boxes_json, '') AS j
+            FROM contratti
+            WHERE id = " . (int)$targetId . "
+            LIMIT 1
+        ", 'pigliacelli');
+        if ({rsBpfCtrMeta} !== false && isset({rsBpfCtrMeta[0][0]})) {
+            $existingJson = trim((string){rsBpfCtrMeta[0][0]});
+        }
+    }
+}
+
+if ($mode === 'save') {
+    $raw = '';
+    if (isset($_POST['sign_boxes_json'])) {
+        $raw = trim((string)$_POST['sign_boxes_json']);
+    } else {
+        $rawBody = file_get_contents('php://input');
+        if (is_string($rawBody) && $rawBody !== '') {
+            $tmp = json_decode($rawBody, true);
+            if (is_array($tmp) && isset($tmp['sign_boxes_json'])) {
+                $raw = is_string($tmp['sign_boxes_json'])
+                    ? trim($tmp['sign_boxes_json'])
+                    : json_encode($tmp['sign_boxes_json'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            } elseif (is_array($tmp) && isset($tmp['visuals'])) {
+                $raw = json_encode($tmp, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            }
+        }
+    }
+    if ($raw === '') {
+        $bpf_json_out(array('ok' => false, 'error' => 'JSON vuoto'), 400);
+    }
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded) || !isset($decoded['visuals']) || !is_array($decoded['visuals'])) {
+        $bpf_json_out(array('ok' => false, 'error' => 'JSON non valido (serve visuals)'), 400);
+    }
+    $normRoles = array('vettore', 'committente');
+    $visuals = array();
+    foreach ($normRoles as $role) {
+        $visuals[$role] = array();
+        if (!isset($decoded['visuals'][$role]) || !is_array($decoded['visuals'][$role])) {
+            continue;
+        }
+        foreach ($decoded['visuals'][$role] as $box) {
+            if (!is_array($box)) {
+                continue;
+            }
+            $page = isset($box['page']) ? (int)$box['page'] : 0;
+            if ($page < 1) {
+                continue;
+            }
+            $visuals[$role][] = array(
+                'page' => $page,
+                'x'    => round((float)($box['x'] ?? 0), 2),
+                'y'    => round((float)($box['y'] ?? 0), 2),
+                'w'    => round((float)($box['w'] ?? 0), 2),
+                'h'    => round((float)($box['h'] ?? 0), 2),
+            );
+        }
+    }
+    $payload = json_encode(
+        array('version' => 1, 'visuals' => $visuals),
+        JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+    );
+    $sqlJson = str_replace("'", "''", $payload);
+    $table = ($target === 'contratti') ? 'contratti' : 'documenti';
+    sc_exec_sql("
+        UPDATE `$table`
+        SET sign_boxes_json = '$sqlJson'
+        WHERE id = " . (int)$targetId . "
+        LIMIT 1
+    ", 'pigliacelli');
+    sc_log_add(
+        'BPF_SIGN',
+        'save target=' . $target . ' id=' . $targetId
+        . ' vettore=' . count($visuals['vettore'])
+        . ' committente=' . count($visuals['committente'])
+        . ' by=' . $usrLogin
+    );
+    $bpf_json_out(array('ok' => true, 'sign_boxes_json' => $payload));
+}
+
+if ($mode === 'pdf') {
+    $path = '';
+    $fileName = trim((string)$fileRel);
+    if ($fileName !== '') {
+        if (is_readable($fileName) && is_file($fileName)) {
+            $path = $fileName;
+        } else {
+            $baseName = basename(str_replace(array('\\', '/'), DIRECTORY_SEPARATOR, $fileName));
+            sc_lookup(rsBpfDirs, "
+                SELECT set_name, set_value
+                FROM sec_settings
+                WHERE set_name IN ('contratti_base_dir', 'templates_path')
+            ", 'pigliacelli');
+            $contrattiBaseRaw = '';
+            $templatesPath = '';
+            if (!empty({rsBpfDirs})) {
+                foreach ({rsBpfDirs} as $row) {
+                    $n = isset($row[0]) ? (string)$row[0] : '';
+                    $v = isset($row[1]) ? rtrim(trim((string)$row[1]), '/\\') : '';
+                    if ($n === 'contratti_base_dir') {
+                        $contrattiBaseRaw = $v;
+                    }
+                    if ($n === 'templates_path') {
+                        $templatesPath = $v;
+                    }
+                }
+            }
+            $roots = $bpfExtraRoots;
+            // Come nuovo_contratto_vettore: PDF in contratti_base_dir + nome file
+            if ($contrattiBaseRaw !== '') {
+                if ($contrattiBaseRaw[0] === '/' || preg_match('#^[A-Za-z]:#', $contrattiBaseRaw)) {
+                    $roots[] = $contrattiBaseRaw;
+                } else {
+                    if (!empty($_SERVER['DOCUMENT_ROOT'])) {
+                        $roots[] = rtrim((string)$_SERVER['DOCUMENT_ROOT'], '/\\')
+                            . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $contrattiBaseRaw);
+                    }
+                    foreach ($bpfExtraRoots as $er) {
+                        $roots[] = rtrim((string)$er, '/\\')
+                            . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $contrattiBaseRaw);
+                    }
+                    $roots[] = '/opt/Scriptcase/v9-php82/wwwroot/scriptcase/'
+                        . str_replace('\\', '/', $contrattiBaseRaw);
+                    $roots[] = '/opt/Scriptcase/v9-php81/wwwroot/scriptcase/'
+                        . str_replace('\\', '/', $contrattiBaseRaw);
+                }
+            }
+            if ($templatesPath !== '') {
+                $roots[] = $templatesPath;
+                $roots[] = dirname($templatesPath);
+            }
+            $roots[] = '/opt/Scriptcase/v9-php82/wwwroot/scriptcase';
+            $roots[] = '/opt/Scriptcase/v9-php81/wwwroot/scriptcase';
+            // UAT: PDF contratti in pigliacelli_workspace/_lib/file/doc/{nome}.pdf
+            $suffixes = array(
+                '',
+                '_lib/file/doc',
+                'file/doc',
+                '_lib/file/doc/contratti',
+                'file/doc/contratti',
+            );
+            foreach (array_unique(array_filter($roots)) as $root) {
+                $root = rtrim(str_replace(array('/', '\\'), DIRECTORY_SEPARATOR, (string)$root), '/\\');
+                if ($root === '') {
+                    continue;
+                }
+                $candidates = array(
+                    $root . DIRECTORY_SEPARATOR . $baseName,
+                    $root . DIRECTORY_SEPARATOR . $fileName,
+                );
+                foreach ($suffixes as $suf) {
+                    if ($suf === '') {
+                        continue;
+                    }
+                    $candidates[] = $root . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $suf)
+                        . DIRECTORY_SEPARATOR . $baseName;
+                }
+                foreach ($candidates as $try) {
+                    if ($try !== '' && is_readable($try) && is_file($try)) {
+                        $path = $try;
+                        break 2;
+                    }
+                }
+            }
+        }
+    }
+    $bin = '';
+    $outName = 'document.pdf';
+    if ($path !== '') {
+        $bin = (string)@file_get_contents($path);
+        $outName = basename($path);
+    }
+    // Fallback contratti: PDF firmato su EasyGN
+    if (($bin === '' || strncmp($bin, '%PDF', 4) !== 0) && $easygnFileId !== '' && function_exists('curl_init')) {
+        sc_lookup(rsBpfEgSet, "SELECT set_name, set_value FROM sec_settings WHERE set_name IN ('easygn_bearer','easygn_base_url')", 'pigliacelli');
+        $bearer = '';
+        $easygnBase = 'https://easygn.digiwebuno.it/api';
+        if (!empty({rsBpfEgSet})) {
+            foreach ({rsBpfEgSet} as $row) {
+                $n = isset($row[0]) ? (string)$row[0] : '';
+                $v = isset($row[1]) ? trim((string)$row[1]) : '';
+                if ($n === 'easygn_bearer') {
+                    $bearer = $v;
+                }
+                if ($n === 'easygn_base_url' && $v !== '') {
+                    $easygnBase = rtrim($v, '/');
+                }
+            }
+        }
+        if ($bearer !== '') {
+            $url = $easygnBase . '/files/download/' . rawurlencode($easygnFileId);
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $url);
+            curl_setopt($ch, CURLOPT_HTTPGET, true);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 20);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 90);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+                'Authorization: Bearer ' . $bearer,
+                'Accept: application/pdf,application/octet-stream,*/*',
+            ));
+            $egBody = curl_exec($ch);
+            $egHttp = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            if ($egHttp >= 200 && $egHttp < 300 && is_string($egBody) && strncmp($egBody, '%PDF', 4) === 0) {
+                $bin = $egBody;
+                $outName = 'contratto_' . (int)$targetId . '.pdf';
+            }
+        }
+    }
+    if ($bin === '' || strncmp($bin, '%PDF', 4) !== 0) {
+        http_response_code(404);
+        header('Content-Type: text/plain; charset=UTF-8');
+        echo 'PDF non disponibile per questo record.'
+            . ' file_db=' . substr($fileRel, 0, 120)
+            . ' easygn_file_id=' . ($easygnFileId !== '' ? $easygnFileId : '(vuoto)')
+            . ' — per i contratti serve contratti.file su disco (dopo generazione PDF) oppure easygn_file_id.';
+        exit;
+    }
+    header('Content-Type: application/pdf');
+    header('Content-Length: ' . (string)strlen($bin));
+    header('Content-Disposition: inline; filename="' . $outName . '"');
+    header('Cache-Control: private, max-age=60');
+    echo $bin;
+    exit;
+}
+
+if ($targetId <= 0) {
+    $bpf_fail('Apri questa app con documentoId=ID oppure contrattoId=ID (dopo upload PDF).');
+}
+if ($fileRel === '' && $easygnFileId === '') {
+    $bpf_fail(
+        'Nessun PDF collegato a questo record (contratti.file vuoto e easygn_file_id assente). '
+        . 'Usa un contratto con PDF gia generato, oppure testa con documentoId (es. 1220).'
+    );
+}
+
+// 1) se contratti.file e' un .pdf → URL diretto sotto _lib/file/doc/ (come in UAT)
+// 2) altrimenti mode=pdf (risoluzione path) / EasyGN
+$pdfUrl = '?mode=pdf&target=' . rawurlencode($target) . '&target_id=' . (int)$targetId;
+$basePdfName = basename(str_replace(array('\\', '/'), DIRECTORY_SEPARATOR, (string)$fileRel));
+if ($basePdfName !== '' && preg_match('/\.pdf$/i', $basePdfName)) {
+    $pdfUrl = '../_lib/file/doc/' . rawurlencode($basePdfName);
+} elseif ($easygnFileId !== '') {
+    if ($target === 'contratti') {
+        $pdfUrl = '../easygn_download_file/?contrattoId=' . (int)$targetId;
+    } else {
+        $pdfUrl = '../easygn_download_file/?documentoId=' . (int)$targetId;
+    }
+}
+$saveUrl = '?mode=save&target=' . rawurlencode($target) . '&target_id=' . (int)$targetId;
+
+$signers = array(
+    array('role' => 'vettore', 'label' => 'Vettore'),
+    array('role' => 'committente', 'label' => 'Committente'),
+);
+if ($target === 'documenti') {
+    $signers = array(
+        array('role' => 'vettore', 'label' => 'Subvettore'),
+    );
+}
+
+$existingForJs = array('version' => 1, 'visuals' => array('vettore' => array(), 'committente' => array()));
+if ($existingJson !== '') {
+    $tmpEx = json_decode($existingJson, true);
+    if (is_array($tmpEx) && isset($tmpEx['visuals']) && is_array($tmpEx['visuals'])) {
+        $existingForJs = $tmpEx;
+        if (!isset($existingForJs['version'])) {
+            $existingForJs['version'] = 1;
+        }
+    }
+}
+
+$cfg = array(
+    'pdfUrl'     => $pdfUrl,
+    'saveUrl'    => $saveUrl,
+    'target'     => $target,
+    'targetId'   => (int)$targetId,
+    'title'      => $titleDoc !== '' ? $titleDoc : ('#' . $targetId),
+    'returnApp'  => $returnApp,
+    'signers'    => $signers,
+    'existing'   => $existingForJs,
+    'defaultMm'  => array('w' => 45.0, 'h' => 14.0),
+    'pageMm'     => array('w' => 210.0, 'h' => 297.0),
+);
+
+$cfgJson = json_encode($cfg, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP);
+
+header('Content-Type: text/html; charset=UTF-8');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+?><!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Configurazione firme - Pigliacelli</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/interactjs@1.10.26/dist/interact.min.js"></script>
+<style>
+:root {
+  --bg: #ffffff;
+  --card: #ffffff;
+  --ink: #1a3a5c;
+  --muted: #4a5568;
+  --line: #dde1e6;
+  --accent: #1a3a5c;
+  --chip: #2d3748;
+  --chip-on: #2f855a;
+  --box: rgba(214, 158, 46, 0.28);
+  --box-border: #c05621;
+  --danger: #c53030;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg); color: #2d3748;
+}
+.top {
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+  padding: 14px 20px;
+  display: flex; flex-wrap: wrap; gap: 12px;
+  align-items: center; justify-content: space-between;
+}
+.top h1 {
+  margin: 0; font-size: 18px; color: var(--ink); letter-spacing: .02em;
+  text-transform: uppercase;
+}
+.top .sub { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+.actions { display: flex; gap: 8px; align-items: center; }
+.btn {
+  appearance: none; border: 0; cursor: pointer;
+  border-radius: 8px; padding: 10px 16px;
+  font-size: 13px; font-weight: 700; text-transform: uppercase;
+  text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
+}
+.btn-save { background: var(--accent); color: #fff; }
+.btn-save:disabled { opacity: .55; cursor: wait; }
+.btn-exit { background: #edf2f7; color: var(--ink); }
+.hint-bar {
+  padding: 12px 20px 0; text-align: center; color: var(--muted); font-size: 13px;
+}
+.chips {
+  display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
+  padding: 12px 20px 8px;
+}
+.chip {
+  border: 0; border-radius: 999px; padding: 10px 18px;
+  background: var(--chip); color: #fff; font-weight: 700;
+  cursor: pointer; font-size: 14px;
+}
+.chip.has-boxes { background: var(--chip-on); }
+.chip .cnt {
+  display: inline-block; min-width: 1.4em; margin-left: 6px;
+  background: rgba(255,255,255,.2); border-radius: 999px; padding: 0 6px;
+  font-size: 12px;
+}
+.viewer {
+  max-width: 920px; margin: 0 auto; padding: 8px 16px 48px;
+}
+.page-wrap { margin: 18px 0 28px; }
+.page-label {
+  text-align: center; font-size: 12px; font-weight: 700;
+  letter-spacing: .06em; color: var(--muted); margin-bottom: 8px;
+  text-transform: uppercase;
+}
+.page-stage {
+  position: relative; margin: 0 auto;
+  box-shadow: 0 8px 28px rgba(26,58,92,.12);
+  background: #fff; border: 1px solid var(--line);
+  width: fit-content; max-width: 100%;
+}
+.page-stage canvas { display: block; max-width: 100%; height: auto; }
+.boxes-layer {
+  position: absolute; left: 0; top: 0; right: 0; bottom: 0;
+  pointer-events: none;
+}
+.sign-box {
+  position: absolute; pointer-events: auto;
+  background: var(--box); border: 2px dashed var(--box-border);
+  color: #7b341e; font-size: 11px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  cursor: move; user-select: none; touch-action: none;
+  min-width: 24px; min-height: 14px;
+  overflow: hidden;
+}
+.sign-box .del {
+  position: absolute; top: -10px; right: -10px;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--danger); color: #fff; border: 0;
+  font-size: 14px; line-height: 20px; cursor: pointer; padding: 0;
+}
+.sign-box .resize-handle {
+  position: absolute; right: 0; bottom: 0; width: 14px; height: 14px;
+  background: var(--box-border); cursor: nwse-resize;
+}
+.toast {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  background: #1a202c; color: #fff; padding: 10px 16px; border-radius: 8px;
+  font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .2s;
+  z-index: 50;
+}
+.toast.show { opacity: 1; }
+.err-banner {
+  margin: 12px 20px; padding: 12px 14px; border-radius: 8px;
+  background: #ffffff; color: #1a3a5c; border: 1px solid #dde1e6;
+  display: none;
+}
+</style>
+</head>
+<body>
+<div class="top">
+  <div>
+    <h1>Configurazione firme</h1>
+    <div class="sub" id="docTitle"></div>
+  </div>
+  <div class="actions">
+    <button type="button" class="btn btn-save" id="btnSave">Salva</button>
+    <button type="button" class="btn btn-exit" id="btnExit">Esci</button>
+  </div>
+</div>
+<div class="err-banner" id="errBanner"></div>
+<div class="hint-bar">Clicca sul firmatario per aggiungere un riquadro; trascinalo anche sulle pagine successive</div>
+<div class="chips" id="chips"></div>
+<div class="viewer" id="viewer"></div>
+<div class="toast" id="toast"></div>
+<script>
+window.BPF_CFG = <?php echo $cfgJson; ?>;
+</script>
+<script>
+(function () {
+  var cfg = window.BPF_CFG || {};
+  var pageMmW = (cfg.pageMm && cfg.pageMm.w) || 210;
+  var pageMmH = (cfg.pageMm && cfg.pageMm.h) || 297;
+  var defW = (cfg.defaultMm && cfg.defaultMm.w) || 45;
+  var defH = (cfg.defaultMm && cfg.defaultMm.h) || 14;
+  var boxes = [];
+  var pageViews = {};
+  var boxSeq = 1;
+  var currentPage = 1;
+
+  function $(id) { return document.getElementById(id); }
+  function toast(msg) {
+    var el = $('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    setTimeout(function () { el.classList.remove('show'); }, 2200);
+  }
+  function showErr(msg) {
+    var el = $('errBanner');
+    el.style.display = 'block';
+    el.textContent = msg;
+  }
+
+  document.getElementById('docTitle').textContent = cfg.title || '';
+
+  function roleCount(role) {
+    var n = 0;
+    for (var i = 0; i < boxes.length; i++) if (boxes[i].role === role) n++;
+    return n;
+  }
+
+  function refreshChips() {
+    var host = $('chips');
+    host.innerHTML = '';
+    (cfg.signers || []).forEach(function (s) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'chip' + (roleCount(s.role) ? ' has-boxes' : '');
+      btn.innerHTML = s.label + '<span class="cnt">' + roleCount(s.role) + '</span>';
+      btn.addEventListener('click', function () { addBox(s.role, s.label); });
+      host.appendChild(btn);
+    });
+  }
+
+  function mmToCss(page, mmX, mmY, mmW, mmH) {
+    var pv = pageViews[page];
+    if (!pv) return { left: 0, top: 0, width: 40, height: 20 };
+    return {
+      left: (mmX / pageMmW) * pv.cssW,
+      top: (mmY / pageMmH) * pv.cssH,
+      width: (mmW / pageMmW) * pv.cssW,
+      height: (mmH / pageMmH) * pv.cssH
+    };
+  }
+
+  function cssToMm(page, left, top, width, height) {
+    var pv = pageViews[page];
+    if (!pv || !pv.cssW || !pv.cssH) {
+      return { x: 0, y: 0, w: defW, h: defH };
+    }
+    // Niente floor 13.1mm qui: era il min EasyGN e al reload "rigonfiava" i box ristretti.
+    // L'altezza minima API (37pt ≈ 13.1mm) si applica in easygn_start_wf in invio.
+    return {
+      x: Math.max(0, (left / pv.cssW) * pageMmW),
+      y: Math.max(0, (top / pv.cssH) * pageMmH),
+      w: Math.max(4, (width / pv.cssW) * pageMmW),
+      h: Math.max(3, (height / pv.cssH) * pageMmH)
+    };
+  }
+
+  function syncBoxDom(b) {
+    var el = document.getElementById(b.id);
+    if (!el) return;
+    var c = mmToCss(b.page, b.x, b.y, b.w, b.h);
+    el.style.left = c.left + 'px';
+    el.style.top = c.top + 'px';
+    el.style.width = c.width + 'px';
+    el.style.height = c.height + 'px';
+  }
+
+  function removeBox(id) {
+    boxes = boxes.filter(function (b) { return b.id !== id; });
+    var el = document.getElementById(id);
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+    refreshChips();
+  }
+
+  function findPageAtClientY(clientY) {
+    var best = 1;
+    var bestDist = Infinity;
+    Object.keys(pageViews).forEach(function (p) {
+      var num = parseInt(p, 10);
+      var st = pageViews[num] && pageViews[num].stage;
+      if (!st) return;
+      var r = st.getBoundingClientRect();
+      if (clientY >= r.top && clientY <= r.bottom) {
+        best = num;
+        bestDist = -1;
+        return;
+      }
+      if (bestDist < 0) return;
+      var mid = (r.top + r.bottom) / 2;
+      var d = Math.abs(clientY - mid);
+      if (d < bestDist) {
+        bestDist = d;
+        best = num;
+      }
+    });
+    return best;
+  }
+
+  function autoScrollDuringDrag(clientY) {
+    var edge = 72;
+    var step = 28;
+    var vh = window.innerHeight || document.documentElement.clientHeight;
+    if (clientY < edge) {
+      window.scrollBy(0, -step);
+    } else if (clientY > vh - edge) {
+      window.scrollBy(0, step);
+    }
+  }
+
+  function placeBoxAtClient(el, box, clientX, clientY) {
+    var page = findPageAtClientY(clientY);
+    var pv = pageViews[page];
+    if (!pv || !pv.stage) return;
+
+    var rect = pv.stage.getBoundingClientRect();
+    var w = el.offsetWidth || 80;
+    var h = el.offsetHeight || 36;
+    var left = clientX - rect.left - w / 2;
+    var top = clientY - rect.top - h / 2;
+    left = Math.min(Math.max(0, left), Math.max(0, pv.cssW - w));
+    top = Math.min(Math.max(0, top), Math.max(0, pv.cssH - h));
+
+    if (box.page !== page) {
+      box.page = page;
+      pv.layer.appendChild(el);
+      currentPage = page;
+    }
+    el.style.left = left + 'px';
+    el.style.top = top + 'px';
+    var mm = cssToMm(page, left, top, w, h);
+    box.x = mm.x; box.y = mm.y; box.w = mm.w; box.h = mm.h;
+  }
+
+  function bindInteract(el, box) {
+    if (!window.interact) return;
+    interact(el).draggable({
+      listeners: {
+        move: function (event) {
+          var clientX = event.clientX;
+          var clientY = event.clientY;
+          if (typeof clientX !== 'number' && event.pageX != null) {
+            clientX = event.pageX - (window.scrollX || window.pageXOffset || 0);
+            clientY = event.pageY - (window.scrollY || window.pageYOffset || 0);
+          }
+          // fallback se interact non passa client*
+          if (typeof clientX !== 'number') {
+            clientX = (event.client && event.client.x) || 0;
+            clientY = (event.client && event.client.y) || 0;
+          }
+          autoScrollDuringDrag(clientY);
+          placeBoxAtClient(el, box, clientX, clientY);
+        }
+      },
+      inertia: false
+    }).resizable({
+      edges: { right: true, bottom: true, left: false, top: false },
+      listeners: {
+        move: function (event) {
+          var left = parseFloat(el.style.left) || 0;
+          var top = parseFloat(el.style.top) || 0;
+          var w = event.rect.width;
+          var h = event.rect.height;
+          var pv = pageViews[box.page];
+          if (pv) {
+            w = Math.min(w, pv.cssW - left);
+            h = Math.min(h, pv.cssH - top);
+          }
+          el.style.width = w + 'px';
+          el.style.height = h + 'px';
+          var mm = cssToMm(box.page, left, top, w, h);
+          box.x = mm.x; box.y = mm.y; box.w = mm.w; box.h = mm.h;
+        }
+      },
+      modifiers: [
+        interact.modifiers.restrictSize({ min: { width: 24, height: 14 } })
+      ]
+    });
+  }
+
+  function renderBox(b) {
+    var pv = pageViews[b.page];
+    if (!pv) return;
+    var el = document.createElement('div');
+    el.className = 'sign-box';
+    el.id = b.id;
+    el.textContent = b.label;
+    var del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'del';
+    del.title = 'Elimina';
+    del.textContent = '\u00d7';
+    del.addEventListener('click', function (e) {
+      e.stopPropagation();
+      removeBox(b.id);
+    });
+    var handle = document.createElement('div');
+    handle.className = 'resize-handle';
+    el.appendChild(del);
+    el.appendChild(handle);
+    pv.layer.appendChild(el);
+    syncBoxDom(b);
+    bindInteract(el, b);
+  }
+
+  function addBox(role, label, preset) {
+    var page = currentPage || 1;
+    var x = 15, y = 20, w = defW, h = defH;
+    if (preset) {
+      page = preset.page || page;
+      x = preset.x; y = preset.y; w = preset.w; h = preset.h;
+    } else {
+      var nSame = boxes.filter(function (b) { return b.page === page && b.role === role; }).length;
+      y = 20 + nSame * 18;
+    }
+    if (!pageViews[page]) {
+      toast('Pagina non pronta');
+      return;
+    }
+    var b = {
+      id: 'box-' + (boxSeq++),
+      role: role,
+      label: label,
+      page: page,
+      x: x, y: y, w: w, h: Math.max(3, h)
+    };
+    boxes.push(b);
+    renderBox(b);
+    refreshChips();
+    if (!preset) {
+      var pv = pageViews[page];
+      if (pv && pv.stage) {
+        pv.stage.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }
+
+  function trackCurrentPage() {
+    var best = 1, bestVis = -1;
+    Object.keys(pageViews).forEach(function (p) {
+      var num = parseInt(p, 10);
+      var st = pageViews[p].stage;
+      if (!st) return;
+      var r = st.getBoundingClientRect();
+      var vis = Math.min(r.bottom, window.innerHeight) - Math.max(r.top, 0);
+      if (vis > bestVis) { bestVis = vis; best = num; }
+    });
+    currentPage = best;
+  }
+  window.addEventListener('scroll', trackCurrentPage, { passive: true });
+
+  function round2(n) {
+    return Math.round((Number(n) || 0) * 100) / 100;
+  }
+
+  function buildPayload() {
+    var visuals = { vettore: [], committente: [] };
+    boxes.forEach(function (b) {
+      if (!visuals[b.role]) visuals[b.role] = [];
+      visuals[b.role].push({
+        page: b.page,
+        x: round2(b.x),
+        y: round2(b.y),
+        w: round2(b.w),
+        h: round2(b.h)
+      });
+    });
+    return { version: 1, visuals: visuals };
+  }
+
+  $('btnSave').addEventListener('click', function () {
+    var btn = $('btnSave');
+    btn.disabled = true;
+    var payload = buildPayload();
+    var body = new FormData();
+    body.append('sign_boxes_json', JSON.stringify(payload));
+    fetch(cfg.saveUrl, { method: 'POST', body: body, credentials: 'same-origin' })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        btn.disabled = false;
+        if (!res.ok || !res.j || !res.j.ok) {
+          showErr((res.j && res.j.error) ? res.j.error : 'Salvataggio fallito');
+          toast('Errore salvataggio');
+          return;
+        }
+        toast('Coordinate salvate');
+      })
+      .catch(function (e) {
+        btn.disabled = false;
+        showErr(String(e));
+        toast('Errore rete');
+      });
+  });
+
+  $('btnExit').addEventListener('click', function () {
+    if (cfg.returnApp) {
+      window.location.href = '../' + cfg.returnApp + '/';
+      return;
+    }
+    if (window.history.length > 1) window.history.back();
+    else window.close();
+  });
+
+  function loadExisting() {
+    var ex = cfg.existing && cfg.existing.visuals ? cfg.existing.visuals : {};
+    var labelOf = {};
+    (cfg.signers || []).forEach(function (s) { labelOf[s.role] = s.label; });
+    Object.keys(ex).forEach(function (role) {
+      (ex[role] || []).forEach(function (box) {
+        addBox(role, labelOf[role] || role, box);
+      });
+    });
+    refreshChips();
+  }
+
+  if (!window.pdfjsLib) {
+    showErr('PDF.js non caricato (CDN).');
+    return;
+  }
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  var viewer = $('viewer');
+  pdfjsLib.getDocument({ url: cfg.pdfUrl, withCredentials: true }).promise
+    .then(function (pdf) {
+      var chain = Promise.resolve();
+      for (var p = 1; p <= pdf.numPages; p++) {
+        (function (pageNum) {
+          chain = chain.then(function () {
+            return pdf.getPage(pageNum).then(function (page) {
+              var base = page.getViewport({ scale: 1 });
+              var maxCss = Math.min(845, viewer.clientWidth || 845);
+              var scale = maxCss / base.width;
+              var viewport = page.getViewport({ scale: scale });
+              var wrap = document.createElement('div');
+              wrap.className = 'page-wrap';
+              var label = document.createElement('div');
+              label.className = 'page-label';
+              label.textContent = 'Pagina ' + pageNum + ' di ' + pdf.numPages;
+              var stage = document.createElement('div');
+              stage.className = 'page-stage';
+              var canvas = document.createElement('canvas');
+              canvas.width = viewport.width;
+              canvas.height = viewport.height;
+              canvas.style.width = viewport.width + 'px';
+              canvas.style.height = viewport.height + 'px';
+              var layer = document.createElement('div');
+              layer.className = 'boxes-layer';
+              stage.appendChild(canvas);
+              stage.appendChild(layer);
+              wrap.appendChild(label);
+              wrap.appendChild(stage);
+              viewer.appendChild(wrap);
+              pageViews[pageNum] = {
+                canvas: canvas,
+                layer: layer,
+                stage: stage,
+                cssW: viewport.width,
+                cssH: viewport.height
+              };
+              return page.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise;
+            });
+          });
+        })(p);
+      }
+      return chain;
+    })
+    .then(function () {
+      trackCurrentPage();
+      loadExisting();
+      refreshChips();
+    })
+    .catch(function (e) {
+      showErr('Impossibile caricare il PDF: ' + e);
+    });
+})();
+</script>
+</body>
+</html>
+<?php
+exit;

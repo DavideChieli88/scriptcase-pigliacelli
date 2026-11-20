@@ -1,4 +1,5 @@
 {stato_documento_id} = 1;
+{modalita} = 'upload';
 
 $subId = (int){subvettore_id};
 if ($subId > 0) {

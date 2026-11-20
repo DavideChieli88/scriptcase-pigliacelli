@@ -1,3 +1,5 @@
+{modalita} = 'upload';
+
 $subId = (int){subvettore_id};
 if ($subId > 0) {
     sc_lookup(rsFdLs, "
